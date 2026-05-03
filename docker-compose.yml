@@ -6,9 +6,8 @@ services:
       POSTGRES_DB: whale_heatmap
       POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
     ports:
-      # Host port 55432 to avoid colliding with other local Postgres instances; in-network
-      # services still reach the DB on its native port via the service name `db:5432`.
-      - "55432:5432"
+      # Localhost-only — no external exposure. In-network services use db:5432.
+      - "127.0.0.1:55432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/migrate.sql:/docker-entrypoint-initdb.d/001-schema.sql
@@ -40,24 +39,24 @@ services:
       PORT: 3001
       HOST: 0.0.0.0
     ports:
-      - "3001:3001"
+      # Localhost-only — host Caddy reverse-proxies to here.
+      - "127.0.0.1:3001:3001"
     volumes:
       - ./data:/app/data:ro
 
-  caddy:
-    image: caddy:2-alpine
+  web:
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile
+      args:
+        # Override at deploy time via `docker compose build --build-arg
+        # NEXT_PUBLIC_API_URL=https://yourdomain` if not using oralab.xyz.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://oralab.xyz}
     restart: always
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy_data:/data
-      - caddy_config:/config
     depends_on:
       - api
+    ports:
+      - "127.0.0.1:3000:3000"
 
 volumes:
   pgdata:
-  caddy_data:
-  caddy_config:

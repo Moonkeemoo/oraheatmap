@@ -1,13 +1,30 @@
-# Replace :80 with your domain (e.g. heatmap.example.com) for auto-HTTPS via Let's Encrypt.
-:80 {
-  # API + SSE
+# Production Caddyfile — installed at /etc/caddy/Caddyfile on the host VPS.
+# Reverse-proxies oralab.xyz to the docker-compose `api` (port 3001) and `web`
+# (port 3000) containers, both bound to 127.0.0.1 in compose.
+#
+# Replace `oralab.xyz` with your own domain if you fork. Email is used by
+# Let's Encrypt for cert-renewal notices.
+
+{
+  email admin@oralab.xyz
+}
+
+oralab.xyz, www.oralab.xyz {
+  encode zstd gzip
+
+  # API + SSE go through to the api container.
   handle /api/* {
-    reverse_proxy api:3001
+    reverse_proxy 127.0.0.1:3001 {
+      # SSE: don't buffer / don't time out long-lived /api/stream connections.
+      flush_interval -1
+      transport http {
+        read_timeout 24h
+      }
+    }
   }
 
-  # Frontend (Next.js) — service `web` will be added to docker-compose.yml in Day 2.
-  # Until then, root falls through to api so the dev surface is reachable.
+  # Everything else → Next.js dashboard.
   handle {
-    reverse_proxy api:3001
+    reverse_proxy 127.0.0.1:3000
   }
 }
