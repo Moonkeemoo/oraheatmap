@@ -142,26 +142,22 @@ Don't refactor `heatmap-query.ts` to be mode-aware in MVP — add `pattern-query
 
 ## Phase plan (one screen)
 
-| Phase | Days | What |
+| Phase | What | Status |
 |---|---|---|
-| **MVP** | 1-3 | RTDS ingestor + whale match + gamma enrich + TimescaleDB + API + Next.js heatmap UI in **LIVE** mode (1h × 5min slots, all 4 ranges 1h/24h/12d/12w each 12 buckets) |
-| **v1.1** | 4-5 | Weekly cron for `refresh-corpus.ts` (currently manual). Wire `whale_aliases.json` into UI (replace hash-derived alias with Polymarket usernames). **PATTERN mode** (cyclical hour/dow overlay, queries `signals_hourly`). Mobile responsive |
-| **v1.2** | 6-7 | Drill-down: category → subcategory → market. Breadcrumb nav |
-| **v1.3** | 8-9 | Whale profiles (click whale → history). TG alerts for large signals ($500+) |
-| **v2** | 10-14 | Trade execution via CLOB v2. Mobile responsive. Real PnL tracking (resolution) |
+| **MVP** | RTDS ingestor + whale match + gamma enrich + TimescaleDB + API + Next.js heatmap UI in **LIVE** mode (4 ranges × 12 buckets) | ✅ shipped |
+| **v1.1** | `whale_aliases.json` in UI · **PATTERN mode** (HOUR 12×2h + DOW 7d) · weekly cron for `refresh-corpus.ts` | ⚙️ aliases + PATTERN done; cron pending |
+| **v1.2** | Drill-down: category → subcategory · breadcrumb · top markets in tooltip · market name → Polymarket link with referral | ✅ shipped |
+| **v1.2.1** | Tooltip lock-on-click for side-by-side compare · rich KPI hover popovers with category/subcategory breakdowns · real-time TimescaleDB aggregation | ✅ shipped |
+| **v1.3 (next)** | **PATTERN drill** (currently top-level only) · **tooltip-overlap fix** (hover dodges locked) · ingest-side filter for composite "0xADDR-TS" wallets | ⏳ in queue |
+| **v1.4** | **Whale profiles** (click whale → history panel: positions, recent trades, per-cat PnL) · **TG alerts** for large signals ($500+ or N% of whale's daily) | not started |
+| **v2.0** | **Mobile responsive** (Heatmap UI cramps below 768px today) · **Telegram WebApp** wrapper (full UI inside Telegram) | not started |
+| **v2.1** | **Auth + user profiles** (login, saved drill state, alert preferences) | not started |
+| **v2.2** | **Monetization** (gate categories / drill / alerts behind paid tiers — paid via crypto + Telegram Stars) | not started |
+| **v3+** | Trade execution via CLOB v2 (out of MVP per CLAUDE.md — belongs to oralab) · mark-to-market PnL on open positions | not started |
 
-## MVP scope (locked)
+## MVP scope (locked) — historical
 
-**In:**
-1. RTDS ingestor → match against 1504-wallet watchlist → enrich via Gamma → insert into TimescaleDB
-2. API: `/api/heatmap` — 1-hour window, category × 5min slots
-3. API: `/api/stream` — SSE push each new whale signal
-4. UI: Next.js 15 dashboard (App Router) with Canvas heatmap, PnL + Signal Count toggle, 30s auto-refresh + SSE live cell flash
-5. Stats bar: total signals, volume, top category, top whale
-6. Deploy: Docker Compose (TimescaleDB + app + Caddy) on Hetzner
-
-**Out (post-MVP):**
-Drill-down, multiple time scales, trade execution, whale profiles, mobile, real PnL tracking.
+The MVP shipped includes everything in the table's first row plus pieces from v1.1/v1.2 that landed early. Drill-down + KPI popovers + market links are all live on https://oralab.xyz. Out-of-MVP scope (Telegram, monetization, auth, trade exec) is tracked in v2.x rows above.
 
 ## Running
 
