@@ -1,0 +1,9 @@
+# Replace with your domain, or use :80 for HTTP-only dev
+:80 {
+  handle /api/* {
+    reverse_proxy app:3001
+  }
+  handle {
+    reverse_proxy app:3001
+  }
+}
