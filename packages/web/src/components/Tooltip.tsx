@@ -21,6 +21,16 @@ export type TooltipAnchor = {
   parentH: number;
 };
 
+/** Rect in the same parent-relative coordinate space as `TooltipAnchor`.
+ *  Hover tooltip avoids any side that would overlap this — used to push the
+ *  hover panel away from the locked panel during side-by-side comparison. */
+export type TooltipRect = { left: number; top: number; right: number; bottom: number };
+
+function rectsOverlap(a: TooltipRect, b: TooltipRect | null): boolean {
+  if (!b) return false;
+  return !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
+}
+
 const TOP_N = 5;
 /** Personal Polymarket referral code — bake into all market URLs we render.
  *  Override at build time with NEXT_PUBLIC_POLYMARKET_REFERRAL. */
@@ -155,6 +165,8 @@ export function Tooltip({
   metric,
   lookbackDays,
   locked,
+  avoidRect,
+  onPlaced,
 }: {
   cell: HeatmapCell;
   anchor: TooltipAnchor;
@@ -168,6 +180,11 @@ export function Tooltip({
   /** When true, this tooltip is the click-locked one — show a different hint
    *  and a subtle "pinned" border. */
   locked: boolean;
+  /** Rect to dodge when picking placement (typically the locked tooltip). */
+  avoidRect?: TooltipRect | null;
+  /** Reports the final placement rect after layout. Used by the parent to
+   *  feed the locked tooltip's rect back as `avoidRect` for the hover one. */
+  onPlaced?: (rect: TooltipRect) => void;
 }) {
   const meta = categoryMeta(category);
   const isPattern = mode === "pattern";
@@ -198,33 +215,46 @@ export function Tooltip({
     const W = r.width;
     const H = r.height;
 
-    const fitsAbove = anchor.y - H - margin >= 8;
-    const fitsBelow = anchor.y + anchor.h + H + margin <= ph - 8;
-    const fitsRight = anchor.x + anchor.w + W + margin <= pw - 8;
-    const fitsLeft = anchor.x - W - margin >= 8;
+    // Build candidate rects for each placement, filter to those that both
+    // fit the parent box AND don't overlap `avoidRect` (the locked tooltip).
+    // Order matters — first match wins → preference is above > below > right
+    // > left. Falls back to the centered "doesn't fit anywhere" position
+    // (overlap with avoidRect tolerated to never end up rendering off-screen).
+    type Cand = { left: number; top: number };
+    const centerLeft = clamp(anchor.x + anchor.w / 2 - W / 2, 8, pw - W - 8);
+    const centerTop = clamp(anchor.y + anchor.h / 2 - H / 2, 8, ph - H - 8);
 
-    let left: number;
-    let top: number;
+    const above: Cand = { left: centerLeft, top: anchor.y - H - margin };
+    const below: Cand = { left: centerLeft, top: anchor.y + anchor.h + margin };
+    const right: Cand = { left: anchor.x + anchor.w + margin, top: centerTop };
+    const left:  Cand = { left: anchor.x - W - margin, top: centerTop };
 
-    if (fitsAbove) {
-      top = anchor.y - H - margin;
-      left = clamp(anchor.x + anchor.w / 2 - W / 2, 8, pw - W - 8);
-    } else if (fitsBelow) {
-      top = anchor.y + anchor.h + margin;
-      left = clamp(anchor.x + anchor.w / 2 - W / 2, 8, pw - W - 8);
-    } else if (fitsRight) {
-      left = anchor.x + anchor.w + margin;
-      top = clamp(anchor.y + anchor.h / 2 - H / 2, 8, ph - H - 8);
-    } else if (fitsLeft) {
-      left = anchor.x - W - margin;
-      top = clamp(anchor.y + anchor.h / 2 - H / 2, 8, ph - H - 8);
-    } else {
-      left = clamp(anchor.x + anchor.w / 2 - W / 2, 8, pw - W - 8);
-      top = clamp(anchor.y + anchor.h / 2 - H / 2, 8, ph - H - 8);
-    }
+    const fits = (c: Cand): boolean =>
+      c.left >= 8 &&
+      c.top >= 8 &&
+      c.left + W <= pw - 8 &&
+      c.top + H <= ph - 8;
 
-    setPos({ left, top });
-  }, [anchor, sortedMarkets.length, isPattern]);
+    const cleared = (c: Cand): boolean => {
+      if (!avoidRect) return true;
+      const r: TooltipRect = { left: c.left, top: c.top, right: c.left + W, bottom: c.top + H };
+      return !rectsOverlap(r, avoidRect);
+    };
+
+    const ordered: Cand[] = [above, below, right, left];
+    const picked =
+      ordered.find((c) => fits(c) && cleared(c)) ??
+      ordered.find((c) => fits(c)) ??
+      { left: centerLeft, top: centerTop };
+
+    setPos(picked);
+    onPlaced?.({
+      left: picked.left,
+      top: picked.top,
+      right: picked.left + W,
+      bottom: picked.top + H,
+    });
+  }, [anchor, sortedMarkets.length, isPattern, avoidRect, onPlaced]);
 
   return (
     <div

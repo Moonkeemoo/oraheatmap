@@ -18,7 +18,7 @@ import { Breadcrumb } from "./Breadcrumb";
 import { Grid } from "./Grid";
 import { Header } from "./Header";
 import { StatsBar } from "./StatsBar";
-import { Tooltip, type TooltipAnchor } from "./Tooltip";
+import { Tooltip, type TooltipAnchor, type TooltipRect } from "./Tooltip";
 
 type HoverState = {
   cell: HeatmapCell;
@@ -61,6 +61,7 @@ export function Heatmap() {
   const [drillCategory, setDrillCategory] = useState<Category | null>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
   const [locked, setLocked] = useState<HoverState | null>(null);
+  const [lockedRect, setLockedRect] = useState<TooltipRect | null>(null);
   const [flashByCell, setFlashByCell] = useState<FlashByCell>({});
   const [pendingSignals, setPendingSignals] = useState<SignalEvent[]>([]);
 
@@ -125,6 +126,7 @@ export function Heatmap() {
   useEffect(() => {
     setHover(null);
     setLocked(null);
+    setLockedRect(null);
   }, [mode, range, patternKind, drillCategory]);
 
   // Drill is LIVE-only — drop the drill state if user switches to PATTERN
@@ -211,7 +213,16 @@ export function Heatmap() {
               onHover={(h) => setHover(h)}
               onClick={(h) => {
                 // Toggle: same cell unlocks, any other cell takes the lock.
-                setLocked((prev) => (prev?.cellId === h.cellId ? null : h));
+                setLocked((prev) => {
+                  if (prev?.cellId === h.cellId) {
+                    setLockedRect(null);
+                    return null;
+                  }
+                  // Force re-place on lock change so the locked tooltip's rect
+                  // re-reports for the hover dodge logic.
+                  setLockedRect(null);
+                  return h;
+                });
               }}
               onRowClick={
                 // Top-level + LIVE only: clicking a category row drills in.
@@ -225,6 +236,7 @@ export function Heatmap() {
             />
             {locked && (
               <Tooltip
+                key={`locked-${locked.cellId}`}
                 cell={locked.cell}
                 anchor={locked.anchor}
                 category={locked.category as Category}
@@ -235,10 +247,12 @@ export function Heatmap() {
                 metric={metric}
                 lookbackDays={displayData.lookbackDays ?? 30}
                 locked
+                onPlaced={setLockedRect}
               />
             )}
             {hover && hover.cellId !== locked?.cellId && (
               <Tooltip
+                key={`hover-${hover.cellId}`}
                 cell={hover.cell}
                 anchor={hover.anchor}
                 category={hover.category as Category}
@@ -249,6 +263,7 @@ export function Heatmap() {
                 metric={metric}
                 lookbackDays={displayData.lookbackDays ?? 30}
                 locked={false}
+                avoidRect={lockedRect}
               />
             )}
           </>

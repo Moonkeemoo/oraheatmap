@@ -190,7 +190,7 @@ describe("assembleHeatmap — markets", () => {
           bucket: latestBucketTs,
           category: "Sports",
           condition_id: "0xcond1",
-          market_question: "Will Lakers win?",
+          market_question: "Will Lakers win?", market_slug: null,
           signals: 12,
           volume_usd: 4500,
           pnl_usd: 150,
@@ -216,12 +216,12 @@ describe("assembleHeatmap — markets", () => {
     const markets = [
       {
         bucket: latestBucketTs, category: "Crypto", condition_id: "0xa",
-        market_question: "BTC > 100k?", signals: 50, volume_usd: 1000, pnl_usd: 0,
+        market_question: "BTC > 100k?", market_slug: null, signals: 50, volume_usd: 1000, pnl_usd: 0,
         win_count: 0, loss_count: 0,
       },
       {
         bucket: latestBucketTs, category: "Crypto", condition_id: "0xb",
-        market_question: "ETH > 5k?", signals: 30, volume_usd: 800, pnl_usd: 25,
+        market_question: "ETH > 5k?", market_slug: null, signals: 30, volume_usd: 800, pnl_usd: 25,
         win_count: 2, loss_count: 1,
       },
     ];
@@ -239,7 +239,7 @@ describe("assembleHeatmap — markets", () => {
       [
         {
           bucket: latestBucketTs, category: "Sports", condition_id: "0xc",
-          market_question: "Q?", signals: 5, volume_usd: 100, pnl_usd: 0,
+          market_question: "Q?", market_slug: null, signals: 5, volume_usd: 100, pnl_usd: 0,
           win_count: 0, loss_count: 0,
         },
       ],
@@ -254,7 +254,7 @@ describe("assembleHeatmap — markets", () => {
       [
         {
           bucket: "1999-01-01T00:00:00.000Z", category: "Sports", condition_id: "0xz",
-          market_question: null, signals: 9, volume_usd: 0, pnl_usd: null,
+          market_question: null, market_slug: null, signals: 9, volume_usd: 0, pnl_usd: null,
           win_count: 0, loss_count: 0,
         },
       ],

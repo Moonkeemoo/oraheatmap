@@ -16,6 +16,7 @@ const stubSignal = (whale = "0xabc"): Signal => ({
   realizedPnl: null,
   exitKind: null,
   subcategory: null,
+  marketSlug: null,
 });
 
 describe("signal-hub", () => {

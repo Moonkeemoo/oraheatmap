@@ -53,6 +53,7 @@ describe("buildSettlementSignals", () => {
         marketQuestion: null,
         category: "Other",
         tags: [],
+        marketSlug: null,
         settlements: [],
       }),
     ).toEqual([]);
