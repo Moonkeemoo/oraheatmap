@@ -531,6 +531,9 @@ export async function queryTopWhales(
 ): Promise<ReadonlyArray<TopWhaleRow>> {
   const cfg = RANGE_CONFIG[range];
   const windowInterval = `${cfg.windowMinutes} minutes`;
+  // Some upstream payloads put non-wallet identifiers in the `user` field
+  // (e.g. "0xADDR-TIMESTAMP" composites). Skip anything that isn't a
+  // canonical 42-char 0x-prefixed lowercase hex so the popover stays clean.
   if (drillCategory !== null) {
     return sql<TopWhaleRow[]>`
       SELECT whale_addr,
@@ -540,6 +543,7 @@ export async function queryTopWhales(
       FROM signals
       WHERE ts >= NOW() - (${windowInterval}::interval)
         AND category = ${drillCategory}
+        AND whale_addr ~ '^0x[0-9a-f]{40}$'
       GROUP BY whale_addr
       ORDER BY volume_usd DESC, signals DESC
       LIMIT ${limit}
@@ -552,6 +556,7 @@ export async function queryTopWhales(
       COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd
     FROM signals
     WHERE ts >= NOW() - (${windowInterval}::interval)
+      AND whale_addr ~ '^0x[0-9a-f]{40}$'
     GROUP BY whale_addr
     ORDER BY volume_usd DESC, signals DESC
     LIMIT ${limit}
