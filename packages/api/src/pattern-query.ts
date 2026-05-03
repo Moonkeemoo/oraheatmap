@@ -74,12 +74,12 @@ function dayOfWeekLabel(dow: number): string {
   return labels[dow] ?? String(dow);
 }
 
-/** Slot 0..11 → "00–02", "02–04", ..., "22–00". 2-hour buckets for parity with
- *  LIVE mode's 12-column layout. */
+/** Slot 0..11 → "00:00", "02:00", ..., "22:00" — start hour of the 2h slot,
+ *  matches LIVE's HH:MM label format. (Frontend rotates these into local TZ
+ *  and re-derives the visible label, so this is mostly cosmetic.) */
 function hourSlotLabel(slot: number): string {
-  const a = (slot * 2) % 24;
-  const b = (a + 2) % 24;
-  return `${String(a).padStart(2, "0")}–${String(b).padStart(2, "0")}`;
+  const h = (slot * 2) % 24;
+  return `${String(h).padStart(2, "0")}:00`;
 }
 
 /** Mon..Sun ordering — push Sunday to the end so the week reads naturally. */

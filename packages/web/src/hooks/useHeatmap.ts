@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { fetchHeatmap } from "@/lib/api";
-import type { HeatmapResponse, LiveRange, Mode, PatternKind } from "@/lib/types";
+import type { Category, HeatmapResponse, LiveRange, Mode, PatternKind } from "@/lib/types";
 
 const REFRESH_MS_LIVE: Record<LiveRange, number> = {
   "1h": 10_000,
@@ -26,6 +26,7 @@ export function useHeatmap(args: {
   range?: LiveRange;
   kind?: PatternKind;
   lookbackDays?: number;
+  drillCategory?: Category | null;
 }): UseHeatmapResult {
   const [data, setData] = useState<HeatmapResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);

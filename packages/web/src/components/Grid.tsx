@@ -9,6 +9,19 @@ import { Cell } from "./Cell";
 import type { FlashByCell } from "./Heatmap";
 import type { TooltipAnchor } from "./Tooltip";
 
+/** Lighten a hex color by mixing it with white. amount=0 → original, 1 → white. */
+function tint(hex: string, amount: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return hex;
+  const n = parseInt(m[1]!, 16);
+  const r = (n >> 16) & 0xff;
+  const g = (n >> 8) & 0xff;
+  const b = n & 0xff;
+  const mix = (c: number) => Math.round(c + (255 - c) * amount);
+  const hex2 = (c: number) => c.toString(16).padStart(2, "0");
+  return `#${hex2(mix(r))}${hex2(mix(g))}${hex2(mix(b))}`;
+}
+
 const LABEL_W = 100;
 const TIME_ROW_H = 26;
 
@@ -16,7 +29,7 @@ const TIME_ROW_H = 26;
  * Bucket → human label.
  *   LIVE 1h/24h           → "16:35"  HH:MM, local TZ from bucket.ts
  *   LIVE 12d/12w          → "03/05"  DD/MM, local TZ
- *   PATTERN hour-of-day   → "16–18"  local 2-hour range (slotPosition is local slot 0..11)
+ *   PATTERN hour-of-day   → "16:00"  HH:MM start of local 2-hour slot
  *   PATTERN day-of-week   → "Mon".."Sun" from server
  */
 function formatSlotLabel(
@@ -29,9 +42,9 @@ function formatSlotLabel(
   if (mode === "pattern") {
     if (patternKind === "hour-of-day") {
       // After rotation, slotPosition is the local 2-hour slot index (0..11).
-      const a = (slotPosition * 2) % 24;
-      const b = (a + 2) % 24;
-      return `${String(a).padStart(2, "0")}–${String(b).padStart(2, "0")}`;
+      // Show the slot's start hour HH:00 — matches LIVE's HH:MM format.
+      const h = (slotPosition * 2) % 24;
+      return `${String(h).padStart(2, "0")}:00`;
     }
     return bucket.label ?? String(bucket.index);
   }
@@ -52,6 +65,7 @@ export function Grid({
   metric,
   onHover,
   onClick,
+  onRowClick,
   lockedCellId,
   flashByCell,
   gridKey,
@@ -60,6 +74,8 @@ export function Grid({
   metric: HeatmapMetric;
   onHover: (h: { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string; cellId: string } | null) => void;
   onClick: (h: { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string; cellId: string }) => void;
+  /** Top-level only: when defined, clicking a category badge drills in. */
+  onRowClick?: (cat: Category) => void;
   /** `${category}:${slotIdx}` of the currently locked cell, or null. */
   lockedCellId: string | null;
   flashByCell: FlashByCell;
@@ -93,14 +109,12 @@ export function Grid({
   }, [data.buckets, localShiftIdx]);
 
   const cellsByCat = useMemo(() => {
-    if (localShiftIdx === 0) return data.cells;
-    const out: Record<Category, ReadonlyArray<HeatmapCell>> = {} as Record<
-      Category,
-      ReadonlyArray<HeatmapCell>
-    >;
+    const out: Record<string, ReadonlyArray<HeatmapCell>> = {};
     for (const cat of data.categories) {
-      const row = data.cells[cat];
-      out[cat] = row.slice(localShiftIdx).concat(row.slice(0, localShiftIdx));
+      const row = data.cells[cat] ?? [];
+      out[cat] = localShiftIdx === 0
+        ? row
+        : row.slice(localShiftIdx).concat(row.slice(0, localShiftIdx));
     }
     return out;
   }, [data, localShiftIdx]);
@@ -111,7 +125,7 @@ export function Grid({
     }
     const key = metric === "pnl" ? "pnl" : metric === "volume" ? "volume" : "count";
     const flat: HeatmapCell[] = [];
-    for (const cat of data.categories) flat.push(...cellsByCat[cat]);
+    for (const cat of data.categories) flat.push(...(cellsByCat[cat] ?? []));
     return makeIntensityFn(flat, key);
   }, [data.categories, cellsByCat, metric]);
 
@@ -183,7 +197,18 @@ export function Grid({
       })}
 
       {data.categories.map((cat) => {
-        const meta = categoryMeta(cat);
+        // In drill mode `cat` is a subcategory slug; we colour all rows with a
+        // single tinted variant of the parent category's hue so the grid still
+        // reads as "this is Sports". Top-level uses the unique category color.
+        const isDrillRow = data.drillCategory !== null;
+        const baseColor = isDrillRow
+          ? categoryMeta(data.drillCategory as Category).color
+          : categoryMeta(cat as Category).color;
+        const rowColor = isDrillRow ? tint(baseColor, 0.05) : baseColor;
+        const rowLabel = isDrillRow
+          ? data.subcategoryLabels?.[cat] ?? cat.toUpperCase()
+          : categoryMeta(cat as Category).label;
+        const clickableRow = !isDrillRow && onRowClick !== undefined;
         return (
           <Fragment key={cat}>
             <div
@@ -194,10 +219,16 @@ export function Grid({
                 paddingRight: 10,
               }}
             >
-              <span
+              <button
+                type="button"
+                onClick={clickableRow ? () => onRowClick!(cat as Category) : undefined}
+                disabled={!clickableRow}
+                title={clickableRow ? "Drill into subcategories" : undefined}
                 style={{
-                  background: meta.color,
+                  background: rowColor,
                   color: "#fff",
+                  border: "none",
+                  fontFamily: "inherit",
                   fontSize: 10,
                   fontWeight: 700,
                   letterSpacing: 0.6,
@@ -205,12 +236,24 @@ export function Grid({
                   borderRadius: 3,
                   textTransform: "uppercase",
                   whiteSpace: "nowrap",
+                  cursor: clickableRow ? "pointer" : "default",
+                  transition: "filter .12s, transform .12s",
+                }}
+                onMouseEnter={(e) => {
+                  if (clickableRow) {
+                    (e.currentTarget as HTMLButtonElement).style.filter = "brightness(1.15)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (clickableRow) {
+                    (e.currentTarget as HTMLButtonElement).style.filter = "none";
+                  }
                 }}
               >
-                {meta.label}
-              </span>
+                {rowLabel}
+              </button>
             </div>
-            {cellsByCat[cat].map((cell, slot) => {
+            {(cellsByCat[cat] ?? []).map((cell, slot) => {
               const isNowCol = slot === nowSlotIndex;
               // flashByCell key is keyed by ORIGINAL bucket position (server
               // index). After local-shift rotation, original index = (slot + shift) mod num.

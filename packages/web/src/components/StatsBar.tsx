@@ -165,14 +165,14 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
   const trendSignals = useMemo(
     () =>
       Array.from({ length: num }, (_, i) =>
-        data.categories.reduce((a, cat) => a + (data.cells[cat][i]?.count ?? 0), 0),
+        data.categories.reduce((a, cat) => a + (data.cells[cat]?.[i]?.count ?? 0), 0),
       ),
     [data, num],
   );
   const trendVolume = useMemo(
     () =>
       Array.from({ length: num }, (_, i) =>
-        data.categories.reduce((a, cat) => a + (data.cells[cat][i]?.volume ?? 0), 0),
+        data.categories.reduce((a, cat) => a + (data.cells[cat]?.[i]?.volume ?? 0), 0),
       ),
     [data, num],
   );
@@ -192,12 +192,12 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
     let pnl = 0;
     let wins = 0;
     let exits = 0;
-    let topCat: Category | null = null;
+    let topCat: string | null = null;
     let topCount = 0;
     const perCat: Record<string, number> = {};
     for (const cat of data.categories) {
       let catCount = 0;
-      for (const c of data.cells[cat]) {
+      for (const c of data.cells[cat] ?? []) {
         signals += c.count;
         volume += c.volume;
         pnl += c.pnl;
@@ -221,8 +221,18 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
   }, [data]);
 
   const t = data.totals;
-  const topCategory = t?.topCategory ?? derived.topCat;
-  const topCatMeta = topCategory ? categoryMeta(topCategory as Category) : null;
+  const isDrill = data.drillCategory !== null;
+  // In drill mode `topCat` is a subcategory slug — colour it with the parent
+  // bucket's hue and label it via subcategoryLabels.
+  const topCategoryRaw = t?.topCategory ?? derived.topCat;
+  const topCatMeta = topCategoryRaw
+    ? isDrill
+      ? {
+          color: categoryMeta(data.drillCategory as Category).color,
+          label: data.subcategoryLabels?.[topCategoryRaw] ?? topCategoryRaw,
+        }
+      : categoryMeta(topCategoryRaw as Category)
+    : null;
   const totalSignals = t?.signals ?? Math.round(derived.signals);
   const totalVolume = t?.volume ?? derived.volume;
   const totalWinRate = t?.winRate ?? derived.winRate;
@@ -248,13 +258,13 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
     },
     topCatMeta
       ? {
-          label: "Top Category",
+          label: isDrill ? "Top Subcategory" : "Top Category",
           badge: { color: topCatMeta.color, label: topCatMeta.label },
           sub: isPattern
             ? `${Math.round(derived.topCount).toLocaleString()} avg signals`
             : `${totalSignals.toLocaleString()} total signals`,
         }
-      : { label: "Top Category", value: "—" },
+      : { label: isDrill ? "Top Subcategory" : "Top Category", value: "—" },
     isPattern
       ? {
           label: "Lookback",

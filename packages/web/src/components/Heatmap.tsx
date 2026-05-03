@@ -14,6 +14,7 @@ import type {
   PatternKind,
   SignalEvent,
 } from "@/lib/types";
+import { Breadcrumb } from "./Breadcrumb";
 import { Grid } from "./Grid";
 import { Header } from "./Header";
 import { StatsBar } from "./StatsBar";
@@ -57,16 +58,19 @@ export function Heatmap() {
   const [range, setRange] = useState<LiveRange>("1h");
   const [patternKind, setPatternKind] = useState<PatternKind>("hour-of-day");
   const [metric, setMetric] = useState<HeatmapMetric>("signals");
+  const [drillCategory, setDrillCategory] = useState<Category | null>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
   const [locked, setLocked] = useState<HoverState | null>(null);
   const [flashByCell, setFlashByCell] = useState<FlashByCell>({});
   const [pendingSignals, setPendingSignals] = useState<SignalEvent[]>([]);
 
+  // Drill is LIVE-only for now; fetch ignores drillCategory in pattern.
   const { data: fetchedData, loading, error } = useHeatmap({
     mode,
     range: mode === "live" ? range : undefined,
     kind: mode === "pattern" ? patternKind : undefined,
     lookbackDays: mode === "pattern" ? 30 : undefined,
+    drillCategory: mode === "live" ? drillCategory : null,
   });
 
   // Whenever a fresh fetch arrives, drop the optimistic queue.
@@ -86,9 +90,20 @@ export function Heatmap() {
 
   useSse((s) => {
     if (!fetchedData) return;
-    const cat = s.category as Category;
-    if (!fetchedData.categories.includes(cat)) return;
     if (!metricAffectedBy(metric, s)) return;
+
+    // Determine the row key the signal belongs to in the current view:
+    //   top-level → s.category (must match one of fetchedData.categories)
+    //   drill     → s.subcategory (must be in this category's sublist)
+    let rowKey: string;
+    if (fetchedData.drillCategory) {
+      if (s.category !== fetchedData.drillCategory || !s.subcategory) return;
+      if (!fetchedData.categories.includes(s.subcategory)) return;
+      rowKey = s.subcategory;
+    } else {
+      if (!fetchedData.categories.includes(s.category)) return;
+      rowKey = s.category;
+    }
 
     const slotIdx = flashSlotIndex(
       fetchedData.mode,
@@ -101,15 +116,22 @@ export function Heatmap() {
     if (fetchedData.mode === "live") {
       setPendingSignals((prev) => [...prev, s]);
     }
-    const key = `${cat}:${slotIdx}`;
+    const key = `${rowKey}:${slotIdx}`;
     setFlashByCell((prev) => ({ ...prev, [key]: (prev[key] ?? 0) + 1 }));
   });
 
-  // Reset hover + lock on mode/range/kind switches (anchors/cell IDs are stale).
+  // Reset hover + lock on mode/range/kind/drill switches (anchors + cell IDs
+  // are stale across grid shape changes).
   useEffect(() => {
     setHover(null);
     setLocked(null);
-  }, [mode, range, patternKind]);
+  }, [mode, range, patternKind, drillCategory]);
+
+  // Drill is LIVE-only — drop the drill state if user switches to PATTERN
+  // (otherwise toggling back to LIVE would surprise them with stale drill).
+  useEffect(() => {
+    if (mode !== "live" && drillCategory !== null) setDrillCategory(null);
+  }, [mode, drillCategory]);
 
   const isLive = mode === "live";
   const daysOfData = displayData?.dataSpan.daysOfData ?? 0;
@@ -172,6 +194,12 @@ export function Heatmap() {
         )}
         {displayData && (
           <>
+            {displayData.drillCategory && (
+              <Breadcrumb
+                drillCategory={displayData.drillCategory}
+                onBack={() => setDrillCategory(null)}
+              />
+            )}
             <Grid
               data={displayData}
               metric={metric}
@@ -180,9 +208,15 @@ export function Heatmap() {
                 // Toggle: same cell unlocks, any other cell takes the lock.
                 setLocked((prev) => (prev?.cellId === h.cellId ? null : h));
               }}
+              onRowClick={
+                // Top-level + LIVE only: clicking a category row drills in.
+                isLive && !displayData.drillCategory
+                  ? (cat) => setDrillCategory(cat)
+                  : undefined
+              }
               lockedCellId={locked?.cellId ?? null}
               flashByCell={flashByCell}
-              gridKey={`${mode}-${range}-${patternKind}`}
+              gridKey={`${mode}-${range}-${patternKind}-${drillCategory ?? "top"}`}
             />
             {locked && (
               <Tooltip

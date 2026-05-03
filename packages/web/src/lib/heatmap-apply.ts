@@ -19,10 +19,21 @@ import type { Category, HeatmapResponse, SignalEvent } from "./types";
  * full re-rank). Those go slightly stale between refetches; acceptable.
  */
 export function applySignal(d: HeatmapResponse, s: SignalEvent): HeatmapResponse {
-  const cat = s.category as Category;
-  if (!d.categories.includes(cat)) return d;
+  // In drill mode rows are subcategory slugs; signal must match the parent
+  // category AND have a known subcategory present in this view.
+  let rowKey: string;
+  if (d.drillCategory) {
+    if (s.category !== d.drillCategory || !s.subcategory) return d;
+    if (!d.categories.includes(s.subcategory)) return d;
+    rowKey = s.subcategory;
+  } else {
+    const cat = s.category as Category;
+    if (!d.categories.includes(cat)) return d;
+    rowKey = cat;
+  }
   const slotIdx = d.buckets.length - 1; // NOW
-  const row = d.cells[cat];
+  const row = d.cells[rowKey];
+  if (!row) return d;
   const oldCell = row[slotIdx];
   if (!oldCell) return d;
 
@@ -58,7 +69,7 @@ export function applySignal(d: HeatmapResponse, s: SignalEvent): HeatmapResponse
     ...d,
     cells: {
       ...d.cells,
-      [cat]: row.map((c, i) => (i === slotIdx ? newCell : c)),
+      [rowKey]: row.map((c, i) => (i === slotIdx ? newCell : c)),
     },
     totals,
   };

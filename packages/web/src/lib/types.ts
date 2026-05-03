@@ -77,11 +77,17 @@ export type HeatmapResponse = {
   // Pattern-only:
   patternKind?: PatternKind;
   lookbackDays?: number;
+  // Drill-down (LIVE only): non-null when the response is a per-subcategory
+  // grid for the named Category. `categories` holds subcategory slugs;
+  // `subcategoryLabels` maps slug → display label. Both `null` at top level.
+  drillCategory: Category | null;
+  subcategoryLabels: Record<string, string> | null;
   // Common:
   trackedWhales: number;
-  categories: ReadonlyArray<Category>;
+  /** Row keys: top-level Category names OR subcategory slugs in drill mode. */
+  categories: ReadonlyArray<string>;
   buckets: ReadonlyArray<HeatmapBucket>;
-  cells: Record<Category, ReadonlyArray<HeatmapCell>>;
+  cells: Record<string, ReadonlyArray<HeatmapCell>>;
   totals: HeatmapTotals | null;
   metric: HeatmapMetric;
   dataSpan: { earliestTs: string | null; daysOfData: number };
@@ -97,6 +103,7 @@ export type SignalEvent = {
   conditionId: string | null;
   marketQuestion: string | null;
   category: Category | string;
+  subcategory: string | null;
   side: "BUY" | "SELL" | "SETTLEMENT";
   price: number;
   size: number;

@@ -2,7 +2,7 @@ import { cors } from "@elysiajs/cors";
 import { Elysia, t } from "elysia";
 import type { Sql } from "postgres";
 
-import { CATEGORIES } from "./categorize";
+import { CATEGORIES, type Category } from "./categorize";
 import {
   assembleHeatmap,
   buildBuckets,
@@ -18,6 +18,7 @@ import type { Ingestor } from "./ingestor";
 import { log } from "./log";
 import { type PatternKind, queryPattern } from "./pattern-query";
 import type { SignalHub } from "./signal-hub";
+import { SUBCATEGORY_LABELS, subcategoriesOf } from "./subcategorize";
 import type { Signal } from "./types";
 import { whaleAlias, whaleColor } from "./whale-display";
 
@@ -46,6 +47,7 @@ function signalToWire(s: Signal): Record<string, unknown> {
     conditionId: s.conditionId,
     marketQuestion: s.marketQuestion,
     category: s.category,
+    subcategory: s.subcategory,
     side: s.side,
     price: s.price,
     size: s.size,
@@ -98,7 +100,18 @@ export function createApi(deps: ApiDeps) {
         const dataSpan = await fetchDataSpan(deps.sql);
         const trackedWhales = deps.whaleCount();
 
+        // Drill: only meaningful for top-level Categories that have rules.
+        // Unknown / "Other" / no rules → silently treat as no-drill.
+        const drillCategory: Category | null =
+          query.category && (CATEGORIES as ReadonlyArray<string>).includes(query.category)
+            ? (query.category as Category)
+            : null;
+        const drillRules = drillCategory ? subcategoriesOf(drillCategory) : [];
+        const isDrill = drillCategory !== null && drillRules.length > 0;
+
         if (mode === "pattern") {
+          // Drill not yet wired through pattern queries — fall back to top-level
+          // when the user is in PATTERN. UI hides the drill affordance there.
           const kind: PatternKind = query.kind ?? "hour-of-day";
           const lookbackDays = query.lookbackDays ?? 30;
           const pattern = await queryPattern(deps.sql, kind, lookbackDays);
@@ -108,10 +121,12 @@ export function createApi(deps: ApiDeps) {
             lookbackDays,
             generatedAt: now.toISOString(),
             trackedWhales,
+            drillCategory: null,
             categories: CATEGORIES,
+            subcategoryLabels: null,
             buckets: pattern.buckets,
             cells: pattern.cells,
-            totals: null, // pattern doesn't carry single-window totals
+            totals: null,
             metric,
             dataSpan,
           };
@@ -122,19 +137,33 @@ export function createApi(deps: ApiDeps) {
         const cfg = RANGE_CONFIG[range];
         const buckets = buildBuckets(now, cfg.bucketMinutes, cfg.slots);
         const [aggRows, marketRows, topWhaleAddr, uniqueWhales] = await Promise.all([
-          queryHeatmapAggRows(deps.sql, range),
-          queryTopMarketsPerCell(deps.sql, range, TOP_MARKETS_PER_CELL),
+          queryHeatmapAggRows(deps.sql, range, isDrill ? drillCategory : null),
+          queryTopMarketsPerCell(
+            deps.sql,
+            range,
+            TOP_MARKETS_PER_CELL,
+            isDrill ? drillCategory : null,
+          ),
           fetchTopWhale(deps.sql, range),
           fetchUniqueWhalesInWindow(deps.sql, range),
         ]);
-        const grid = assembleHeatmap(aggRows, marketRows, buckets, range, now);
+
+        const rowKeys = isDrill ? drillRules.map((r) => r.slug) : undefined;
+        const grid = assembleHeatmap(aggRows, marketRows, buckets, range, now, {
+          rowKeys,
+          drillCategory: isDrill ? drillCategory : null,
+        });
         const topWhale = topWhaleAddr
           ? { addr: topWhaleAddr, alias: whaleAlias(topWhaleAddr), color: whaleColor(topWhaleAddr) }
+          : null;
+        const subcategoryLabels = isDrill
+          ? Object.fromEntries(drillRules.map((r) => [r.slug, SUBCATEGORY_LABELS[r.slug] ?? r.slug]))
           : null;
         return {
           ...grid,
           mode: "live" as const,
           trackedWhales,
+          subcategoryLabels,
           totals: {
             ...grid.totals,
             uniqueWhales,
@@ -163,6 +192,10 @@ export function createApi(deps: ApiDeps) {
               t.Literal("winrate"),
             ]),
           ),
+          /** Drill-down: when set to a Category name (e.g. "Sports"), the
+           *  response groups by that category's subcategories instead of
+           *  the top-level 9 buckets. Unknown values are ignored silently. */
+          category: t.Optional(t.String()),
         }),
       },
     )
