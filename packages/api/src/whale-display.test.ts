@@ -13,7 +13,7 @@ describe("whaleAlias", () => {
 
   test("uses Polymarket username when alias map has the address", () => {
     const addr = "0xadc2efbf97ce7b25f7a638aabdba196c657cd1c9";
-    setWhaleAliases(new Map([[addr, "stingo43"]]));
+    setWhaleAliases(new Map([[addr, { alias: "stingo43", xHandle: "@stingo", verified: true }]]));
     expect(whaleAlias(addr)).toBe("stingo43");
     // Lookup is case-insensitive on the address
     expect(whaleAlias(addr.toUpperCase())).toBe("stingo43");

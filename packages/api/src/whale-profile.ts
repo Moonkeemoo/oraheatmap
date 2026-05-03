@@ -1,0 +1,229 @@
+/**
+ * Per-whale profile aggregations for the side-drawer in the UI. All metrics
+ * scoped to the same window the heatmap is showing (1h / 24h / 12d / 12w).
+ *
+ * Open positions come from `whale_positions` (which is the in-memory tracker's
+ * write-behind mirror); recent trades + window stats come from `signals`.
+ * Market metadata (question + slug) is sourced from the most-recent matching
+ * signal — `whale_positions` doesn't carry it, but every position must have
+ * at least one BUY in `signals` to exist.
+ */
+
+import type { Sql } from "postgres";
+
+import { type HeatmapRange, RANGE_CONFIG } from "./heatmap-query";
+
+export type WhaleProfileStats = {
+  signals: number;
+  volume: number;
+  pnl: number;
+  /** wins / (wins + losses) over decided exits in window. NULL when no exits. */
+  winRate: number | null;
+};
+
+export type WhaleCategorySplit = {
+  category: string;
+  volume: number;
+  signals: number;
+};
+
+export type WhaleOpenPosition = {
+  assetId: string;
+  conditionId: string | null;
+  marketQuestion: string | null;
+  marketSlug: string | null;
+  netShares: number;
+  avgEntry: number;
+  totalCost: number;
+  openedAt: string;
+  lastModifiedAt: string;
+};
+
+export type WhaleRecentTrade = {
+  ts: string;
+  side: "BUY" | "SELL" | "SETTLEMENT";
+  category: string;
+  subcategory: string | null;
+  conditionId: string | null;
+  marketQuestion: string | null;
+  marketSlug: string | null;
+  size: number;
+  price: number;
+  sizeUsd: number;
+  realizedPnl: number | null;
+  exitKind: "SELL" | "RESOLUTION" | null;
+};
+
+export type WhaleProfile = {
+  addr: string;
+  range: HeatmapRange;
+  windowMinutes: number;
+  stats: WhaleProfileStats;
+  categoryMix: ReadonlyArray<WhaleCategorySplit>;
+  openPositions: ReadonlyArray<WhaleOpenPosition>;
+  recentTrades: ReadonlyArray<WhaleRecentTrade>;
+};
+
+const RECENT_TRADES_LIMIT = 50;
+const OPEN_POSITIONS_LIMIT = 10;
+
+function num(v: string | number | null | undefined): number {
+  if (v === null || v === undefined) return 0;
+  if (typeof v === "number") return v;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export async function fetchWhaleProfile(
+  sql: Sql,
+  addr: string,
+  range: HeatmapRange,
+): Promise<WhaleProfile> {
+  const cfg = RANGE_CONFIG[range];
+  const windowInterval = `${cfg.windowMinutes} minutes`;
+
+  type StatsRow = {
+    signals: string | number;
+    volume_usd: string | number;
+    pnl_usd: string | number | null;
+    win_count: string | number;
+    loss_count: string | number;
+  };
+  type CatRow = { category: string; volume_usd: string | number; signals: string | number };
+  type PosRow = {
+    asset_id: string;
+    condition_id: string | null;
+    market_question: string | null;
+    market_slug: string | null;
+    net_shares: number;
+    avg_entry_price: number;
+    total_cost_usd: number;
+    opened_at: Date;
+    last_modified_at: Date;
+  };
+  type TradeRow = {
+    ts: Date;
+    side: "BUY" | "SELL" | "SETTLEMENT";
+    category: string;
+    subcategory: string | null;
+    condition_id: string | null;
+    market_question: string | null;
+    market_slug: string | null;
+    size: number;
+    price: number;
+    realized_pnl: number | null;
+    exit_kind: "SELL" | "RESOLUTION" | null;
+  };
+
+  // Window-wide stats + per-category split + recent trades all hit the same
+  // (whale_addr, ts) index. Run them in parallel.
+  const [statsRows, categoryRows, posRows, tradeRows] = await Promise.all([
+    sql<StatsRow[]>`
+      SELECT
+        COUNT(*)::bigint                                                       AS signals,
+        COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)             AS volume_usd,
+        COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd,
+        COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint                       AS win_count,
+        COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                       AS loss_count
+      FROM signals
+      WHERE whale_addr = ${addr}
+        AND ts >= NOW() - (${windowInterval}::interval)
+    `,
+    sql<CatRow[]>`
+      SELECT
+        category,
+        COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)             AS volume_usd,
+        COUNT(*)::bigint                                                       AS signals
+      FROM signals
+      WHERE whale_addr = ${addr}
+        AND ts >= NOW() - (${windowInterval}::interval)
+      GROUP BY category
+      ORDER BY volume_usd DESC
+    `,
+    // Open positions joined to the most-recent signal for the same
+    // (whale_addr, asset_id) so we have market_question + market_slug.
+    // DISTINCT ON keeps just the freshest signal per asset.
+    sql<PosRow[]>`
+      WITH meta AS (
+        SELECT DISTINCT ON (whale_addr, asset_id)
+          whale_addr, asset_id, condition_id, market_question, market_slug
+        FROM signals
+        WHERE whale_addr = ${addr}
+        ORDER BY whale_addr, asset_id, ts DESC
+      )
+      SELECT
+        p.asset_id, m.condition_id, m.market_question, m.market_slug,
+        p.net_shares, p.avg_entry_price, p.total_cost_usd,
+        p.opened_at, p.last_modified_at
+      FROM whale_positions p
+      LEFT JOIN meta m ON m.whale_addr = p.whale_addr AND m.asset_id = p.asset_id
+      WHERE p.whale_addr = ${addr}
+      ORDER BY p.total_cost_usd DESC
+      LIMIT ${OPEN_POSITIONS_LIMIT}
+    `,
+    sql<TradeRow[]>`
+      SELECT
+        ts, side, category, subcategory, condition_id, market_question, market_slug,
+        size, price, realized_pnl, exit_kind
+      FROM signals
+      WHERE whale_addr = ${addr}
+        AND ts >= NOW() - (${windowInterval}::interval)
+      ORDER BY ts DESC
+      LIMIT ${RECENT_TRADES_LIMIT}
+    `,
+  ]);
+
+  const s = statsRows[0];
+  const wins = num(s?.win_count);
+  const losses = num(s?.loss_count);
+  const decided = wins + losses;
+  const stats: WhaleProfileStats = {
+    signals: num(s?.signals),
+    volume: num(s?.volume_usd),
+    pnl: num(s?.pnl_usd),
+    winRate: decided > 0 ? wins / decided : null,
+  };
+
+  const categoryMix: WhaleCategorySplit[] = categoryRows.map((r) => ({
+    category: r.category,
+    volume: num(r.volume_usd),
+    signals: num(r.signals),
+  }));
+
+  const openPositions: WhaleOpenPosition[] = posRows.map((p) => ({
+    assetId: p.asset_id,
+    conditionId: p.condition_id,
+    marketQuestion: p.market_question,
+    marketSlug: p.market_slug,
+    netShares: p.net_shares,
+    avgEntry: p.avg_entry_price,
+    totalCost: p.total_cost_usd,
+    openedAt: p.opened_at.toISOString(),
+    lastModifiedAt: p.last_modified_at.toISOString(),
+  }));
+
+  const recentTrades: WhaleRecentTrade[] = tradeRows.map((t) => ({
+    ts: t.ts.toISOString(),
+    side: t.side,
+    category: t.category,
+    subcategory: t.subcategory,
+    conditionId: t.condition_id,
+    marketQuestion: t.market_question,
+    marketSlug: t.market_slug,
+    size: t.size,
+    price: t.price,
+    sizeUsd: t.size * t.price,
+    realizedPnl: t.realized_pnl,
+    exitKind: t.exit_kind,
+  }));
+
+  return {
+    addr,
+    range,
+    windowMinutes: cfg.windowMinutes,
+    stats,
+    categoryMix,
+    openPositions,
+    recentTrades,
+  };
+}

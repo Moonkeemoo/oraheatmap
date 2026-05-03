@@ -8,28 +8,37 @@
 
 import { readFile } from "node:fs/promises";
 
-let aliasMap: ReadonlyMap<string, string> = new Map();
+export type WhaleAliasInfo = {
+  alias: string;
+  xHandle: string | null;
+  verified: boolean;
+};
+
+let aliasMap: ReadonlyMap<string, WhaleAliasInfo> = new Map();
 
 /** Load Polymarket usernames keyed by lowercase address.
  *  Tolerant of legacy / partial files: any entry without an `alias` is skipped. */
-export async function loadWhaleAliases(path: string): Promise<Map<string, string>> {
+export async function loadWhaleAliases(path: string): Promise<Map<string, WhaleAliasInfo>> {
   const raw = await readFile(path, "utf8");
   const parsed: unknown = JSON.parse(raw);
-  const out = new Map<string, string>();
+  const out = new Map<string, WhaleAliasInfo>();
   if (parsed === null || typeof parsed !== "object") return out;
   for (const [addr, info] of Object.entries(parsed as Record<string, unknown>)) {
     if (info === null || typeof info !== "object") continue;
-    const alias = (info as { alias?: unknown }).alias;
-    if (typeof alias === "string" && alias.length > 0) {
-      out.set(addr.toLowerCase(), alias);
-    }
+    const rec = info as { alias?: unknown; xHandle?: unknown; verified?: unknown };
+    if (typeof rec.alias !== "string" || rec.alias.length === 0) continue;
+    out.set(addr.toLowerCase(), {
+      alias: rec.alias,
+      xHandle: typeof rec.xHandle === "string" && rec.xHandle.length > 0 ? rec.xHandle : null,
+      verified: rec.verified === true,
+    });
   }
   return out;
 }
 
 /** Replace the in-memory alias map. Called once at boot, optionally re-run
  *  after a corpus refresh — lookups remain O(1) before/during/after. */
-export function setWhaleAliases(map: ReadonlyMap<string, string>): void {
+export function setWhaleAliases(map: ReadonlyMap<string, WhaleAliasInfo>): void {
   aliasMap = map;
 }
 
@@ -37,13 +46,18 @@ export function whaleAliasMapSize(): number {
   return aliasMap.size;
 }
 
+/** Full alias record (including X handle + verified flag) when we have one. */
+export function whaleAliasInfo(addr: string): WhaleAliasInfo | null {
+  return aliasMap.get(addr.toLowerCase()) ?? null;
+}
+
 /**
  * Returns the Polymarket username if we have one, otherwise the address
  * truncated to `0xadc2…cd1c9`.
  */
 export function whaleAlias(addr: string): string {
-  const named = aliasMap.get(addr.toLowerCase());
-  if (named) return named;
+  const info = aliasMap.get(addr.toLowerCase());
+  if (info) return info.alias;
   if (addr.length <= 12) return addr;
   return `${addr.slice(0, 6)}…${addr.slice(-5)}`;
 }

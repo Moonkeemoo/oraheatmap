@@ -21,7 +21,8 @@ import { type PatternKind, queryPattern } from "./pattern-query";
 import type { SignalHub } from "./signal-hub";
 import { SUBCATEGORY_LABELS, subcategoriesOf } from "./subcategorize";
 import type { Signal } from "./types";
-import { whaleAlias, whaleColor } from "./whale-display";
+import { whaleAlias, whaleAliasInfo, whaleColor } from "./whale-display";
+import { fetchWhaleProfile } from "./whale-profile";
 
 export type ApiDeps = {
   sql: Sql;
@@ -229,6 +230,34 @@ export function createApi(deps: ApiDeps) {
            *  response groups by that category's subcategories instead of
            *  the top-level 9 buckets. Unknown values are ignored silently. */
           category: t.Optional(t.String()),
+        }),
+      },
+    )
+    .get(
+      "/api/whale",
+      async ({ query, set }) => {
+        const addr = query.addr.toLowerCase();
+        if (!/^0x[0-9a-f]{40}$/.test(addr)) {
+          set.status = 400;
+          return { error: "addr must be a lowercase 0x-prefixed 40-hex address" };
+        }
+        const range: HeatmapRange = query.range ?? "1h";
+        const profile = await fetchWhaleProfile(deps.sql, addr, range);
+        const aliasInfo = whaleAliasInfo(addr);
+        return {
+          ...profile,
+          alias: aliasInfo?.alias ?? whaleAlias(addr),
+          xHandle: aliasInfo?.xHandle ?? null,
+          verified: aliasInfo?.verified ?? false,
+          color: whaleColor(addr),
+        };
+      },
+      {
+        query: t.Object({
+          addr: t.String({ minLength: 42, maxLength: 42 }),
+          range: t.Optional(
+            t.Union([t.Literal("1h"), t.Literal("24h"), t.Literal("12d"), t.Literal("12w")]),
+          ),
         }),
       },
     )
