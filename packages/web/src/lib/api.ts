@@ -1,4 +1,11 @@
-import type { Category, HeatmapResponse, LiveRange, Mode, PatternKind } from "./types";
+import type {
+  Category,
+  HeatmapResponse,
+  LiveRange,
+  Mode,
+  PatternKind,
+  WhaleProfile,
+} from "./types";
 
 const DEFAULT_BASE = "http://localhost:3001";
 
@@ -38,4 +45,19 @@ export async function fetchHeatmap(args: {
 
 export function streamUrl(): string {
   return `${apiBase()}/api/stream`;
+}
+
+export async function fetchWhaleProfile(args: {
+  addr: string;
+  range: LiveRange;
+}): Promise<WhaleProfile> {
+  const params = new URLSearchParams({ addr: args.addr, range: args.range });
+  const res = await fetch(`${apiBase()}/api/whale?${params.toString()}`, {
+    cache: "no-store",
+    credentials: "omit",
+  });
+  if (!res.ok) {
+    throw new Error(`whale profile fetch failed: ${res.status}`);
+  }
+  return (await res.json()) as WhaleProfile;
 }

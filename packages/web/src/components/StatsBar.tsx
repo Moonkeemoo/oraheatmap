@@ -22,6 +22,8 @@ type StatItem = {
   popover?: () => ReactNode;
   /** Width override (px) for the popover panel. Default 320. */
   popoverWidth?: number;
+  /** Make the value/badge area clickable (e.g. Top Whale → open drawer). */
+  onClick?: () => void;
 };
 
 function StatCell({
@@ -71,7 +73,25 @@ function StatCell({
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 8 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}>
           {item.whale ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <div
+              role={item.onClick ? "button" : undefined}
+              tabIndex={item.onClick ? 0 : undefined}
+              onClick={item.onClick}
+              onKeyDown={(e) => { if (item.onClick && (e.key === "Enter" || e.key === " ")) item.onClick(); }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                cursor: item.onClick ? "pointer" : "default",
+                borderRadius: 4,
+              }}
+              onMouseEnter={(e) => {
+                if (item.onClick) (e.currentTarget as HTMLDivElement).style.opacity = "0.8";
+              }}
+              onMouseLeave={(e) => {
+                if (item.onClick) (e.currentTarget as HTMLDivElement).style.opacity = "1";
+              }}
+            >
               <span
                 style={{
                   width: 9,
@@ -90,7 +110,7 @@ function StatCell({
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
-                  fontFamily: TOKENS.mono,
+                  fontFamily: item.whale.alias.startsWith("0x") ? TOKENS.mono : TOKENS.font,
                 }}
               >
                 {item.whale.alias}
@@ -237,7 +257,16 @@ function PopoverHeader({ title, hint }: { title: string; hint?: string }) {
   );
 }
 
-export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; trackedCount: number }) {
+export function StatsBar({
+  data,
+  trackedCount,
+  onWhaleClick,
+}: {
+  data: HeatmapResponse;
+  trackedCount: number;
+  /** Open the per-whale profile drawer for the clicked address. */
+  onWhaleClick: (addr: string) => void;
+}) {
   const num = data.buckets.length;
 
   const trendSignals = useMemo(
@@ -484,6 +513,10 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
             return (
               <div
                 key={w.addr}
+                role="button"
+                tabIndex={0}
+                onClick={() => onWhaleClick(w.addr)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onWhaleClick(w.addr); }}
                 style={{
                   display: "grid",
                   gridTemplateColumns: "16px 10px 1fr auto auto",
@@ -492,6 +525,18 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
                   fontSize: 11,
                   marginBottom: 5,
                   lineHeight: 1.3,
+                  cursor: "pointer",
+                  borderRadius: 4,
+                  padding: "2px 4px",
+                  marginLeft: -4,
+                  marginRight: -4,
+                  transition: "background .12s",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLDivElement).style.background = TOKENS.panel2 ?? "rgba(255,255,255,0.04)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLDivElement).style.background = "transparent";
                 }}
               >
                 <span style={{ color: TOKENS.textMuted, fontFamily: TOKENS.mono, fontSize: 10, fontWeight: 700 }}>
@@ -622,10 +667,11 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
         ? {
             label: "Top Whale",
             whale: { color: t.topWhale.color, alias: t.topWhale.alias },
-            sub: "by USD entered",
+            sub: "by USD entered · click to open profile",
             tooltip: `${t.topWhale.alias.startsWith("0x") ? "address (no leaderboard alias)" : "Polymarket username"}\n${t.topWhale.addr}`,
             popover: renderTopWhalesPopover,
             popoverWidth: 380,
+            onClick: () => onWhaleClick(t.topWhale!.addr),
           }
         : { label: "Top Whale", value: "—" },
     isPattern

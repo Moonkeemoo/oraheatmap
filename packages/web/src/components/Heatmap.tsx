@@ -19,6 +19,7 @@ import { Grid } from "./Grid";
 import { Header } from "./Header";
 import { StatsBar } from "./StatsBar";
 import { Tooltip, type TooltipAnchor, type TooltipRect } from "./Tooltip";
+import { WhaleDrawer } from "./WhaleDrawer";
 
 type HoverState = {
   cell: HeatmapCell;
@@ -62,6 +63,7 @@ export function Heatmap() {
   const [hover, setHover] = useState<HoverState | null>(null);
   const [locked, setLocked] = useState<HoverState | null>(null);
   const [lockedRect, setLockedRect] = useState<TooltipRect | null>(null);
+  const [whaleProfileAddr, setWhaleProfileAddr] = useState<string | null>(null);
   const [flashByCell, setFlashByCell] = useState<FlashByCell>({});
   const [pendingSignals, setPendingSignals] = useState<SignalEvent[]>([]);
 
@@ -265,8 +267,17 @@ export function Heatmap() {
       </div>
 
       {displayData && (
-        <StatsBar data={displayData} trackedCount={displayData.trackedWhales} />
+        <StatsBar
+          data={displayData}
+          trackedCount={displayData.trackedWhales}
+          onWhaleClick={(addr) => setWhaleProfileAddr(addr)}
+        />
       )}
+      <WhaleDrawer
+        addr={whaleProfileAddr}
+        range={range}
+        onClose={() => setWhaleProfileAddr(null)}
+      />
     </div>
   );
 }

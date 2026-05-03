@@ -107,6 +107,50 @@ export type HeatmapResponse = {
   dataSpan: { earliestTs: string | null; daysOfData: number };
 };
 
+// ─── /api/whale — whale profile drawer ──────────────────────────────────────
+
+export type WhaleProfile = {
+  addr: string;
+  alias: string;
+  xHandle: string | null;
+  verified: boolean;
+  color: string;
+  range: LiveRange;
+  windowMinutes: number;
+  stats: {
+    signals: number;
+    volume: number;
+    pnl: number;
+    winRate: number | null;
+  };
+  categoryMix: ReadonlyArray<{ category: string; volume: number; signals: number }>;
+  openPositions: ReadonlyArray<{
+    assetId: string;
+    conditionId: string | null;
+    marketQuestion: string | null;
+    marketSlug: string | null;
+    netShares: number;
+    avgEntry: number;
+    totalCost: number;
+    openedAt: string;
+    lastModifiedAt: string;
+  }>;
+  recentTrades: ReadonlyArray<{
+    ts: string;
+    side: "BUY" | "SELL" | "SETTLEMENT";
+    category: string;
+    subcategory: string | null;
+    conditionId: string | null;
+    marketQuestion: string | null;
+    marketSlug: string | null;
+    size: number;
+    price: number;
+    sizeUsd: number;
+    realizedPnl: number | null;
+    exitKind: "SELL" | "RESOLUTION" | null;
+  }>;
+};
+
 // SSE wire shape mirrors api.ts:signalToWire().
 export type SignalEvent = {
   ts: string;
