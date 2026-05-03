@@ -215,19 +215,32 @@ export function Tooltip({
     const W = r.width;
     const H = r.height;
 
-    // Build candidate rects for each placement, filter to those that both
-    // fit the parent box AND don't overlap `avoidRect` (the locked tooltip).
-    // Order matters — first match wins → preference is above > below > right
-    // > left. Falls back to the centered "doesn't fit anywhere" position
-    // (overlap with avoidRect tolerated to never end up rendering off-screen).
+    // Candidate placements. Beyond the four cardinal positions we also try
+    // four "corner" variants (above-left/-right, below-left/-right) where the
+    // tooltip is aligned with one edge of the cell instead of centered. This
+    // gives the dodge logic more options when the locked tooltip occupies a
+    // big chunk of the viewport and centered placements all collide.
     type Cand = { left: number; top: number };
     const centerLeft = clamp(anchor.x + anchor.w / 2 - W / 2, 8, pw - W - 8);
     const centerTop = clamp(anchor.y + anchor.h / 2 - H / 2, 8, ph - H - 8);
+    const aboveTop = anchor.y - H - margin;
+    const belowTop = anchor.y + anchor.h + margin;
+    const rightLeft = anchor.x + anchor.w + margin;
+    const leftLeft = anchor.x - W - margin;
+    // Edge-aligned horizontal positions for corner placements.
+    const flushLeft = clamp(anchor.x, 8, pw - W - 8);
+    const flushRight = clamp(anchor.x + anchor.w - W, 8, pw - W - 8);
 
-    const above: Cand = { left: centerLeft, top: anchor.y - H - margin };
-    const below: Cand = { left: centerLeft, top: anchor.y + anchor.h + margin };
-    const right: Cand = { left: anchor.x + anchor.w + margin, top: centerTop };
-    const left:  Cand = { left: anchor.x - W - margin, top: centerTop };
+    const cands: ReadonlyArray<{ name: string; c: Cand }> = [
+      { name: "above",       c: { left: centerLeft, top: aboveTop } },
+      { name: "below",       c: { left: centerLeft, top: belowTop } },
+      { name: "right",       c: { left: rightLeft,  top: centerTop } },
+      { name: "left",        c: { left: leftLeft,   top: centerTop } },
+      { name: "above-right", c: { left: flushLeft,  top: aboveTop } },
+      { name: "above-left",  c: { left: flushRight, top: aboveTop } },
+      { name: "below-right", c: { left: flushLeft,  top: belowTop } },
+      { name: "below-left",  c: { left: flushRight, top: belowTop } },
+    ];
 
     const fits = (c: Cand): boolean =>
       c.left >= 8 &&
@@ -235,17 +248,43 @@ export function Tooltip({
       c.left + W <= pw - 8 &&
       c.top + H <= ph - 8;
 
+    // Inflate avoidRect by a "breathing room" margin so the hover panel
+    // doesn't sit edge-to-edge with the locked panel — at zero gap the two
+    // read as one solid block in the user's eye, even if technically distinct.
+    const AVOID_PAD = 24;
+    const inflatedAvoid: TooltipRect | null = avoidRect
+      ? {
+          left: avoidRect.left - AVOID_PAD,
+          top: avoidRect.top - AVOID_PAD,
+          right: avoidRect.right + AVOID_PAD,
+          bottom: avoidRect.bottom + AVOID_PAD,
+        }
+      : null;
     const cleared = (c: Cand): boolean => {
-      if (!avoidRect) return true;
-      const r: TooltipRect = { left: c.left, top: c.top, right: c.left + W, bottom: c.top + H };
-      return !rectsOverlap(r, avoidRect);
+      if (!inflatedAvoid) return true;
+      const cr: TooltipRect = { left: c.left, top: c.top, right: c.left + W, bottom: c.top + H };
+      return !rectsOverlap(cr, inflatedAvoid);
     };
 
-    const ordered: Cand[] = [above, below, right, left];
+    // Score: distance from candidate center to avoidRect center. Higher is
+    // better — picks the placement that's furthest away from the locked
+    // tooltip among those that fit + are cleared.
+    function score(c: Cand): number {
+      if (!avoidRect) return 0;
+      const cx = c.left + W / 2;
+      const cy = c.top + H / 2;
+      const ax = (avoidRect.left + avoidRect.right) / 2;
+      const ay = (avoidRect.top + avoidRect.bottom) / 2;
+      const dx = cx - ax;
+      const dy = cy - ay;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    const fittingCleared = cands.filter(({ c }) => fits(c) && cleared(c));
     const picked =
-      ordered.find((c) => fits(c) && cleared(c)) ??
-      ordered.find((c) => fits(c)) ??
-      { left: centerLeft, top: centerTop };
+      fittingCleared.length > 0
+        ? fittingCleared.sort((a, b) => score(b.c) - score(a.c))[0]!.c
+        : cands.find(({ c }) => fits(c))?.c ?? { left: centerLeft, top: centerTop };
 
     setPos(picked);
     onPlaced?.({
