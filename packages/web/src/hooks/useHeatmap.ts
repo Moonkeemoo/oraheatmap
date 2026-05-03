@@ -66,7 +66,7 @@ export function useHeatmap(args: {
       clearInterval(id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [args.mode, args.range, args.kind, args.lookbackDays]);
+  }, [args.mode, args.range, args.kind, args.lookbackDays, args.drillCategory]);
 
   return { data, loading, error, refetch: fetchOnce };
 }
