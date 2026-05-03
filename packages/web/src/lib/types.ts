@@ -93,6 +93,10 @@ export type HeatmapResponse = {
   /** Row-key → display label map. At L2 it's slug → display name; at L3 it's
    *  conditionId → marketQuestion. NULL at L1. */
   subcategoryLabels: Record<string, string> | null;
+  /** L3 only: conditionId → Polymarket event slug for building the public URL
+   *  on the row label. NULL at L1/L2; individual entries may also be null
+   *  when the slug wasn't captured at ingest time. */
+  marketSlugs: Record<string, string | null> | null;
   /** L3 only: subset of row keys whose markets have already resolved.
    *  Frontend fades these rows. Empty at L1/L2. */
   resolvedRows: ReadonlyArray<string>;

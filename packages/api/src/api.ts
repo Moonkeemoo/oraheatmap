@@ -7,7 +7,7 @@ import {
   assembleHeatmap,
   buildBuckets,
   fetchDataSpan,
-  fetchMarketLabels,
+  fetchMarketMeta,
   fetchResolvedMarkets,
   fetchTopWhale,
   fetchUniqueWhalesInWindow,
@@ -211,6 +211,7 @@ export function createApi(deps: ApiDeps) {
             drillSubcategoryLabel: null,
             categories: pattern.categories,
             subcategoryLabels: patternSubcategoryLabels,
+            marketSlugs: null,
             resolvedRows: [],
             topWhales: null,
             buckets: pattern.buckets,
@@ -259,6 +260,7 @@ export function createApi(deps: ApiDeps) {
         //   L3 → dynamically derived from agg result (top-N condition_ids by signals)
         let rowKeys: ReadonlyArray<string> | undefined;
         let rowLabels: Record<string, string> | null = null;
+        let marketSlugs: Record<string, string | null> | null = null;
         let resolvedRows: ReadonlyArray<string> = [];
         if (isDrillL3) {
           const totals = new Map<string, number>();
@@ -270,8 +272,8 @@ export function createApi(deps: ApiDeps) {
             .slice(0, MAX_MARKETS_IN_DRILL)
             .map(([k]) => k);
           rowKeys = sortedConditionIds;
-          const [labels, resolvedSet] = await Promise.all([
-            fetchMarketLabels(deps.sql, sortedConditionIds),
+          const [meta, resolvedSet] = await Promise.all([
+            fetchMarketMeta(deps.sql, sortedConditionIds),
             fetchResolvedMarkets(deps.sql, sortedConditionIds),
           ]);
           // Trim each label so it fits a 2-line clamp without the layout
@@ -280,7 +282,13 @@ export function createApi(deps: ApiDeps) {
             ? SUBCATEGORY_LABELS[drillSubcategory] ?? drillSubcategory
             : null;
           rowLabels = Object.fromEntries(
-            Object.entries(labels).map(([k, v]) => [k, shortenMarketLabel(v, subLabel)]),
+            sortedConditionIds.map((cid) => {
+              const q = meta[cid]?.question ?? "(unknown)";
+              return [cid, shortenMarketLabel(q, subLabel)];
+            }),
+          );
+          marketSlugs = Object.fromEntries(
+            sortedConditionIds.map((cid) => [cid, meta[cid]?.slug ?? null]),
           );
           resolvedRows = sortedConditionIds.filter((cid) => resolvedSet.has(cid));
         } else if (isDrill) {
@@ -327,6 +335,9 @@ export function createApi(deps: ApiDeps) {
           // Row-label map: at L2 it's slug→display, at L3 it's conditionId→marketQuestion.
           // Frontend reads it generically as "give me a label for this row key".
           subcategoryLabels: rowLabels,
+          // L3 only: conditionId → polymarket event slug for building the
+          // public URL on the row label. NULL at L1/L2.
+          marketSlugs,
           resolvedRows,
           topWhales,
           totals: {

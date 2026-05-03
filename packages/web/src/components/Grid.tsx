@@ -9,6 +9,14 @@ import { Cell } from "./Cell";
 import type { FlashByCell } from "./Heatmap";
 import type { TooltipAnchor } from "./Tooltip";
 
+const POLY_REFERRAL =
+  (typeof process !== "undefined" && process.env["NEXT_PUBLIC_POLYMARKET_REFERRAL"]) || "Moonkeee";
+
+function marketUrl(slug: string | null | undefined): string | null {
+  if (!slug) return null;
+  return `https://polymarket.com/event/${encodeURIComponent(slug)}?r=${encodeURIComponent(POLY_REFERRAL)}`;
+}
+
 /** Lighten a hex color by mixing it with white. amount=0 → original, 1 → white. */
 function tint(hex: string, amount: number): string {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex);
@@ -241,65 +249,79 @@ export function Grid({
                 paddingRight: 10,
               }}
             >
-              <button
-                type="button"
-                onClick={clickableRow ? () => onRowClick!(cat) : undefined}
-                disabled={!clickableRow}
-                title={
-                  isL3
-                    ? `${rawLabel}${isResolved ? " · resolved" : ""}`
-                    : clickableRow
-                      ? `Drill into ${isDrillRow ? "markets" : "subcategories"}`
-                      : undefined
-                }
-                style={{
+              {(() => {
+                // L3 rows: anchor → polymarket.com/event/{slug} (no further drill).
+                // L1/L2 rows: button → drill one level deeper.
+                const l3Url = isL3 ? marketUrl(data.marketSlugs?.[cat] ?? null) : null;
+                const isInteractive = clickableRow || l3Url !== null;
+                const titleText = isL3
+                  ? `${rawLabel}${isResolved ? " · resolved" : ""}${l3Url ? " — open on Polymarket" : ""}`
+                  : clickableRow
+                    ? `Drill into ${isDrillRow ? "markets" : "subcategories"}`
+                    : undefined;
+                const sharedStyle: React.CSSProperties = {
                   background: rowColor,
                   color: "#fff",
                   border: "none",
                   fontFamily: "inherit",
-                  // L3 uses smaller text + 2-line wrap; L1/L2 stay loud single-line.
-                  fontSize: isL3 ? 10 : 10,
+                  fontSize: 10,
                   fontWeight: isL3 ? 600 : 700,
                   letterSpacing: isL3 ? 0.1 : 0.6,
                   padding: isL3 ? "4px 8px" : "5px 10px",
                   borderRadius: 3,
-                  // L3 market labels look better mixed-case (long sentences)
-                  // than ALL CAPS — only category/subcategory rows shout.
                   textTransform: isL3 ? "none" : "uppercase",
                   whiteSpace: isL3 ? "normal" : "nowrap",
-                  // Clamp to 2 lines, ellipsis on overflow. line-clamp alone
-                  // isn't enough — without an explicit max-height the button
-                  // still grows to its natural 3-line height in some flex
-                  // contexts, leaving the third line peeking below the badge
-                  // background. Pinning max-height = 2 × line-height forces
-                  // the clip to actually happen.
-                  display: isL3 ? "-webkit-box" as const : undefined,
+                  display: isL3 ? ("-webkit-box" as const) : undefined,
                   WebkitLineClamp: isL3 ? 2 : undefined,
-                  WebkitBoxOrient: isL3 ? "vertical" as const : undefined,
+                  WebkitBoxOrient: isL3 ? ("vertical" as const) : undefined,
                   overflow: isL3 ? "hidden" : "visible",
                   lineHeight: isL3 ? "1.2" : undefined,
                   maxHeight: isL3 ? "2.4em" : undefined,
-                  wordBreak: isL3 ? "break-word" as const : undefined,
-                  textAlign: isL3 ? "left" as const : undefined,
+                  wordBreak: isL3 ? ("break-word" as const) : undefined,
+                  textAlign: isL3 ? ("left" as const) : undefined,
                   width: isL3 ? "100%" : undefined,
-                  cursor: clickableRow ? "pointer" : "default",
+                  cursor: isInteractive ? "pointer" : "default",
                   transition: "filter .12s, transform .12s",
                   opacity: isResolved ? 0.55 : 1,
                   textDecoration: isResolved ? "line-through" : "none",
-                }}
-                onMouseEnter={(e) => {
-                  if (clickableRow) {
-                    (e.currentTarget as HTMLButtonElement).style.filter = "brightness(1.15)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (clickableRow) {
-                    (e.currentTarget as HTMLButtonElement).style.filter = "none";
-                  }
-                }}
-              >
-                {rowLabel}
-              </button>
+                  textDecorationLine: isResolved ? "line-through" : undefined,
+                  boxSizing: "border-box",
+                };
+                const onEnter = (e: React.MouseEvent<HTMLElement>): void => {
+                  if (isInteractive) e.currentTarget.style.filter = "brightness(1.15)";
+                };
+                const onLeave = (e: React.MouseEvent<HTMLElement>): void => {
+                  if (isInteractive) e.currentTarget.style.filter = "none";
+                };
+                if (l3Url) {
+                  return (
+                    <a
+                      href={l3Url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={titleText}
+                      style={sharedStyle}
+                      onMouseEnter={onEnter}
+                      onMouseLeave={onLeave}
+                    >
+                      {rowLabel}
+                    </a>
+                  );
+                }
+                return (
+                  <button
+                    type="button"
+                    onClick={clickableRow ? () => onRowClick!(cat) : undefined}
+                    disabled={!clickableRow}
+                    title={titleText}
+                    style={sharedStyle}
+                    onMouseEnter={onEnter}
+                    onMouseLeave={onLeave}
+                  >
+                    {rowLabel}
+                  </button>
+                );
+              })()}
             </div>
             {(cellsByCat[cat] ?? []).map((cell, slot) => {
               const isNowCol = slot === nowSlotIndex;

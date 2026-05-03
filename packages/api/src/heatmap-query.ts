@@ -520,22 +520,27 @@ export async function queryTopMarketsPerCell(
   return rows;
 }
 
-/** Map condition_id → freshest known market_question for a set of markets.
- *  Used at L3 to label rows of the heatmap (one row per market). */
-export async function fetchMarketLabels(
+/** Per-market metadata at L3: freshest known market_question + market_slug.
+ *  Frontend uses the question to label the row, the slug to build the
+ *  polymarket.com/event/{slug} link with referral. */
+export type MarketMeta = { question: string | null; slug: string | null };
+
+export async function fetchMarketMeta(
   sql: Sql,
   conditionIds: ReadonlyArray<string>,
-): Promise<Record<string, string>> {
+): Promise<Record<string, MarketMeta>> {
   if (conditionIds.length === 0) return {};
-  const rows = await sql<{ condition_id: string; market_question: string | null }[]>`
-    SELECT DISTINCT ON (condition_id) condition_id, market_question
+  const rows = await sql<
+    { condition_id: string; market_question: string | null; market_slug: string | null }[]
+  >`
+    SELECT DISTINCT ON (condition_id) condition_id, market_question, market_slug
     FROM signals
     WHERE condition_id IN ${sql(conditionIds)}
     ORDER BY condition_id, ts DESC
   `;
-  const out: Record<string, string> = {};
+  const out: Record<string, MarketMeta> = {};
   for (const r of rows) {
-    if (r.market_question) out[r.condition_id] = r.market_question;
+    out[r.condition_id] = { question: r.market_question, slug: r.market_slug };
   }
   return out;
 }
