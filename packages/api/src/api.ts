@@ -7,12 +7,16 @@ import {
   buildBuckets,
   fetchTopWhale,
   fetchUniqueWhalesInWindow,
-  queryHeatmapRows,
+  type HeatmapRange,
+  queryHeatmapAggRows,
+  queryTopTradesPerCell,
+  RANGE_CONFIG,
 } from "./heatmap-query";
 import type { Ingestor } from "./ingestor";
 import { log } from "./log";
 import type { SignalHub } from "./signal-hub";
 import type { Signal } from "./types";
+import { whaleAlias, whaleColor } from "./whale-display";
 
 export type ApiDeps = {
   sql: Sql;
@@ -22,14 +26,15 @@ export type ApiDeps = {
   gammaCacheSize: () => number;
 };
 
-const HEATMAP_BUCKET_MIN = 5;
-const HEATMAP_WINDOW_MIN = 60;
 const SSE_HEARTBEAT_MS = 25_000;
+const TOP_TRADES_PER_CELL = 3;
 
 function signalToWire(s: Signal): Record<string, unknown> {
   return {
     ts: s.ts.toISOString(),
     whaleAddr: s.whaleAddr,
+    whaleAlias: whaleAlias(s.whaleAddr),
+    whaleColor: whaleColor(s.whaleAddr),
     assetId: s.assetId,
     conditionId: s.conditionId,
     marketQuestion: s.marketQuestion,
@@ -37,6 +42,9 @@ function signalToWire(s: Signal): Record<string, unknown> {
     side: s.side,
     price: s.price,
     size: s.size,
+    sizeUsd: s.size * s.price,
+    realizedPnl: s.realizedPnl,
+    exitKind: s.exitKind,
     txHash: s.txHash,
   };
 }
@@ -77,23 +85,47 @@ export function createApi(deps: ApiDeps) {
     .get(
       "/api/heatmap",
       async ({ query }) => {
+        const range: HeatmapRange = query.range ?? "1h";
+        const cfg = RANGE_CONFIG[range];
         const now = new Date();
-        const buckets = buildBuckets(now, HEATMAP_BUCKET_MIN, HEATMAP_WINDOW_MIN);
-        const [rows, topWhale, uniqueWhales] = await Promise.all([
-          queryHeatmapRows(deps.sql, HEATMAP_BUCKET_MIN, HEATMAP_WINDOW_MIN),
-          fetchTopWhale(deps.sql, HEATMAP_WINDOW_MIN),
-          fetchUniqueWhalesInWindow(deps.sql, HEATMAP_WINDOW_MIN),
+        const buckets = buildBuckets(now, cfg.bucketMinutes, cfg.slots);
+        const [aggRows, tradeRows, topWhaleAddr, uniqueWhales] = await Promise.all([
+          queryHeatmapAggRows(deps.sql, range),
+          queryTopTradesPerCell(deps.sql, range, TOP_TRADES_PER_CELL),
+          fetchTopWhale(deps.sql, range),
+          fetchUniqueWhalesInWindow(deps.sql, range),
         ]);
-        const grid = assembleHeatmap(rows, buckets, HEATMAP_BUCKET_MIN, HEATMAP_WINDOW_MIN, now);
+        const grid = assembleHeatmap(aggRows, tradeRows, buckets, range, now);
+        const topWhale = topWhaleAddr
+          ? { addr: topWhaleAddr, alias: whaleAlias(topWhaleAddr), color: whaleColor(topWhaleAddr) }
+          : null;
         return {
           ...grid,
-          totals: { ...grid.totals, topWhale, uniqueWhales },
-          metric: query.metric ?? "count",
+          totals: {
+            ...grid.totals,
+            uniqueWhales,
+            // For MVP, "active" = "seen any trade in window" — same as uniqueWhales.
+            // Reserve a separate field so the UI can show both later if we
+            // tighten the active-definition (e.g. ≥ N trades).
+            activeWhales: uniqueWhales,
+            topWhale,
+          },
+          metric: query.metric ?? "signals",
         };
       },
       {
         query: t.Object({
-          metric: t.Optional(t.Union([t.Literal("count"), t.Literal("volume")])),
+          range: t.Optional(
+            t.Union([t.Literal("1h"), t.Literal("24h"), t.Literal("7d"), t.Literal("30d")]),
+          ),
+          metric: t.Optional(
+            t.Union([
+              t.Literal("signals"),
+              t.Literal("volume"),
+              t.Literal("pnl"),
+              t.Literal("winrate"),
+            ]),
+          ),
         }),
       },
     )
