@@ -32,9 +32,18 @@ export type Ingestor = {
   stats(): IngestorStats;
 };
 
+/** Canonical lowercase 0x-prefixed 40-hex eth address. Some upstream RTDS
+ *  payloads stuff composite IDs (e.g. "0xADDR-TIMESTAMP" or "0xADDR-MARKETID")
+ *  into the user/proxyWallet field — those would otherwise pollute signals
+ *  and skew per-cell unique-whale counts. */
+const ETH_ADDR_RE = /^0x[0-9a-f]{40}$/;
+
 function pickWallet(p: RtdsTradePayload): string | null {
   const w = p.proxyWallet ?? p.proxy_wallet ?? p.user ?? p.maker ?? p.taker ?? p.address;
-  return typeof w === "string" && w.length > 0 ? w.toLowerCase() : null;
+  if (typeof w !== "string" || w.length === 0) return null;
+  const lower = w.toLowerCase();
+  if (!ETH_ADDR_RE.test(lower)) return null;
+  return lower;
 }
 
 function pickAssetId(p: RtdsTradePayload): string | null {
