@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package.json bun.lock* ./
 COPY packages/api/package.json ./packages/api/
 
-RUN bun install --production --frozen-lockfile
+RUN bun install --production 
 
 # Source
 COPY packages/api ./packages/api

@@ -6,7 +6,7 @@ WORKDIR /app
 # cache the heavy `bun install` step across builds that only change source.
 COPY package.json bun.lock* tsconfig.base.json ./
 COPY packages/web/package.json ./packages/web/
-RUN bun install --frozen-lockfile
+RUN bun install 
 
 # Source
 COPY packages/web ./packages/web
