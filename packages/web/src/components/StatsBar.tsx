@@ -400,9 +400,6 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
               />
               <span style={{ color: TOKENS.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {rowLabel(r.key)}
-                <span style={{ color: TOKENS.textMuted, marginLeft: 6, fontSize: 10 }}>
-                  · {r.signals.toLocaleString()} sig
-                </span>
               </span>
               <span
                 style={{
