@@ -102,6 +102,13 @@ SELECT add_continuous_aggregate_policy('signals_hourly',
   if_not_exists   => TRUE
 );
 
+-- Real-time aggregation: union materialized buckets with raw signals for the
+-- still-open current bucket. Without this, hourly buckets only appear in the
+-- view AFTER they end + end_offset → the LIVE 24h heatmap silently dropped
+-- the current hour (~5% of the window). Idempotent SET, fine to re-apply.
+ALTER MATERIALIZED VIEW signals_hourly SET (timescaledb.materialized_only = false);
+ALTER MATERIALIZED VIEW signals_5min   SET (timescaledb.materialized_only = false);
+
 -- ══════════════════════════════════════════
 -- Compression policy (compress chunks older than 7 days)
 -- ══════════════════════════════════════════
