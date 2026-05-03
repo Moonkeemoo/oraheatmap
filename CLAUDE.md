@@ -148,12 +148,10 @@ Don't refactor `heatmap-query.ts` to be mode-aware in MVP — add `pattern-query
 | **v1.1** | `whale_aliases.json` in UI · **PATTERN mode** (HOUR 12×2h + DOW 7d) · weekly cron for `refresh-corpus.ts` | ⚙️ aliases + PATTERN done; cron pending |
 | **v1.2** | Drill-down: category → subcategory · breadcrumb · top markets in tooltip · market name → Polymarket link with referral | ✅ shipped |
 | **v1.2.1** | Tooltip lock-on-click for side-by-side compare · rich KPI hover popovers with category/subcategory breakdowns · real-time TimescaleDB aggregation | ✅ shipped |
-| **v1.3 (next)** | **PATTERN drill** (currently top-level only) · **tooltip-overlap fix** (hover dodges locked) · ingest-side filter for composite "0xADDR-TS" wallets | ⏳ in queue |
-| **v1.4** | **Whale profiles** (click whale → history panel: positions, recent trades, per-cat PnL) · **TG alerts** for large signals ($500+ or N% of whale's daily) | not started |
-| **v2.0** | **Mobile responsive** (Heatmap UI cramps below 768px today) · **Telegram WebApp** wrapper (full UI inside Telegram) | not started |
-| **v2.1** | **Auth + user profiles** (login, saved drill state, alert preferences) | not started |
-| **v2.2** | **Monetization** (gate categories / drill / alerts behind paid tiers — paid via crypto + Telegram Stars) | not started |
-| **v3+** | Trade execution via CLOB v2 (out of MVP per CLAUDE.md — belongs to oralab) · mark-to-market PnL on open positions | not started |
+| **v1.3** | PATTERN drill · tooltip-overlap fix · ingest-side filter for composite "0xADDR-TS" wallets | ✅ shipped |
+| **v1.4 (next)** | **Whale profiles** (click whale → side panel: positions, recent trades, per-cat PnL, alias + Polymarket link) | ⏳ next |
+| **v2.0 — Telegram bundle** | **Mobile-responsive UI** (Heatmap cramps below 768px today) · **Telegram WebApp** wrapper (full UI inside TG, identity from initData) · **TG alerts** for large signals · **Monetization**: feature gates paid via Telegram Stars + TON. Designed and shipped together — alerts need TG push, monetization fits TG-native flows, mobile work is on critical path for in-TG UX. | not started |
+| **v2.1+** | Web auth (only if there's a real audience outside TG) · trade execution via CLOB v2 (belongs to oralab) · mark-to-market PnL on open positions | not started |
 
 ## MVP scope (locked) — historical
 
