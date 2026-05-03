@@ -8,10 +8,30 @@ import type { Signal } from "./types";
 export type Db = PostgresJsDatabase;
 
 export function createDb(databaseUrl: string): { db: Db; sql: Sql } {
-  const sql = postgres(databaseUrl, {
+  // postgres-js doesn't parse `?host=/path` from a connection URL — if we
+  // leave it there the lib falls back to TCP localhost and we get a password
+  // auth failure on a server set up for unix-socket peer auth (Ubuntu's
+  // default pg_hba.conf). Detect a socket path in the query, strip it from
+  // the URL, and pass it via the options.host option which DOES work.
+  let connectionString = databaseUrl;
+  let socketHost: string | undefined;
+  try {
+    const u = new URL(databaseUrl);
+    const hostQuery = u.searchParams.get("host");
+    if (hostQuery && hostQuery.startsWith("/")) {
+      socketHost = hostQuery;
+      u.searchParams.delete("host");
+      connectionString = u.toString();
+    }
+  } catch {
+    // malformed URL — leave it; postgres() will throw on its own with a clear msg
+  }
+
+  const sql = postgres(connectionString, {
     max: 5,
     idle_timeout: 30,
     onnotice: () => {},
+    ...(socketHost ? { host: socketHost } : {}),
   });
   return { db: drizzle(sql), sql };
 }
