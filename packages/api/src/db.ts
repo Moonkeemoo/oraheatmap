@@ -28,6 +28,8 @@ function toInsertRow(s: Signal): SignalInsert {
     price: s.price,
     size: s.size,
     txHash: s.txHash,
+    realizedPnl: s.realizedPnl,
+    exitKind: s.exitKind,
   };
 }
 

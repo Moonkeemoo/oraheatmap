@@ -2,12 +2,14 @@ import { ConnectionStatus, type Message, RealTimeDataClient } from "@polymarket/
 
 import type { GammaCache } from "./gamma-cache";
 import { log } from "./log";
+import type { PositionTracker } from "./position-tracker";
 import type { IngestorStatus, RtdsTradePayload, Signal } from "./types";
 
 export type IngestorDeps = {
   url: string;
   whales: ReadonlySet<string>;
   gamma: GammaCache;
+  positions: PositionTracker;
   onSignal: (s: Signal) => void;
   pingIntervalMs: number;
   /** Warn (not reconnect) if no `activity/trades` message arrives in this window. */
@@ -152,8 +154,21 @@ export function createIngestor(deps: IngestorDeps): Ingestor {
     payload: RtdsTradePayload,
   ): Promise<void> {
     const market = await deps.gamma.enrich(assetId);
+    const ts = pickTimestamp(payload);
+
+    // Position-state mutation BEFORE emit so the row carries realized PnL.
+    // This is synchronous + O(1) — never blocks the firehose.
+    const { realizedPnl, exitKind } = deps.positions.applyTrade({
+      whaleAddr: wallet,
+      assetId,
+      side,
+      price,
+      size,
+      ts,
+    });
+
     const signal: Signal = {
-      ts: pickTimestamp(payload),
+      ts,
       whaleAddr: wallet,
       assetId,
       conditionId: pickConditionId(payload),
@@ -163,6 +178,8 @@ export function createIngestor(deps: IngestorDeps): Ingestor {
       price,
       size,
       txHash: pickTxHash(payload),
+      realizedPnl,
+      exitKind,
     };
     stats.signalsEmitted += 1;
     log.info("whale signal", {
@@ -171,6 +188,7 @@ export function createIngestor(deps: IngestorDeps): Ingestor {
       side: signal.side,
       size: signal.size,
       price: signal.price,
+      pnl: signal.realizedPnl,
       market: signal.marketQuestion?.slice(0, 80),
     });
     deps.onSignal(signal);

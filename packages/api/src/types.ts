@@ -67,10 +67,15 @@ export type Signal = {
   conditionId: string | null;
   marketQuestion: string | null;
   category: string;
-  side: "BUY" | "SELL";
+  /** BUY/SELL come from RTDS; SETTLEMENT is synthesised by the resolution watcher. */
+  side: "BUY" | "SELL" | "SETTLEMENT";
   price: number;
   size: number;
   txHash: string | null;
+  /** USD PnL realised on this row. NULL for entries (BUY) and unmatched exits. */
+  realizedPnl: number | null;
+  /** NULL for entries; "SELL" for sell-back exits; "RESOLUTION" for settlements. */
+  exitKind: "SELL" | "RESOLUTION" | null;
 };
 
 /** Discriminated union for ingestor lifecycle (used by /api/health later). */

@@ -11,16 +11,23 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 CREATE TABLE IF NOT EXISTS signals (
   id              BIGSERIAL,
   ts              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  whale_addr      TEXT NOT NULL,            -- lowercase, matched against watchlist
+  whale_addr      TEXT NOT NULL,             -- lowercase, matched against watchlist
   asset_id        TEXT NOT NULL,
   condition_id    TEXT,
   market_question TEXT,
   category        TEXT NOT NULL DEFAULT 'Other',
-  side            TEXT NOT NULL,            -- BUY | SELL
-  price           REAL NOT NULL,             -- 0..1 outcome price at trade time
+  side            TEXT NOT NULL,             -- BUY | SELL | SETTLEMENT
+  price           REAL NOT NULL,             -- 0..1 outcome price at trade time (1.0/0.0 on SETTLEMENT)
   size            REAL NOT NULL,             -- shares (NOT USD); USD = size * price
-  tx_hash         TEXT
+  tx_hash         TEXT,
+  realized_pnl    REAL,                      -- NULL for entries (BUY) and unmatched exits;
+                                             -- USD for SELL/SETTLEMENT where prior position is known
+  exit_kind       TEXT                       -- NULL for entry; 'SELL' for sell-back; 'RESOLUTION' for settlement
 );
+
+-- Idempotent backfill of new columns for already-existing tables (PG ≥ 9.6)
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS realized_pnl REAL;
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS exit_kind    TEXT;
 
 -- Convert to hypertable (partitioned by ts, chunk interval 1 day)
 SELECT create_hypertable('signals', 'ts',
@@ -114,3 +121,42 @@ SELECT add_retention_policy('signals', INTERVAL '90 days', if_not_exists => TRUE
 
 -- Whale watchlist lives in code (data/whale_corpus.json → Set<string>).
 -- No DB table — addresses are static, no joins/ranking needed at query time.
+
+-- ══════════════════════════════════════════
+-- Whale positions (state for realized PnL calculation)
+-- ══════════════════════════════════════════
+--
+-- Source-of-truth at runtime is an in-memory Map in position-tracker.ts.
+-- This table is the persistent mirror, written-behind every ~2s, and
+-- read on boot to hydrate the in-memory state. Lookups during ingest
+-- never touch the DB.
+--
+-- A row exists only while net_shares > 0. When a position is fully
+-- closed (SELL drains shares to 0, or RESOLUTION settles it), the row
+-- is DELETEd by the tracker.
+
+CREATE TABLE IF NOT EXISTS whale_positions (
+  whale_addr        TEXT NOT NULL,
+  asset_id          TEXT NOT NULL,
+  net_shares        REAL NOT NULL,
+  avg_entry_price   REAL NOT NULL,
+  total_cost_usd    REAL NOT NULL,
+  opened_at         TIMESTAMPTZ NOT NULL,
+  last_modified_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (whale_addr, asset_id)
+);
+
+-- Lookup helpers for the resolution watcher (asset_id → all open positions)
+CREATE INDEX IF NOT EXISTS idx_whale_positions_asset
+  ON whale_positions (asset_id);
+
+-- ══════════════════════════════════════════
+-- Resolution dedupe (so the watcher doesn't process the same market twice)
+-- ══════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS processed_resolutions (
+  condition_id   TEXT PRIMARY KEY,
+  resolved_at    TIMESTAMPTZ NOT NULL,        -- as reported by Gamma (market.endDate or updatedAt)
+  winning_asset  TEXT,                        -- the clob_token_id that paid out at $1
+  processed_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

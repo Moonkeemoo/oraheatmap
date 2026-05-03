@@ -4,6 +4,7 @@ import { loadEnv } from "./env";
 import { createGammaCache } from "./gamma-cache";
 import { createIngestor } from "./ingestor";
 import { log } from "./log";
+import { createPositionTracker } from "./position-tracker";
 import { createSignalHub } from "./signal-hub";
 import { loadWhaleCorpus } from "./whale-corpus";
 
@@ -24,6 +25,9 @@ async function main(): Promise<void> {
   const { db, sql } = createDb(env.DATABASE_URL);
   const buffer = createSignalBuffer(db, env.SIGNAL_BATCH_INTERVAL_MS);
 
+  const positions = createPositionTracker({ db });
+  await positions.hydrate();
+
   const gamma = createGammaCache({
     baseUrl: env.GAMMA_API_URL,
     ttlMs: env.GAMMA_CACHE_TTL_MS,
@@ -37,6 +41,7 @@ async function main(): Promise<void> {
     url: env.RTDS_WS_URL,
     whales,
     gamma,
+    positions,
     onSignal: (s) => hub.broadcast(s),
     pingIntervalMs: env.WS_PING_INTERVAL_MS,
     dataSilenceThresholdMs: env.WS_DATA_SILENCE_THRESHOLD_MS,
@@ -57,6 +62,7 @@ async function main(): Promise<void> {
       bufferSize: buffer.size(),
       gammaCacheSize: gamma.size(),
       sseSubscribers: hub.size(),
+      openPositions: positions.size(),
     });
   }, 60_000);
   statsTimer.unref?.();
@@ -69,10 +75,11 @@ async function main(): Promise<void> {
     log.info("shutdown", { signal });
     clearInterval(statsTimer);
     // Order: stop accepting new HTTP first, then stop ingestor (no more new
-    // signals), then drain the DB buffer, then close pg pool.
+    // signals), then drain the DB buffer + position state, then close pg pool.
     server.stop?.();
     await ingestor.stop();
     await buffer.stop();
+    await positions.stop();
     await sql.end({ timeout: 5 });
     process.exit(0);
   };
