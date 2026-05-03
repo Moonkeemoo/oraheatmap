@@ -16,9 +16,30 @@ const TRACKED_COUNT = 1504;
 type HoverState = { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string };
 
 /** Per-category flash counter. Bumped each time an SSE signal arrives for that
- *  category; the NOW cell of that category re-keys its flash overlay and
- *  re-runs the flashRing animation. Cells of other categories don't flicker. */
+ *  category AND the currently visible metric is affected by it; the NOW cell
+ *  of that category re-keys its flash overlay and re-runs the flashRing
+ *  animation. Cells of other categories don't flicker. */
 export type FlashByCategory = Partial<Record<Category, number>>;
+
+/**
+ * Whether a signal would visibly change the displayed metric of a cell.
+ * Mirrors what `applySignal` actually mutates per metric:
+ *   signals → every event bumps count
+ *   volume  → only BUY events add to USD volume (SELLs don't enter our volume)
+ *   pnl     → only events with non-zero realized_pnl change the sum
+ *   winrate → same as pnl (decided exits are the only ones that move the ratio)
+ */
+function metricAffectedBy(metric: HeatmapMetric, s: SignalEvent): boolean {
+  switch (metric) {
+    case "signals":
+      return true;
+    case "volume":
+      return s.side === "BUY";
+    case "pnl":
+    case "winrate":
+      return s.realizedPnl !== null && s.realizedPnl !== 0;
+  }
+}
 
 export function Heatmap() {
   const [metric, setMetric] = useState<HeatmapMetric>("signals");
@@ -51,11 +72,18 @@ export function Heatmap() {
     if (!isLive) return; // only the LIVE 1h view flashes
     const cat = s.category as Category;
     if (!fetchedData?.categories.includes(cat)) return;
-    // Bump cell value + flash counter together — they re-render in the same
-    // React batch so the user sees the number tick AND the ring flash on the
-    // same frame.
+
+    // Always queue the signal — keeps cell values accurate even when user
+    // is on a metric tab that this signal doesn't affect (e.g. SIGNALS still
+    // ticks for a NULL-pnl SELL because count incremented).
     setPendingSignals((prev) => [...prev, s]);
-    setFlashByCategory((prev) => ({ ...prev, [cat]: (prev[cat] ?? 0) + 1 }));
+
+    // But only flash if the CURRENTLY VISIBLE metric actually changed for
+    // this cell — otherwise PNL/VOLUME cells flash on signals that don't
+    // touch their value, which looks broken.
+    if (metricAffectedBy(metric, s)) {
+      setFlashByCategory((prev) => ({ ...prev, [cat]: (prev[cat] ?? 0) + 1 }));
+    }
   });
 
   // Reset hover when range flips
