@@ -23,11 +23,16 @@ function tint(hex: string, amount: number): string {
 }
 
 const LABEL_W = 100;
+/** L3 (per-market) shows long market questions as row labels — needs more
+ *  horizontal room and 2-line wrap to stay readable. */
+const LABEL_W_L3 = 170;
 const TIME_ROW_H = 26;
 /** Minimum height per category row. Drill mode can show 15 rows which on a
  *  short screen would squish below readable size; clamp here and let the
- *  page scroll (body overflow-y) instead. */
+ *  page scroll (body overflow-y) instead. L3 needs a touch more for 2-line
+ *  market labels. */
 const MIN_ROW_H = 38;
+const MIN_ROW_H_L3 = 44;
 
 /**
  * Bucket → human label.
@@ -153,11 +158,11 @@ export function Grid({
       data-hm-grid-wrap
       style={{
         display: "grid",
-        gridTemplateColumns: `${LABEL_W}px repeat(${num}, minmax(0, 1fr))`,
+        gridTemplateColumns: `${data.drillSubcategory ? LABEL_W_L3 : LABEL_W}px repeat(${num}, minmax(0, 1fr))`,
         // minmax(MIN_ROW_H, 1fr): rows expand to fill available height when
         // there's room, but never shrink below MIN_ROW_H — page scrolls
         // instead. Critical for drill mode (15 rows) on short screens.
-        gridTemplateRows: `${TIME_ROW_H}px repeat(${data.categories.length}, minmax(${MIN_ROW_H}px, 1fr))`,
+        gridTemplateRows: `${TIME_ROW_H}px repeat(${data.categories.length}, minmax(${data.drillSubcategory ? MIN_ROW_H_L3 : MIN_ROW_H}px, 1fr))`,
         gap: 4,
         width: "100%",
         height: "100%",
@@ -219,11 +224,10 @@ export function Grid({
         const rawLabel = isDrillRow
           ? data.subcategoryLabels?.[cat] ?? (isL3 ? "(unknown)" : cat.toUpperCase())
           : categoryMeta(cat as Category).label;
-        // Market questions are long; truncate the label column itself but keep
-        // the full text in the title for hover.
-        const rowLabel = isL3 && rawLabel.length > 18
-          ? rawLabel.slice(0, 16) + "…"
-          : rawLabel;
+        // L3 labels are full market questions — the button itself wraps to
+        // 2 lines and CSS line-clamp adds an ellipsis past that. Full text
+        // remains accessible via the `title` attribute.
+        const rowLabel = rawLabel;
         // L1 → click drills into category. L2 → click drills into subcategory.
         // L3 → no further drill.
         const clickableRow = !isL3 && onRowClick !== undefined;
@@ -253,15 +257,24 @@ export function Grid({
                   color: "#fff",
                   border: "none",
                   fontFamily: "inherit",
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: 0.6,
-                  padding: "5px 10px",
+                  // L3 uses smaller text + 2-line wrap; L1/L2 stay loud single-line.
+                  fontSize: isL3 ? 10 : 10,
+                  fontWeight: isL3 ? 600 : 700,
+                  letterSpacing: isL3 ? 0.2 : 0.6,
+                  padding: isL3 ? "4px 8px" : "5px 10px",
                   borderRadius: 3,
                   // L3 market labels look better mixed-case (long sentences)
                   // than ALL CAPS — only category/subcategory rows shout.
                   textTransform: isL3 ? "none" : "uppercase",
-                  whiteSpace: "nowrap",
+                  whiteSpace: isL3 ? "normal" : "nowrap",
+                  // Clamp to 2 lines, ellipsis on overflow (Webkit + standard).
+                  display: isL3 ? "-webkit-box" as const : undefined,
+                  WebkitLineClamp: isL3 ? 2 : undefined,
+                  WebkitBoxOrient: isL3 ? "vertical" as const : undefined,
+                  overflow: isL3 ? "hidden" : "visible",
+                  lineHeight: isL3 ? 1.2 : undefined,
+                  textAlign: isL3 ? "left" as const : undefined,
+                  width: isL3 ? "100%" : undefined,
                   cursor: clickableRow ? "pointer" : "default",
                   transition: "filter .12s, transform .12s",
                   opacity: isResolved ? 0.55 : 1,

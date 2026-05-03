@@ -46,6 +46,14 @@ const TOP_WHALES_LIMIT = 10;
  *  beyond this would make the grid unreadable. Sorted by total signals desc. */
 const MAX_MARKETS_IN_DRILL = 30;
 
+/** Drop a leading "{prefix} " (case-insensitive, single space) from `label`,
+ *  e.g. stripPrefix("Bitcoin Up or Down - 3PM", "Bitcoin") → "Up or Down - 3PM".
+ *  Returns the label unchanged if the prefix isn't an exact leading word match. */
+function stripPrefix(label: string, prefix: string): string {
+  const re = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+`, "i");
+  return label.replace(re, "");
+}
+
 function signalToWire(s: Signal): Record<string, unknown> {
   return {
     ts: s.ts.toISOString(),
@@ -214,7 +222,19 @@ export function createApi(deps: ApiDeps) {
             fetchMarketLabels(deps.sql, sortedConditionIds),
             fetchResolvedMarkets(deps.sql, sortedConditionIds),
           ]);
-          rowLabels = labels;
+          // Strip the parent subcategory prefix from each label — when the
+          // user is drilled into Bitcoin, "Bitcoin Up or Down - May 3 …"
+          // becomes "Up or Down - May 3 …". Only strips an exact leading
+          // word match (case-insensitive) so "Will Bitcoin reach …" stays
+          // intact (the parent name is mid-sentence there, not redundant).
+          const subLabel = drillSubcategory
+            ? SUBCATEGORY_LABELS[drillSubcategory] ?? drillSubcategory
+            : null;
+          rowLabels = subLabel
+            ? Object.fromEntries(
+                Object.entries(labels).map(([k, v]) => [k, stripPrefix(v, subLabel)]),
+              )
+            : labels;
           resolvedRows = sortedConditionIds.filter((cid) => resolvedSet.has(cid));
         } else if (isDrill) {
           rowKeys = drillRules.map((r) => r.slug);
