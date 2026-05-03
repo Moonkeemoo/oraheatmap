@@ -1,8 +1,7 @@
 import { useMemo } from "react";
-import { categoryMeta } from "@/lib/categories";
 import { fmtMoneyShort } from "@/lib/format";
 import { TOKENS } from "@/lib/tokens";
-import type { Category, HeatmapResponse } from "@/lib/types";
+import type { HeatmapResponse } from "@/lib/types";
 import { MiniSpark } from "./MiniSpark";
 
 type StatItem = {
@@ -11,16 +10,20 @@ type StatItem = {
   suffix?: string;
   delta?: { val: number; dir: "up" | "down" };
   pnlDir?: "up" | "down";
-  badge?: { color: string; label: string };
   whale?: { color: string; alias: string };
   spark?: { values: ReadonlyArray<number>; color: string };
   bar?: number;
   sub?: string;
+  /** Hover hint shown via native title attribute. */
+  tooltip?: string;
 };
 
 function StatCell({ item, divider }: { item: StatItem; divider: boolean }) {
   return (
-    <div style={{ position: "relative", paddingRight: divider ? 20 : 0 }}>
+    <div
+      title={item.tooltip}
+      style={{ position: "relative", paddingRight: divider ? 20 : 0, cursor: item.tooltip ? "help" : "default" }}
+    >
       {divider && (
         <div
           style={{ position: "absolute", right: 0, top: 4, bottom: 4, width: 1, background: TOKENS.border }}
@@ -41,23 +44,7 @@ function StatCell({ item, divider }: { item: StatItem; divider: boolean }) {
 
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 8 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}>
-          {item.badge ? (
-            <span
-              style={{
-                alignSelf: "flex-start",
-                background: item.badge.color,
-                color: "#fff",
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: 0.4,
-                padding: "4px 9px",
-                borderRadius: 3,
-                textTransform: "uppercase",
-              }}
-            >
-              {item.badge.label}
-            </span>
-          ) : item.whale ? (
+          {item.whale ? (
             <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
               <span
                 style={{
@@ -176,6 +163,13 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
       ),
     [data, num],
   );
+  const trendPnl = useMemo(
+    () =>
+      Array.from({ length: num }, (_, i) =>
+        data.categories.reduce((a, cat) => a + (data.cells[cat]?.[i]?.pnl ?? 0), 0),
+      ),
+    [data, num],
+  );
 
   const half = Math.floor(num / 2);
   const lastHalf = trendSignals.slice(half).reduce((a, b) => a + b, 0);
@@ -192,16 +186,11 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
     let pnl = 0;
     let wins = 0;
     let exits = 0;
-    let topCat: string | null = null;
-    let topCount = 0;
-    const perCat: Record<string, number> = {};
     for (const cat of data.categories) {
-      let catCount = 0;
       for (const c of data.cells[cat] ?? []) {
         signals += c.count;
         volume += c.volume;
         pnl += c.pnl;
-        catCount += c.count;
         if (c.winRate !== null) {
           // Approximate win/loss reconstruction not possible from rate alone;
           // fall back to weighted avg: treat each non-null cell as 1 sample.
@@ -210,31 +199,15 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
           exits += 1;
         }
       }
-      perCat[cat] = catCount;
-      if (catCount > topCount) {
-        topCount = catCount;
-        topCat = cat;
-      }
     }
     const winRate = exits > 0 ? wins / exits : null;
-    return { signals, volume, pnl, winRate, topCat, topCount };
+    return { signals, volume, pnl, winRate };
   }, [data]);
 
   const t = data.totals;
-  const isDrill = data.drillCategory !== null;
-  // In drill mode `topCat` is a subcategory slug — colour it with the parent
-  // bucket's hue and label it via subcategoryLabels.
-  const topCategoryRaw = t?.topCategory ?? derived.topCat;
-  const topCatMeta = topCategoryRaw
-    ? isDrill
-      ? {
-          color: categoryMeta(data.drillCategory as Category).color,
-          label: data.subcategoryLabels?.[topCategoryRaw] ?? topCategoryRaw,
-        }
-      : categoryMeta(topCategoryRaw as Category)
-    : null;
   const totalSignals = t?.signals ?? Math.round(derived.signals);
   const totalVolume = t?.volume ?? derived.volume;
+  const totalPnl = t?.pnl ?? derived.pnl;
   const totalWinRate = t?.winRate ?? derived.winRate;
 
   const items: StatItem[] = [
@@ -243,40 +216,49 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
       value: totalSignals.toLocaleString(),
       delta: isPattern ? undefined : { val: sigDelta, dir: sigDelta >= 0 ? "up" : "down" },
       spark: { values: trendSignals, color: TOKENS.link },
+      tooltip:
+        "Number of whale trades captured in this window. Per-bucket trend shown as the sparkline. Δ% compares the latter half of the window to the earlier half.",
     },
     {
       label: isPattern ? "Avg Volume / Day" : "Total Volume",
       value: fmtMoneyShort(totalVolume),
       sub: "BUY entries (USD)",
       spark: { values: trendVolume, color: TOKENS.accent },
+      tooltip:
+        "USD value of BUY-side trades only — money entering whale positions. Excludes SELLs and SETTLEMENTs to keep this as a one-directional 'inflow' metric.",
+    },
+    {
+      label: isPattern ? "Avg PnL / Day" : "Total PnL",
+      value: fmtMoneyShort(totalPnl),
+      pnlDir: totalPnl > 0 ? "up" : totalPnl < 0 ? "down" : undefined,
+      sub: "realized on exits",
+      spark: { values: trendPnl, color: totalPnl >= 0 ? TOKENS.pos : TOKENS.neg },
+      tooltip:
+        "Realized profit/loss summed across all SELL and SETTLEMENT events in this window. SELLs without a known prior BUY contribute nothing (bootstrap NULL — fades as we accumulate history).",
     },
     {
       label: "Win Rate",
       value: totalWinRate === null ? "—" : Math.round(totalWinRate * 100) + "%",
       pnlDir: totalWinRate === null ? undefined : totalWinRate >= 0.5 ? "up" : "down",
       sub: isPattern ? "avg over slots" : "by exits",
+      tooltip:
+        "Share of exits (SELL or SETTLEMENT) that closed in profit. Denominator excludes break-even exits and entries (BUYs).",
     },
-    topCatMeta
-      ? {
-          label: isDrill ? "Top Subcategory" : "Top Category",
-          badge: { color: topCatMeta.color, label: topCatMeta.label },
-          sub: isPattern
-            ? `${Math.round(derived.topCount).toLocaleString()} avg signals`
-            : `${totalSignals.toLocaleString()} total signals`,
-        }
-      : { label: isDrill ? "Top Subcategory" : "Top Category", value: "—" },
     isPattern
       ? {
           label: "Lookback",
           value: String(data.lookbackDays ?? 30),
           suffix: "days",
           sub: "trend window",
+          tooltip:
+            "Number of days the cyclical pattern averages over. Lower values react quicker to recent shifts; higher values smooth out one-off spikes.",
         }
       : t?.topWhale
         ? {
             label: "Top Whale",
             whale: { color: t.topWhale.color, alias: t.topWhale.alias },
-            sub: "by USD entered",
+            sub: `${t.topWhale.alias.startsWith("0x") ? "address (no leaderboard alias)" : "Polymarket username"} · by USD entered`,
+            tooltip: `Whale with the largest BUY-side USD inflow in this window.\nFull address: ${t.topWhale.addr}`,
           }
         : { label: "Top Whale", value: "—" },
     isPattern
@@ -284,12 +266,16 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
           label: "Tracked Whales",
           value: trackedCount.toLocaleString(),
           sub: "corpus size",
+          tooltip:
+            "Total addresses on the watchlist. Refreshed weekly from the Polymarket leaderboard (top-500 by ALL-time PnL per category, deduped).",
         }
       : {
           label: "Active Whales",
           value: (t?.activeWhales ?? 0).toString(),
           suffix: `/ ${trackedCount.toLocaleString()}`,
           bar: trackedCount > 0 ? Math.min(1, (t?.activeWhales ?? 0) / trackedCount) : 0,
+          tooltip:
+            "Distinct whales from the corpus that traded at least once in this window. The bar shows the share of the full watchlist that's currently active.",
         },
   ];
 
@@ -300,7 +286,7 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
         padding: "14px 32px",
         background: TOKENS.panel,
         display: "grid",
-        gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
+        gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
         gap: 22,
         flexShrink: 0,
       }}

@@ -8,6 +8,7 @@ import { createPositionTracker } from "./position-tracker";
 import { createResolutionWatcher } from "./resolution-watcher";
 import { createSignalHub } from "./signal-hub";
 import { loadWhaleCorpus } from "./whale-corpus";
+import { loadWhaleAliases, setWhaleAliases } from "./whale-display";
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -22,6 +23,19 @@ async function main(): Promise<void> {
 
   const whales = await loadWhaleCorpus(env.WHALE_CORPUS_PATH);
   log.info("whale corpus loaded", { count: whales.size });
+
+  // Aliases are best-effort: a missing/malformed file just means the UI
+  // shows truncated 0x… everywhere instead of leaderboard usernames.
+  try {
+    const aliases = await loadWhaleAliases(env.WHALE_ALIASES_PATH);
+    setWhaleAliases(aliases);
+    log.info("whale aliases loaded", { count: aliases.size });
+  } catch (err) {
+    log.warn("whale aliases not loaded", {
+      path: env.WHALE_ALIASES_PATH,
+      err: (err as Error).message,
+    });
+  }
 
   const { db, sql } = createDb(env.DATABASE_URL);
   const buffer = createSignalBuffer(db, env.SIGNAL_BATCH_INTERVAL_MS);

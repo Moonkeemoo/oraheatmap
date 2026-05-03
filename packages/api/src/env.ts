@@ -9,6 +9,7 @@ export type Env = {
   WS_DEAD_BOOK_BID_THRESHOLD: number;
   GAMMA_CACHE_TTL_MS: number;
   WHALE_CORPUS_PATH: string;
+  WHALE_ALIASES_PATH: string;
   PORT: number;
   HOST: string;
   SIGNAL_BATCH_INTERVAL_MS: number;
@@ -45,6 +46,7 @@ export function loadEnv(): Env {
     WS_DEAD_BOOK_BID_THRESHOLD: num("WS_DEAD_BOOK_BID_THRESHOLD", 0.02),
     GAMMA_CACHE_TTL_MS: num("GAMMA_CACHE_TTL_MS", 30_000),
     WHALE_CORPUS_PATH: str("WHALE_CORPUS_PATH", "data/whale_corpus.json"),
+    WHALE_ALIASES_PATH: str("WHALE_ALIASES_PATH", "data/whale_aliases.json"),
     PORT: num("PORT", 3001),
     HOST: str("HOST", "0.0.0.0"),
     SIGNAL_BATCH_INTERVAL_MS: num("SIGNAL_BATCH_INTERVAL_MS", 5_000),

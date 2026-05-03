@@ -1,16 +1,49 @@
 /**
- * Display helpers for whale addresses. Pure & deterministic — same address
- * always produces the same alias and color, so the UI can render trades from
- * either /api/heatmap or /api/stream consistently and even compute these on
- * the client without a round-trip.
+ * Display helpers for whale addresses. Same address always produces the same
+ * alias and color so the UI renders trades from /api/heatmap or /api/stream
+ * consistently. Aliases come from data/whale_aliases.json (Polymarket
+ * leaderboard usernames); when an address isn't in the alias map we fall
+ * back to a truncated 0x-form.
  */
 
+import { readFile } from "node:fs/promises";
+
+let aliasMap: ReadonlyMap<string, string> = new Map();
+
+/** Load Polymarket usernames keyed by lowercase address.
+ *  Tolerant of legacy / partial files: any entry without an `alias` is skipped. */
+export async function loadWhaleAliases(path: string): Promise<Map<string, string>> {
+  const raw = await readFile(path, "utf8");
+  const parsed: unknown = JSON.parse(raw);
+  const out = new Map<string, string>();
+  if (parsed === null || typeof parsed !== "object") return out;
+  for (const [addr, info] of Object.entries(parsed as Record<string, unknown>)) {
+    if (info === null || typeof info !== "object") continue;
+    const alias = (info as { alias?: unknown }).alias;
+    if (typeof alias === "string" && alias.length > 0) {
+      out.set(addr.toLowerCase(), alias);
+    }
+  }
+  return out;
+}
+
+/** Replace the in-memory alias map. Called once at boot, optionally re-run
+ *  after a corpus refresh — lookups remain O(1) before/during/after. */
+export function setWhaleAliases(map: ReadonlyMap<string, string>): void {
+  aliasMap = map;
+}
+
+export function whaleAliasMapSize(): number {
+  return aliasMap.size;
+}
+
 /**
- * `0xadc2efbf97ce7b25f7a638aabdba196c657cd1c9` → `0xadc2…cd1c9`.
- * For non-address inputs (e.g. test fixtures) we still produce a sensible
- * truncation rather than crash.
+ * Returns the Polymarket username if we have one, otherwise the address
+ * truncated to `0xadc2…cd1c9`.
  */
 export function whaleAlias(addr: string): string {
+  const named = aliasMap.get(addr.toLowerCase());
+  if (named) return named;
   if (addr.length <= 12) return addr;
   return `${addr.slice(0, 6)}…${addr.slice(-5)}`;
 }

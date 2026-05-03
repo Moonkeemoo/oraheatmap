@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { whaleAlias, whaleColor } from "./whale-display";
+import { setWhaleAliases, whaleAlias, whaleColor } from "./whale-display";
 
 describe("whaleAlias", () => {
   test("truncates a normal 0x address to first6 + ellipsis + last5", () => {
@@ -9,6 +9,15 @@ describe("whaleAlias", () => {
   test("short input stays as-is", () => {
     expect(whaleAlias("0xabc")).toBe("0xabc");
     expect(whaleAlias("0xabcdef0123")).toBe("0xabcdef0123");
+  });
+
+  test("uses Polymarket username when alias map has the address", () => {
+    const addr = "0xadc2efbf97ce7b25f7a638aabdba196c657cd1c9";
+    setWhaleAliases(new Map([[addr, "stingo43"]]));
+    expect(whaleAlias(addr)).toBe("stingo43");
+    // Lookup is case-insensitive on the address
+    expect(whaleAlias(addr.toUpperCase())).toBe("stingo43");
+    setWhaleAliases(new Map()); // reset for other tests
   });
 });
 
