@@ -39,8 +39,12 @@ export type PatternBucket = { label: string; index: number };
 export type PatternResponse = {
   kind: PatternKind;
   lookbackDays: number;
+  /** Non-null when this is a per-subcategory drill of `drillCategory`. */
+  drillCategory: Category | null;
+  /** Row keys for the grid: top-level category names OR subcategory slugs. */
+  categories: ReadonlyArray<string>;
   buckets: ReadonlyArray<PatternBucket>;
-  cells: Record<Category, PatternCell[]>;
+  cells: Record<string, PatternCell[]>;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -114,11 +118,69 @@ type AggRow = {
 async function queryHourOfDayRows(
   sql: Sql,
   lookbackDays: number,
+  drillCategory: Category | null,
 ): Promise<ReadonlyArray<AggRow>> {
   const half = lookbackDays / 2;
-  // 12 slots × 2-hour buckets to match LIVE's 12-column layout. We sum the two
-  // hours that share a slot inside the per-day CTE, THEN average across days,
-  // so the value is "average per 2h slot" — comparable to a LIVE 24h cell.
+  // Top level reads from the hourly continuous aggregate (cheap). Drill mode
+  // can't — the agg doesn't carry subcategory — so we scan raw signals
+  // directly. For 30-day default that's heavier (~1-2s for busy categories)
+  // but acceptable for a click action.
+  if (drillCategory !== null) {
+    return sql<AggRow[]>`
+      WITH per_day_slot AS (
+        SELECT
+          DATE_TRUNC('day', ts AT TIME ZONE 'UTC')                           AS day,
+          (EXTRACT(hour FROM ts AT TIME ZONE 'UTC')::int / 2)                AS slot,
+          subcategory                                                        AS category,
+          COUNT(*)                                                           AS slot_signals,
+          COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)         AS slot_volume,
+          COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS slot_pnl,
+          COUNT(*) FILTER (WHERE realized_pnl > 0)                           AS slot_wins,
+          COUNT(*) FILTER (WHERE realized_pnl < 0)                           AS slot_losses
+        FROM signals
+        WHERE ts >= NOW() - (${`${lookbackDays} days`}::interval)
+          AND category = ${drillCategory}
+          AND subcategory IS NOT NULL
+        GROUP BY day, slot, subcategory
+      ),
+      split AS (
+        SELECT
+          slot, category,
+          slot_signals AS signal_count,
+          slot_volume  AS buy_volume_usd,
+          slot_pnl     AS realized_pnl_sum,
+          slot_wins    AS win_count,
+          slot_losses  AS loss_count,
+          CASE
+            WHEN day >= NOW() - (${`${half} days`}::interval) THEN 'recent'
+            ELSE 'older'
+          END AS period
+        FROM per_day_slot
+      )
+      SELECT
+        slot, category,
+        AVG(signal_count)    FILTER (WHERE period='recent') AS recent_count,
+        AVG(signal_count)    FILTER (WHERE period='older')  AS older_count,
+        AVG(buy_volume_usd)  FILTER (WHERE period='recent') AS recent_volume,
+        AVG(buy_volume_usd)  FILTER (WHERE period='older')  AS older_volume,
+        AVG(realized_pnl_sum) FILTER (WHERE period='recent') AS recent_pnl,
+        AVG(realized_pnl_sum) FILTER (WHERE period='older')  AS older_pnl,
+        SUM(win_count)  FILTER (WHERE period='recent') AS recent_wins,
+        SUM(loss_count) FILTER (WHERE period='recent') AS recent_losses,
+        SUM(win_count)  FILTER (WHERE period='older')  AS older_wins,
+        SUM(loss_count) FILTER (WHERE period='older')  AS older_losses,
+        COUNT(*) FILTER (WHERE period='recent')::bigint AS recent_sample_count,
+        MIN(signal_count)    AS min_count,
+        MAX(signal_count)    AS max_count,
+        MIN(buy_volume_usd)  AS min_volume,
+        MAX(buy_volume_usd)  AS max_volume,
+        MIN(realized_pnl_sum) AS min_pnl,
+        MAX(realized_pnl_sum) AS max_pnl
+      FROM split
+      GROUP BY slot, category
+      ORDER BY slot
+    `;
+  }
   const rows = await sql<AggRow[]>`
     WITH per_day_slot AS (
       SELECT
@@ -177,8 +239,60 @@ async function queryHourOfDayRows(
 async function queryDayOfWeekRows(
   sql: Sql,
   lookbackDays: number,
+  drillCategory: Category | null,
 ): Promise<ReadonlyArray<AggRow>> {
   const half = lookbackDays / 2;
+  // Same drill-vs-aggregate split as queryHourOfDayRows.
+  if (drillCategory !== null) {
+    return sql<AggRow[]>`
+      WITH per_day AS (
+        SELECT
+          DATE_TRUNC('day', ts AT TIME ZONE 'UTC')                           AS day,
+          EXTRACT(dow FROM ts AT TIME ZONE 'UTC')::int                       AS slot,
+          subcategory                                                        AS category,
+          COUNT(*)                                                           AS day_signals,
+          COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)         AS day_volume,
+          COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS day_pnl,
+          COUNT(*) FILTER (WHERE realized_pnl > 0)                           AS day_wins,
+          COUNT(*) FILTER (WHERE realized_pnl < 0)                           AS day_losses
+        FROM signals
+        WHERE ts >= NOW() - (${`${lookbackDays} days`}::interval)
+          AND category = ${drillCategory}
+          AND subcategory IS NOT NULL
+        GROUP BY day, slot, subcategory
+      ),
+      split AS (
+        SELECT *,
+          CASE
+            WHEN day >= NOW() - (${`${half} days`}::interval) THEN 'recent'
+            ELSE 'older'
+          END AS period
+        FROM per_day
+      )
+      SELECT
+        slot, category,
+        AVG(day_signals) FILTER (WHERE period='recent') AS recent_count,
+        AVG(day_signals) FILTER (WHERE period='older')  AS older_count,
+        AVG(day_volume)  FILTER (WHERE period='recent') AS recent_volume,
+        AVG(day_volume)  FILTER (WHERE period='older')  AS older_volume,
+        AVG(day_pnl)     FILTER (WHERE period='recent') AS recent_pnl,
+        AVG(day_pnl)     FILTER (WHERE period='older')  AS older_pnl,
+        SUM(day_wins)    FILTER (WHERE period='recent') AS recent_wins,
+        SUM(day_losses)  FILTER (WHERE period='recent') AS recent_losses,
+        SUM(day_wins)    FILTER (WHERE period='older')  AS older_wins,
+        SUM(day_losses)  FILTER (WHERE period='older')  AS older_losses,
+        COUNT(*) FILTER (WHERE period='recent')::bigint AS recent_sample_count,
+        MIN(day_signals) AS min_count,
+        MAX(day_signals) AS max_count,
+        MIN(day_volume)  AS min_volume,
+        MAX(day_volume)  AS max_volume,
+        MIN(day_pnl)     AS min_pnl,
+        MAX(day_pnl)     AS max_pnl
+      FROM split
+      GROUP BY slot, category
+      ORDER BY slot
+    `;
+  }
   // First sum hourly buckets to whole-day totals, then aggregate by dow.
   const rows = await sql<AggRow[]>`
     WITH per_day AS (
@@ -247,17 +361,32 @@ export function assemblePattern(
   rows: ReadonlyArray<AggRow>,
   kind: PatternKind,
   lookbackDays: number,
+  options: { drillCategory?: Category | null; rowKeys?: ReadonlyArray<string> } = {},
 ): PatternResponse {
   const slotOrder = buildSlotOrder(kind);
   const slotIndex = new Map(slotOrder.map((s, i) => [s.slot, i]));
   const buckets: PatternBucket[] = slotOrder.map((s, i) => ({ label: s.label, index: i }));
 
-  const cells = Object.fromEntries(
-    CATEGORIES.map((c) => [c, slotOrder.map(() => emptyCell())]),
-  ) as Record<Category, PatternCell[]>;
+  const drillCategory = options.drillCategory ?? null;
+  const rowKeys = options.rowKeys ?? CATEGORIES;
+  const rowKeySet = new Set(rowKeys);
+
+  const cells: Record<string, PatternCell[]> = Object.fromEntries(
+    rowKeys.map((k) => [k, slotOrder.map(() => emptyCell())]),
+  );
+
+  // In top-level mode, unknown raw category falls into "Other" (legacy
+  // behaviour). In drill mode rows that don't match any known sub slug get
+  // dropped — the bucket has none of them by design.
+  function pickRowKey(raw: string): string | null {
+    if (rowKeySet.has(raw)) return raw;
+    if (drillCategory === null && rowKeySet.has("Other")) return "Other";
+    return null;
+  }
 
   for (const r of rows) {
-    const cat = toCategory(r.category);
+    const key = pickRowKey(r.category);
+    if (key === null) continue;
     const slot = typeof r.slot === "number" ? r.slot : Number(r.slot);
     const idx = slotIndex.get(slot);
     if (idx === undefined) continue;
@@ -271,7 +400,7 @@ export function assemblePattern(
     const recentWR = winRateOf(num(r.recent_wins), num(r.recent_losses));
     const olderWR = winRateOf(num(r.older_wins), num(r.older_losses));
 
-    const cell = cells[cat][idx];
+    const cell = cells[key]?.[idx];
     if (!cell) continue;
     cell.count = recentCount;
     cell.volume = recentVolume;
@@ -296,7 +425,7 @@ export function assemblePattern(
     };
   }
 
-  return { kind, lookbackDays, buckets, cells };
+  return { kind, lookbackDays, drillCategory, categories: rowKeys, buckets, cells };
 }
 
 // ─── Public entry ────────────────────────────────────────────────────────────
@@ -305,10 +434,12 @@ export async function queryPattern(
   sql: Sql,
   kind: PatternKind,
   lookbackDays: number,
+  options: { drillCategory?: Category | null; rowKeys?: ReadonlyArray<string> } = {},
 ): Promise<PatternResponse> {
+  const drillCategory = options.drillCategory ?? null;
   const rows =
     kind === "hour-of-day"
-      ? await queryHourOfDayRows(sql, lookbackDays)
-      : await queryDayOfWeekRows(sql, lookbackDays);
-  return assemblePattern(rows, kind, lookbackDays);
+      ? await queryHourOfDayRows(sql, lookbackDays, drillCategory)
+      : await queryDayOfWeekRows(sql, lookbackDays, drillCategory);
+  return assemblePattern(rows, kind, lookbackDays, options);
 }

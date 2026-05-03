@@ -65,13 +65,12 @@ export function Heatmap() {
   const [flashByCell, setFlashByCell] = useState<FlashByCell>({});
   const [pendingSignals, setPendingSignals] = useState<SignalEvent[]>([]);
 
-  // Drill is LIVE-only for now; fetch ignores drillCategory in pattern.
   const { data: fetchedData, loading, error } = useHeatmap({
     mode,
     range: mode === "live" ? range : undefined,
     kind: mode === "pattern" ? patternKind : undefined,
     lookbackDays: mode === "pattern" ? 30 : undefined,
-    drillCategory: mode === "live" ? drillCategory : null,
+    drillCategory,
   });
 
   // Whenever a fresh fetch arrives, drop the optimistic queue.
@@ -129,11 +128,6 @@ export function Heatmap() {
     setLockedRect(null);
   }, [mode, range, patternKind, drillCategory]);
 
-  // Drill is LIVE-only — drop the drill state if user switches to PATTERN
-  // (otherwise toggling back to LIVE would surprise them with stale drill).
-  useEffect(() => {
-    if (mode !== "live" && drillCategory !== null) setDrillCategory(null);
-  }, [mode, drillCategory]);
 
   const isLive = mode === "live";
   const daysOfData = displayData?.dataSpan.daysOfData ?? 0;
@@ -225,8 +219,8 @@ export function Heatmap() {
                 });
               }}
               onRowClick={
-                // Top-level + LIVE only: clicking a category row drills in.
-                isLive && !displayData.drillCategory
+                // Top-level (any mode): clicking a category row drills in.
+                !displayData.drillCategory
                   ? (cat) => setDrillCategory(cat)
                   : undefined
               }

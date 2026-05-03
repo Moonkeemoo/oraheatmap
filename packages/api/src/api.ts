@@ -114,20 +114,25 @@ export function createApi(deps: ApiDeps) {
         const isDrill = drillCategory !== null && drillRules.length > 0;
 
         if (mode === "pattern") {
-          // Drill not yet wired through pattern queries — fall back to top-level
-          // when the user is in PATTERN. UI hides the drill affordance there.
           const kind: PatternKind = query.kind ?? "hour-of-day";
           const lookbackDays = query.lookbackDays ?? 30;
-          const pattern = await queryPattern(deps.sql, kind, lookbackDays);
+          const rowKeys = isDrill ? drillRules.map((r) => r.slug) : undefined;
+          const pattern = await queryPattern(deps.sql, kind, lookbackDays, {
+            drillCategory: isDrill ? drillCategory : null,
+            rowKeys,
+          });
+          const patternSubcategoryLabels = isDrill
+            ? Object.fromEntries(drillRules.map((r) => [r.slug, SUBCATEGORY_LABELS[r.slug] ?? r.slug]))
+            : null;
           return {
             mode: "pattern" as const,
             patternKind: kind,
             lookbackDays,
             generatedAt: now.toISOString(),
             trackedWhales,
-            drillCategory: null,
-            categories: CATEGORIES,
-            subcategoryLabels: null,
+            drillCategory: pattern.drillCategory,
+            categories: pattern.categories,
+            subcategoryLabels: patternSubcategoryLabels,
             topWhales: null,
             buckets: pattern.buckets,
             cells: pattern.cells,
