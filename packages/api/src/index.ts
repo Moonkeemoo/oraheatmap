@@ -1,8 +1,10 @@
+import { createApi } from "./api";
 import { createDb, createSignalBuffer } from "./db";
 import { loadEnv } from "./env";
 import { createGammaCache } from "./gamma-cache";
 import { createIngestor } from "./ingestor";
 import { log } from "./log";
+import { createSignalHub } from "./signal-hub";
 import { loadWhaleCorpus } from "./whale-corpus";
 
 async function main(): Promise<void> {
@@ -12,6 +14,8 @@ async function main(): Promise<void> {
     gammaUrl: env.GAMMA_API_URL,
     corpusPath: env.WHALE_CORPUS_PATH,
     batchIntervalMs: env.SIGNAL_BATCH_INTERVAL_MS,
+    port: env.PORT,
+    host: env.HOST,
   });
 
   const whales = await loadWhaleCorpus(env.WHALE_CORPUS_PATH);
@@ -25,26 +29,48 @@ async function main(): Promise<void> {
     ttlMs: env.GAMMA_CACHE_TTL_MS,
   });
 
+  // Single in-process pub/sub: ingestor publishes once, DB buffer + every SSE client subscribe.
+  const hub = createSignalHub();
+  hub.subscribe((s) => buffer.push(s));
+
   const ingestor = createIngestor({
     url: env.RTDS_WS_URL,
     whales,
     gamma,
-    onSignal: (s) => buffer.push(s),
+    onSignal: (s) => hub.broadcast(s),
     pingIntervalMs: env.WS_PING_INTERVAL_MS,
     dataSilenceThresholdMs: env.WS_DATA_SILENCE_THRESHOLD_MS,
   });
 
+  const api = createApi({
+    sql,
+    hub,
+    ingestor,
+    bufferSize: () => buffer.size(),
+    gammaCacheSize: () => gamma.size(),
+  });
+
   // Periodic stats line so logs show liveness even when no whale matches happen.
   const statsTimer = setInterval(() => {
-    log.info("stats", { ...ingestor.stats(), bufferSize: buffer.size(), gammaCacheSize: gamma.size() });
+    log.info("stats", {
+      ...ingestor.stats(),
+      bufferSize: buffer.size(),
+      gammaCacheSize: gamma.size(),
+      sseSubscribers: hub.size(),
+    });
   }, 60_000);
   statsTimer.unref?.();
 
   ingestor.start();
+  const server = api.listen({ port: env.PORT, hostname: env.HOST });
+  log.info("api listening", { port: env.PORT, host: env.HOST });
 
   const shutdown = async (signal: string): Promise<void> => {
     log.info("shutdown", { signal });
     clearInterval(statsTimer);
+    // Order: stop accepting new HTTP first, then stop ingestor (no more new
+    // signals), then drain the DB buffer, then close pg pool.
+    server.stop?.();
     await ingestor.stop();
     await buffer.stop();
     await sql.end({ timeout: 5 });

@@ -17,8 +17,8 @@ CREATE TABLE IF NOT EXISTS signals (
   market_question TEXT,
   category        TEXT NOT NULL DEFAULT 'Other',
   side            TEXT NOT NULL,            -- BUY | SELL
-  price           REAL NOT NULL,
-  size            REAL NOT NULL,            -- USD
+  price           REAL NOT NULL,             -- 0..1 outcome price at trade time
+  size            REAL NOT NULL,             -- shares (NOT USD); USD = size * price
   tx_hash         TEXT
 );
 
@@ -45,8 +45,8 @@ SELECT
   time_bucket('5 minutes', ts) AS bucket,
   category,
   COUNT(*)                     AS signal_count,
-  SUM(size)                    AS total_volume,
-  AVG(size)                    AS avg_size,
+  SUM(size * price)            AS total_volume,    -- USD value (size is shares)
+  AVG(size * price)            AS avg_size,        -- avg USD per trade
   COUNT(DISTINCT whale_addr)   AS unique_whales,
   -- Directional PnL proxy:
   -- BUY at price>0.5 = bullish bet, BUY at price<0.5 = contrarian bet
@@ -78,8 +78,8 @@ SELECT
   time_bucket('1 hour', ts)    AS bucket,
   category,
   COUNT(*)                     AS signal_count,
-  SUM(size)                    AS total_volume,
-  AVG(size)                    AS avg_size,
+  SUM(size * price)            AS total_volume,    -- USD value (size is shares)
+  AVG(size * price)            AS avg_size,        -- avg USD per trade
   COUNT(DISTINCT whale_addr)   AS unique_whales,
   SUM(CASE
     WHEN side = 'BUY'  THEN size * (price - 0.5) * 2

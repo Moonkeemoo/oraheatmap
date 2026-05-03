@@ -125,12 +125,22 @@ db/
 └── migrate.sql                   — TimescaleDB schema + continuous aggregates + compression + retention
 ```
 
+## Heatmap view modes — LIVE (MVP) vs PATTERN (v1.1)
+
+The UI exposes a toggle next to the metric selector: `[LIVE] [PATTERN]`. LIVE is the default and the only mode in MVP. PATTERN ships in v1.1 once the DB has accumulated ≥7 days of signals.
+
+**LIVE — sliding window.** Each cell = real signals in a specific time slot. Slots scroll left as time advances. "What is happening right now" — actionable. Implemented in `packages/api/src/heatmap-query.ts` (`time_bucket('5 minutes', ts)` for 1h window). Time scale selector adds 24h × 1h and 7d × 1d slots later.
+
+**PATTERN — cyclical overlay.** Each cell = `AVG(metric)` for a recurring time slot across the lookback range. "Hour 15:00" cell shows the average across ALL 15:00 hours in the last 7/14/30 days. Daily pattern = 24 columns (hours 00–23); weekly pattern = 7 columns (Mon–Sun). Reveals patterns like "Crypto whales fire at 14:00–16:00 UTC" or "Sports weekends are dead". Powered by the existing `signals_hourly` continuous aggregate — no new ingestion code, just a different `GROUP BY EXTRACT(hour FROM bucket)`. UI subtitle: "Середній патерн за останні 7 днів". Tooltip must show avg + min/max + sample-count.
+
+Don't refactor `heatmap-query.ts` to be mode-aware in MVP — add `pattern-query.ts` separately when v1.1 lands.
+
 ## Phase plan (one screen)
 
 | Phase | Days | What |
 |---|---|---|
-| **MVP** | 1-3 | RTDS ingestor + whale match + gamma enrich + TimescaleDB + API + Next.js heatmap UI (1h window, 5min slots) |
-| **v1.1** | 4-5 | Time scale selector (1h/24h/7d). Hourly continuous aggregate. SSE live cell flash |
+| **MVP** | 1-3 | RTDS ingestor + whale match + gamma enrich + TimescaleDB + API + Next.js heatmap UI in **LIVE** mode (1h window, 5min slots) |
+| **v1.1** | 4-5 | Time scale selector (1h/24h/7d) for LIVE. **PATTERN mode** (daily + weekly cyclical, queries `signals_hourly`). Hourly continuous aggregate. SSE live cell flash |
 | **v1.2** | 6-7 | Drill-down: category → subcategory → market. Breadcrumb nav |
 | **v1.3** | 8-9 | Whale profiles (click whale → history). TG alerts for large signals ($500+) |
 | **v2** | 10-14 | Trade execution via CLOB v2. Mobile responsive. Real PnL tracking (resolution) |
