@@ -1,7 +1,8 @@
-import { useMemo } from "react";
-import { fmtMoneyShort } from "@/lib/format";
+import { useMemo, useState, type ReactNode } from "react";
+import { categoryMeta } from "@/lib/categories";
+import { fmtMoney, fmtMoneyShort } from "@/lib/format";
 import { TOKENS } from "@/lib/tokens";
-import type { HeatmapResponse } from "@/lib/types";
+import type { Category, HeatmapResponse } from "@/lib/types";
 import { MiniSpark } from "./MiniSpark";
 
 type StatItem = {
@@ -16,14 +17,39 @@ type StatItem = {
   sub?: string;
   /** Hover hint shown via native title attribute. */
   tooltip?: string;
+  /** Rich popover content rendered above the card on hover. Lazy so we don't
+   *  pay the cost on every render — only when the user actually hovers. */
+  popover?: () => ReactNode;
+  /** Width override (px) for the popover panel. Default 320. */
+  popoverWidth?: number;
 };
 
-function StatCell({ item, divider }: { item: StatItem; divider: boolean }) {
+function StatCell({
+  item,
+  divider,
+  hovered,
+  onHoverChange,
+}: {
+  item: StatItem;
+  divider: boolean;
+  hovered: boolean;
+  onHoverChange: (h: boolean) => void;
+}) {
+  const interactive = item.tooltip || item.popover;
   return (
     <div
-      title={item.tooltip}
-      style={{ position: "relative", paddingRight: divider ? 20 : 0, cursor: item.tooltip ? "help" : "default" }}
+      title={item.popover ? undefined : item.tooltip}
+      onMouseEnter={() => onHoverChange(true)}
+      onMouseLeave={() => onHoverChange(false)}
+      style={{
+        position: "relative",
+        paddingRight: divider ? 20 : 0,
+        cursor: interactive ? "help" : "default",
+      }}
     >
+      {hovered && item.popover && (
+        <KpiPopover width={item.popoverWidth ?? 320}>{item.popover()}</KpiPopover>
+      )}
       {divider && (
         <div
           style={{ position: "absolute", right: 0, top: 4, bottom: 4, width: 1, background: TOKENS.border }}
@@ -146,6 +172,71 @@ function StatCell({ item, divider }: { item: StatItem; divider: boolean }) {
   );
 }
 
+/** Floating popover anchored above the stat card. Appears on hover so the user
+ *  can drill into a single number without clicking — much richer than a
+ *  native title= tooltip. */
+function KpiPopover({ width, children }: { width: number; children: ReactNode }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        // Anchor to the card's left edge; `bottom: 100% + margin` puts the
+        // panel directly above the card so the user reads downward into the
+        // number they hovered.
+        left: 0,
+        bottom: "calc(100% + 10px)",
+        width,
+        maxWidth: "92vw",
+        background: TOKENS.panel,
+        border: `1px solid ${TOKENS.borderHi}`,
+        borderRadius: 8,
+        padding: "12px 14px",
+        boxShadow: "0 16px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,0,0,0.4)",
+        // We want the user to be able to click links inside the popover, so
+        // pointerEvents stays auto.
+        pointerEvents: "auto",
+        zIndex: 40,
+        animation: "tipIn .12s ease-out",
+        boxSizing: "border-box",
+        fontFamily: TOKENS.font,
+        color: TOKENS.text,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function PopoverHeader({ title, hint }: { title: string; hint?: string }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "baseline",
+        justifyContent: "space-between",
+        marginBottom: 8,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 9,
+          letterSpacing: 0.5,
+          color: TOKENS.textMuted,
+          textTransform: "uppercase",
+          fontWeight: 600,
+        }}
+      >
+        {title}
+      </span>
+      {hint && (
+        <span style={{ fontSize: 9, color: TOKENS.textSec, fontFamily: TOKENS.mono }}>
+          {hint}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; trackedCount: number }) {
   const num = data.buckets.length;
 
@@ -210,6 +301,170 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
   const totalPnl = t?.pnl ?? derived.pnl;
   const totalWinRate = t?.winRate ?? derived.winRate;
 
+  // Per-row PnL ranking (top-level → category, drill → subcategory). Powers
+  // the PnL card hover popover. Sorted by abs PnL desc so the most "loud"
+  // rows surface first regardless of sign.
+  const pnlByRow = useMemo(() => {
+    const out: Array<{ key: string; pnl: number; signals: number }> = [];
+    for (const cat of data.categories) {
+      let pnl = 0;
+      let signals = 0;
+      for (const c of data.cells[cat] ?? []) {
+        pnl += c.pnl;
+        signals += c.count;
+      }
+      out.push({ key: cat, pnl, signals });
+    }
+    out.sort((a, b) => Math.abs(b.pnl) - Math.abs(a.pnl));
+    return out;
+  }, [data]);
+
+  const isDrill = data.drillCategory !== null;
+  const rowLabel = (key: string): string => {
+    if (isDrill) return data.subcategoryLabels?.[key] ?? key.toUpperCase();
+    return categoryMeta(key as Category).label;
+  };
+  const rowColor = (key: string): string => {
+    if (isDrill && data.drillCategory) {
+      return categoryMeta(data.drillCategory as Category).color;
+    }
+    return categoryMeta(key as Category).color;
+  };
+
+  // Hover state — only one popover open at a time; index into the items array.
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+
+  // Popover renderers — closed over the live data so labels/colors stay in
+  // sync with the current view (drill vs top-level, mode, range).
+  const renderPnlPopover = (): ReactNode => (
+    <>
+      <PopoverHeader
+        title={isDrill ? "PnL by subcategory" : "PnL by category"}
+        hint={`total ${fmtMoney(totalPnl)}`}
+      />
+      {pnlByRow.length === 0 ? (
+        <div style={{ fontSize: 11, color: TOKENS.textSec }}>no data</div>
+      ) : (
+        pnlByRow.map((r) => {
+          const color = r.pnl > 0 ? TOKENS.pos : r.pnl < 0 ? TOKENS.neg : TOKENS.textSec;
+          return (
+            <div
+              key={r.key}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "10px 1fr auto",
+                alignItems: "center",
+                gap: 8,
+                fontSize: 11,
+                marginBottom: 5,
+              }}
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 2,
+                  background: rowColor(r.key),
+                }}
+              />
+              <span style={{ color: TOKENS.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {rowLabel(r.key)}
+                <span style={{ color: TOKENS.textMuted, marginLeft: 6, fontSize: 10 }}>
+                  · {r.signals.toLocaleString()} sig
+                </span>
+              </span>
+              <span style={{ color, fontFamily: TOKENS.mono, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                {r.pnl >= 0 ? "+" : ""}{fmtMoney(r.pnl)}
+              </span>
+            </div>
+          );
+        })
+      )}
+    </>
+  );
+
+  const renderTopWhalesPopover = (): ReactNode => {
+    const list = data.topWhales ?? [];
+    return (
+      <>
+        <PopoverHeader
+          title={isDrill ? `Top whales · ${categoryMeta(data.drillCategory as Category).label}` : "Top whales"}
+          hint="by USD entered"
+        />
+        {list.length === 0 ? (
+          <div style={{ fontSize: 11, color: TOKENS.textSec }}>no data</div>
+        ) : (
+          list.map((w, i) => {
+            const pnlColor = w.pnl > 0 ? TOKENS.pos : w.pnl < 0 ? TOKENS.neg : TOKENS.textSec;
+            return (
+              <div
+                key={w.addr}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "16px 10px 1fr auto auto",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 11,
+                  marginBottom: 5,
+                  lineHeight: 1.3,
+                }}
+              >
+                <span style={{ color: TOKENS.textMuted, fontFamily: TOKENS.mono, fontSize: 10, fontWeight: 700 }}>
+                  {i + 1}.
+                </span>
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 8,
+                    background: w.color,
+                    boxShadow: `0 0 6px ${w.color}88`,
+                  }}
+                />
+                <span
+                  style={{
+                    color: TOKENS.text,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    fontFamily: w.alias.startsWith("0x") ? TOKENS.mono : TOKENS.font,
+                  }}
+                  title={w.addr}
+                >
+                  {w.alias}
+                </span>
+                <span
+                  style={{
+                    color: TOKENS.text,
+                    fontFamily: TOKENS.mono,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {fmtMoneyShort(w.volume)}
+                </span>
+                <span
+                  style={{
+                    color: pnlColor,
+                    fontFamily: TOKENS.mono,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    fontVariantNumeric: "tabular-nums",
+                    minWidth: 50,
+                    textAlign: "right",
+                  }}
+                >
+                  {w.pnl >= 0 ? "+" : ""}{fmtMoneyShort(w.pnl)}
+                </span>
+              </div>
+            );
+          })
+        )}
+      </>
+    );
+  };
+
   const items: StatItem[] = [
     {
       label: isPattern ? "Avg Signals / Day" : "Total Signals",
@@ -231,10 +486,12 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
       label: isPattern ? "Avg PnL / Day" : "Total PnL",
       value: fmtMoneyShort(totalPnl),
       pnlDir: totalPnl > 0 ? "up" : totalPnl < 0 ? "down" : undefined,
-      sub: "realized on exits",
+      sub: "realized on exits — hover for breakdown",
       spark: { values: trendPnl, color: totalPnl >= 0 ? TOKENS.pos : TOKENS.neg },
       tooltip:
-        "Realized profit/loss summed across all SELL and SETTLEMENT events in this window. SELLs without a known prior BUY contribute nothing (bootstrap NULL — fades as we accumulate history).",
+        "Realized profit/loss summed across all SELL and SETTLEMENT events in this window.",
+      popover: renderPnlPopover,
+      popoverWidth: 360,
     },
     {
       label: "Win Rate",
@@ -257,8 +514,10 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
         ? {
             label: "Top Whale",
             whale: { color: t.topWhale.color, alias: t.topWhale.alias },
-            sub: `${t.topWhale.alias.startsWith("0x") ? "address (no leaderboard alias)" : "Polymarket username"} · by USD entered`,
-            tooltip: `Whale with the largest BUY-side USD inflow in this window.\nFull address: ${t.topWhale.addr}`,
+            sub: "by USD entered — hover for top 10",
+            tooltip: `${t.topWhale.alias.startsWith("0x") ? "address (no leaderboard alias)" : "Polymarket username"}\n${t.topWhale.addr}`,
+            popover: renderTopWhalesPopover,
+            popoverWidth: 380,
           }
         : { label: "Top Whale", value: "—" },
     isPattern
@@ -296,7 +555,16 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
       }}
     >
       {items.map((it, i) => (
-        <StatCell key={it.label} item={it} divider={i < items.length - 1} />
+        <StatCell
+          key={it.label}
+          item={it}
+          divider={i < items.length - 1}
+          hovered={hoveredIdx === i}
+          onHoverChange={(h) => {
+            if (h) setHoveredIdx(i);
+            else setHoveredIdx((prev) => (prev === i ? null : prev));
+          }}
+        />
       ))}
     </div>
   );

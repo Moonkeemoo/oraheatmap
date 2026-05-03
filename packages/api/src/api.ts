@@ -12,6 +12,7 @@ import {
   type HeatmapRange,
   queryHeatmapAggRows,
   queryTopMarketsPerCell,
+  queryTopWhales,
   RANGE_CONFIG,
 } from "./heatmap-query";
 import type { Ingestor } from "./ingestor";
@@ -36,6 +37,8 @@ const SSE_HEARTBEAT_MS = 25_000;
  *  client-side by active metric and slices to top-5. Extras give the UI
  *  freedom to switch metrics without a refetch. */
 const TOP_MARKETS_PER_CELL = 10;
+/** Whales surfaced in the StatsBar "Top Whale" hover popover. */
+const TOP_WHALES_LIMIT = 10;
 
 function signalToWire(s: Signal): Record<string, unknown> {
   return {
@@ -125,6 +128,7 @@ export function createApi(deps: ApiDeps) {
             drillCategory: null,
             categories: CATEGORIES,
             subcategoryLabels: null,
+            topWhales: null,
             buckets: pattern.buckets,
             cells: pattern.cells,
             totals: null,
@@ -137,17 +141,24 @@ export function createApi(deps: ApiDeps) {
         const range: HeatmapRange = query.range ?? "1h";
         const cfg = RANGE_CONFIG[range];
         const buckets = buildBuckets(now, cfg.bucketMinutes, cfg.slots);
-        const [aggRows, marketRows, topWhaleAddr, uniqueWhales] = await Promise.all([
-          queryHeatmapAggRows(deps.sql, range, isDrill ? drillCategory : null),
-          queryTopMarketsPerCell(
-            deps.sql,
-            range,
-            TOP_MARKETS_PER_CELL,
-            isDrill ? drillCategory : null,
-          ),
-          fetchTopWhale(deps.sql, range),
-          fetchUniqueWhalesInWindow(deps.sql, range),
-        ]);
+        const [aggRows, marketRows, topWhaleAddr, uniqueWhales, topWhaleRows] =
+          await Promise.all([
+            queryHeatmapAggRows(deps.sql, range, isDrill ? drillCategory : null),
+            queryTopMarketsPerCell(
+              deps.sql,
+              range,
+              TOP_MARKETS_PER_CELL,
+              isDrill ? drillCategory : null,
+            ),
+            fetchTopWhale(deps.sql, range),
+            fetchUniqueWhalesInWindow(deps.sql, range),
+            queryTopWhales(
+              deps.sql,
+              range,
+              isDrill ? drillCategory : null,
+              TOP_WHALES_LIMIT,
+            ),
+          ]);
 
         const rowKeys = isDrill ? drillRules.map((r) => r.slug) : undefined;
         const grid = assembleHeatmap(aggRows, marketRows, buckets, range, now, {
@@ -160,11 +171,27 @@ export function createApi(deps: ApiDeps) {
         const subcategoryLabels = isDrill
           ? Object.fromEntries(drillRules.map((r) => [r.slug, SUBCATEGORY_LABELS[r.slug] ?? r.slug]))
           : null;
+        const topWhales = topWhaleRows.map((r) => {
+          const addr = r.whale_addr;
+          return {
+            addr,
+            alias: whaleAlias(addr),
+            color: whaleColor(addr),
+            signals: typeof r.signals === "number" ? r.signals : Number(r.signals),
+            volume: typeof r.volume_usd === "number" ? r.volume_usd : Number(r.volume_usd),
+            pnl: r.pnl_usd === null
+              ? 0
+              : typeof r.pnl_usd === "number"
+                ? r.pnl_usd
+                : Number(r.pnl_usd),
+          };
+        });
         return {
           ...grid,
           mode: "live" as const,
           trackedWhales,
           subcategoryLabels,
+          topWhales,
           totals: {
             ...grid.totals,
             uniqueWhales,

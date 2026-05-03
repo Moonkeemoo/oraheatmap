@@ -85,6 +85,17 @@ export type HeatmapResponse = {
   // `subcategoryLabels` maps slug → display label. Both `null` at top level.
   drillCategory: Category | null;
   subcategoryLabels: Record<string, string> | null;
+  /** Top-N whales by BUY USD volume in the current window. NULL in PATTERN
+   *  mode. In drill mode, restricted to the chosen category so the StatsBar
+   *  hover popover matches what the user sees on the grid. */
+  topWhales: ReadonlyArray<{
+    addr: string;
+    alias: string;
+    color: string;
+    signals: number;
+    volume: number;
+    pnl: number;
+  }> | null;
   // Common:
   trackedWhales: number;
   /** Row keys: top-level Category names OR subcategory slugs in drill mode. */
