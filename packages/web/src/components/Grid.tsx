@@ -24,6 +24,10 @@ function tint(hex: string, amount: number): string {
 
 const LABEL_W = 100;
 const TIME_ROW_H = 26;
+/** Minimum height per category row. Drill mode can show 15 rows which on a
+ *  short screen would squish below readable size; clamp here and let the
+ *  page scroll (body overflow-y) instead. */
+const MIN_ROW_H = 38;
 
 /**
  * Bucket → human label.
@@ -149,7 +153,10 @@ export function Grid({
       style={{
         display: "grid",
         gridTemplateColumns: `${LABEL_W}px repeat(${num}, minmax(0, 1fr))`,
-        gridTemplateRows: `${TIME_ROW_H}px repeat(${data.categories.length}, minmax(0, 1fr))`,
+        // minmax(MIN_ROW_H, 1fr): rows expand to fill available height when
+        // there's room, but never shrink below MIN_ROW_H — page scrolls
+        // instead. Critical for drill mode (15 rows) on short screens.
+        gridTemplateRows: `${TIME_ROW_H}px repeat(${data.categories.length}, minmax(${MIN_ROW_H}px, 1fr))`,
         gap: 4,
         width: "100%",
         height: "100%",

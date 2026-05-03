@@ -146,7 +146,10 @@ export function Heatmap() {
       style={{
         width: "100vw",
         maxWidth: "100vw",
-        height: "100vh",
+        // minHeight (not height) lets the page grow when content overflows
+        // the viewport — drill-down can have up to 15 rows which doesn't
+        // fit on a short laptop at readable cell size; body scroll catches it.
+        minHeight: "100vh",
         background: TOKENS.bg,
         color: TOKENS.text,
         fontFamily: TOKENS.font,
@@ -179,9 +182,11 @@ export function Heatmap() {
           flex: 1,
           padding: "14px 24px 10px",
           position: "relative",
-          minHeight: 0,
+          // Drop overflow:hidden so the grid can extend past the viewport
+          // when row count × min-row-height exceeds available space; the
+          // page scrolls (body overflow-y: auto). minHeight removed for the
+          // same reason — flex:1 still claims free space when there is any.
           boxSizing: "border-box",
-          overflow: "hidden",
         }}
       >
         {error && (
