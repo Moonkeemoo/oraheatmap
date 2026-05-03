@@ -76,7 +76,10 @@ export function createGammaCache(opts: GammaCacheOptions): GammaCache {
     const hit = cache.get(assetId);
     if (hit && now - hit.ts < opts.ttlMs) return hit.data;
 
-    const url = `${opts.baseUrl}/markets?clob_token_ids=${encodeURIComponent(assetId)}`;
+    // ?include_tag=true is REQUIRED — without it Gamma omits the `tags` field
+    // entirely, and every signal would be miscategorized as "Other". Confirmed
+    // empirically 2026-05-03; the original CLAUDE.md guidance was wrong.
+    const url = `${opts.baseUrl}/markets?clob_token_ids=${encodeURIComponent(assetId)}&include_tag=true`;
     let data: GammaMarket | null = null;
     try {
       const res = await fetchImpl(url);

@@ -1,19 +1,52 @@
 /**
- * Raw event from RTDS firehose. Polymarket's payload is loose; treat every field
- * as optional and validate per-handler. `asset_id` may be missing — fall back to
- * `market` (SIG-2 in CLAUDE.md).
+ * Raw RTDS trade payload. Polymarket's wire shape is loose — every field may be
+ * absent or differently-named depending on the producer. The ingestor probes
+ * multiple aliases (see `pickWallet` / `pickAssetId` / `pickConditionId`) so a
+ * single rename upstream doesn't silently drop signals.
  */
-export type RtdsTradeEvent = {
-  asset_id?: string;
-  market?: string;
-  condition_id?: string;
-  size?: number | string;
-  price?: number | string;
-  side?: "BUY" | "SELL" | string;
+export type RtdsTradePayload = {
+  // Wallet aliases (proxyWallet is what arrives most often in production)
+  proxyWallet?: string;
+  proxy_wallet?: string;
   user?: string;
+  maker?: string;
+  taker?: string;
+  address?: string;
+
+  // Asset / market aliases (SIG-2)
+  asset?: string;
+  asset_id?: string;
+  token_id?: string;
+  market?: string;
+
+  // Condition (market id)
+  conditionId?: string;
+  condition_id?: string;
+
+  // Trade body
+  size?: number | string;
+  amount?: number | string;
+  shares?: number | string;
+  price?: number | string;
+  executionPrice?: number | string;
+  side?: string;
+  action?: string;
+
+  // Timestamp aliases
   timestamp?: number | string;
+  ts?: number | string;
+
+  // Tx hash aliases
+  transactionHash?: string;
   transaction_hash?: string;
+  txHash?: string;
+
+  // Title / slug
+  slug?: string;
+  marketSlug?: string;
   title?: string;
+  outcome?: string;
+  outcomeName?: string;
 };
 
 /** Subset of Gamma /markets response we actually consume. */
@@ -40,9 +73,8 @@ export type Signal = {
   txHash: string | null;
 };
 
-/** Discriminated union for ingestor lifecycle status (used by API health probe later). */
+/** Discriminated union for ingestor lifecycle (used by /api/health later). */
 export type IngestorStatus =
   | { kind: "connecting" }
   | { kind: "open"; openedAt: number }
-  | { kind: "reconnecting"; attempt: number; nextDelayMs: number }
-  | { kind: "closed"; reason: string };
+  | { kind: "disconnected"; lastSeenAt: number };

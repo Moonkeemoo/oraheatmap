@@ -31,8 +31,6 @@ async function main(): Promise<void> {
     gamma,
     onSignal: (s) => buffer.push(s),
     pingIntervalMs: env.WS_PING_INTERVAL_MS,
-    pingJitterMaxMs: env.WS_PING_JITTER_MAX_MS,
-    heartbeatThresholdMs: env.WS_HEARTBEAT_THRESHOLD_MS,
     dataSilenceThresholdMs: env.WS_DATA_SILENCE_THRESHOLD_MS,
   });
 

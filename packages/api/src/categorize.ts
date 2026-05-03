@@ -1,44 +1,96 @@
-export type GammaTag = { label?: string };
+/**
+ * One element of `gamma_market.tags`. We rely on `slug` (Polymarket's stable
+ * canonical identifier), not `label` (which has inconsistent casing across
+ * tags). `id` is also unique but we don't need to read it.
+ */
+export type GammaTag = {
+  id?: string;
+  label?: string;
+  slug?: string;
+};
 
+/** 8 heatmap buckets + Other. Display labels are these strings verbatim. */
 export type Category =
   | "Sports"
   | "Politics"
   | "Crypto"
-  | "Science"
   | "Finance"
+  | "Tech"
+  | "World"
   | "Culture"
-  | "Weather"
+  | "Climate"
   | "Other";
 
 /**
- * Word-boundary keyword rules. Plain substring matches caused false positives
- * (e.g. "iNFLation" → Sports because it contains "nfl"), so we anchor to whole
- * words. Order matters — first matching rule wins.
+ * Slug → bucket mapping based on the canonical Polymarket taxonomy
+ * (see /tags/slug/{slug}). Each bucket may collapse multiple Polymarket
+ * top-level slugs to keep the heatmap to 8 rows. To extend, just add a
+ * slug here — no regex maintenance.
  */
-const RULES: ReadonlyArray<{ pattern: RegExp; category: Category }> = [
-  { pattern: /\b(sports?|mlb|nba|nfl|nhl|ufc|soccer|football|tennis|golf|f1|formula|racing)\b/i, category: "Sports" },
-  { pattern: /\b(politics?|election|president|senate|congress|vote|voting)\b/i, category: "Politics" },
-  { pattern: /\b(crypto|bitcoin|btc|ethereum|eth|solana|sol|doge|memecoin)\b/i, category: "Crypto" },
-  { pattern: /\b(science|tech|ai|space|nasa|spacex)\b/i, category: "Science" },
-  { pattern: /\b(finance|economy|economic|fed|rates|inflation|stocks?|stock\s+market)\b/i, category: "Finance" },
-  { pattern: /\b(culture|entertainment|music|movie|movies|film|tv|celebrity|awards?)\b/i, category: "Culture" },
-  { pattern: /\b(weather|climate|hurricane|temperature|storm)\b/i, category: "Weather" },
-];
+const SLUG_TO_CATEGORY: Readonly<Record<string, Category>> = Object.freeze({
+  // Sports — single biggest segment, kept alone
+  sports: "Sports",
+
+  // Politics absorbs Elections (subset)
+  politics: "Politics",
+  elections: "Politics",
+
+  // Crypto — kept alone
+  crypto: "Crypto",
+
+  // Finance = business + economy
+  business: "Finance",
+  economy: "Finance",
+
+  // Tech = tech + ai + science (similar audience, low individual volume)
+  tech: "Tech",
+  ai: "Tech",
+  science: "Tech",
+
+  // World = news + world (geo + breaking)
+  news: "World",
+  world: "World",
+
+  // Culture = entertainment + pop-culture
+  entertainment: "Culture",
+  "pop-culture": "Culture",
+
+  // Climate / Weather
+  weather: "Climate",
+  climate: "Climate",
+});
 
 /**
- * Map a list of Gamma `tags` to a coarse heatmap category. Pure function.
- * Returns "Other" when no tag matches a known keyword.
+ * Map a market's tags to one of 8 heatmap buckets. Pure function.
+ *
+ * Polymarket lists tags in order from broadest (e.g. "Sports") to most
+ * specific (e.g. "counter strike 2"), so we walk the array and return the
+ * first slug that matches a known canonical bucket. Returns "Other" if no
+ * tag is canonical.
+ *
+ * NOTE: requires Gamma `?include_tag=true` query param — without it the API
+ * omits the `tags` field entirely.
  */
 export function categorize(tags: ReadonlyArray<GammaTag> | null | undefined): Category {
   if (!tags || tags.length === 0) return "Other";
-
   for (const tag of tags) {
-    const label = tag.label;
-    if (!label) continue;
-    for (const rule of RULES) {
-      if (rule.pattern.test(label)) return rule.category;
-    }
+    const slug = tag.slug;
+    if (!slug) continue;
+    const cat = SLUG_TO_CATEGORY[slug];
+    if (cat) return cat;
   }
-
   return "Other";
 }
+
+/** Exposed for tests / for the API to enumerate heatmap rows. */
+export const CATEGORIES: ReadonlyArray<Category> = Object.freeze([
+  "Sports",
+  "Politics",
+  "Crypto",
+  "Finance",
+  "Tech",
+  "World",
+  "Culture",
+  "Climate",
+  "Other",
+]);

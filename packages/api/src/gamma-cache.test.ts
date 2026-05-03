@@ -33,7 +33,7 @@ describe("gamma-cache", () => {
         closed: false,
         outcomes: '["Yes","No"]',
         outcomePrices: '["0.65","0.35"]',
-        tags: [{ label: "Politics" }],
+        tags: [{ id: "2", label: "Politics", slug: "politics" }],
       },
     ]]);
     const cache = createGammaCache({ baseUrl: "https://gamma.test", ttlMs: 30_000, fetchImpl: m.fetch });
@@ -49,7 +49,7 @@ describe("gamma-cache", () => {
   });
 
   test("caches within TTL — second call does not re-fetch", async () => {
-    const m = mockFetch([[{ question: "Q", tags: [{ label: "Sports" }] }]]);
+    const m = mockFetch([[{ question: "Q", tags: [{ id: "1", label: "Sports", slug: "sports" }] }]]);
     const cache = createGammaCache({ baseUrl: "https://gamma.test", ttlMs: 30_000, fetchImpl: m.fetch });
 
     await cache.enrich("asset-1");

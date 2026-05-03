@@ -33,13 +33,14 @@ Full data source docs: `docs/handoff-polymarket-whale-feeds.md` (from oralab rep
 
 | # | Rule | If violated |
 |---|------|------------|
-| SIG-1 | Dual heartbeat watchdogs: HEARTBEAT (30s, any frame) + DATA (45s, real events only) | Zombie WS — connected but receiving nothing, signals silently stop |
-| SIG-2 | `asset_id` fallback: always `ev.asset_id ?? ev.market ?? ""` | Missed signals — some events carry token as `market` not `asset_id` |
+| SIG-1 | Use `@polymarket/real-time-data-client` SDK — never roll a raw `ws` client. SDK handles the on-wire ping/pong, autoReconnect, and the `subscribe({ subscriptions: [{ topic: "activity", type: "trades" }] })` envelope. Layer a warn-only DATA-silence watchdog on top to spot zombies (firehose silent for >45s). | Hand-rolled WS misses control-frame heartbeats and gets killed by a heartbeat watchdog; or sends the wrong subscribe shape and receives nothing |
+| SIG-2 | Wallet/asset extraction must probe ALL aliases: wallet = `proxyWallet ?? proxy_wallet ?? user ?? maker ?? taker ?? address`; asset = `asset ?? asset_id ?? token_id ?? market`; condition = `conditionId ?? condition_id` | Missed signals — `proxyWallet` is the most common wallet field in production; `asset_id` is rare. Vanilla `event.user` / `event.asset_id` drops most trades |
 | SIG-3 | Gamma `outcomes`/`outcomePrices` are JSON-strings — must `JSON.parse()` | Crash or garbage category data |
+| SIG-3a | Gamma `/markets` does NOT return `tags` by default — must add `?include_tag=true`, otherwise every signal categorizes as "Other" | Heatmap rows all collapse into one bucket |
 | SIG-4 | Dead-book filter: drop when `bid ≤ 0.02` | Nonsense price data from Polymarket placeholders |
-| SIG-5 | `confidence` is the canonical trust signal — never recompute from `win_rate * hold_hours` | Zero for 99% of wallets (oralab bug d0e10c4) |
+| SIG-5 | `confidence` is the canonical trust signal — never recompute from `win_rate * hold_hours` | Zero for 99% of wallets (oralab bug d0e10c4). **Obsolete here** — this project doesn't carry confidence; kept as historical reference only |
 | SIG-6 | Batch insert signals every 5s, not per-event | DB connection exhaustion under firehose load |
-| SIG-7 | WS reconnect: exponential backoff 2s→30s, re-subscribe ALL assets in single batch | Fragmented state, missed subscriptions |
+| SIG-7 | WS reconnect handled by the SDK (`autoReconnect: true`); on application-level resubscribe failure, restart the SDK client rather than reusing it | Fragmented state, missed subscriptions |
 
 ## Conventions
 
@@ -48,7 +49,7 @@ Full data source docs: `docs/handoff-polymarket-whale-feeds.md` (from oralab rep
 - **Pure functions where possible** — categorization, color calculation, aggregation must be pure
 - **PostgreSQL + Drizzle** — never JSON files for state, never in-memory-only for persistent data
 - **Bun runtime** — use native Bun APIs where available (fetch, WebSocket client for simple cases)
-- **`ws` package for RTDS** — Bun native WS lacks fine-grained control needed for dual heartbeat watchdogs
+- **`@polymarket/real-time-data-client` SDK for RTDS** — never raw `ws`. The SDK handles WS protocol pings, autoReconnect, and the subscribe envelope (`{ subscriptions: [{ topic: "activity", type: "trades" }] }`). Layer a warn-only DATA-silence watchdog on top
 - **Elysia for API** — type-safe, native SSE support, fastest on Bun
 - **Canvas for heatmap rendering** — not DOM cells. 500+ cells at drill-down level = DOM too slow. Canvas single-pass < 16ms
 - **Platform UI in English; Claude ↔ Taras collaboration in Ukrainian**

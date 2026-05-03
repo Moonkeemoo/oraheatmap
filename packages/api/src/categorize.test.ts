@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { categorize, type Category } from "./categorize";
+import { categorize, CATEGORIES, type Category } from "./categorize";
 
 describe("categorize", () => {
   test("empty / nullish input → Other", () => {
@@ -8,58 +8,95 @@ describe("categorize", () => {
     expect(categorize([])).toBe("Other");
   });
 
-  test("tag without label → Other", () => {
+  test("tag without slug → Other", () => {
     expect(categorize([{}])).toBe("Other");
+    expect(categorize([{ label: "Sports" }])).toBe("Other"); // label alone isn't enough — slug is the canonical key
   });
 
   const cases: ReadonlyArray<[string, Category]> = [
-    ["Sports", "Sports"],
+    // Sports — single bucket
     ["sports", "Sports"],
-    ["MLB", "Sports"],
-    ["NBA", "Sports"],
-    ["NFL Season", "Sports"],
-    ["F1 Racing", "Sports"],
-    ["Politics", "Politics"],
-    ["US Election 2028", "Politics"],
-    ["Senate Race", "Politics"],
-    ["Crypto", "Crypto"],
-    ["Bitcoin Price", "Crypto"],
-    ["ETH ETF", "Crypto"],
-    ["Solana", "Crypto"],
-    ["Science", "Science"],
-    ["AI Models", "Science"],
-    ["SpaceX Launch", "Science"],
-    ["Finance", "Finance"],
-    ["Fed Rate Cut", "Finance"],
-    ["US Inflation", "Finance"],
-    ["Culture", "Culture"],
-    ["Movie Awards", "Culture"],
-    ["Music Charts", "Culture"],
-    ["Weather", "Weather"],
-    ["Hurricane Path", "Weather"],
+    // Politics absorbs Elections
+    ["politics", "Politics"],
+    ["elections", "Politics"],
+    // Crypto kept alone
+    ["crypto", "Crypto"],
+    // Finance = business + economy
+    ["business", "Finance"],
+    ["economy", "Finance"],
+    // Tech = tech + ai + science
+    ["tech", "Tech"],
+    ["ai", "Tech"],
+    ["science", "Tech"],
+    // World = news + world
+    ["news", "World"],
+    ["world", "World"],
+    // Culture = entertainment + pop-culture
+    ["entertainment", "Culture"],
+    ["pop-culture", "Culture"],
+    // Climate = weather + climate
+    ["weather", "Climate"],
+    ["climate", "Climate"],
   ];
-  test.each(cases)("label %s → %s", (label, expected) => {
-    expect(categorize([{ label }])).toBe(expected);
+  test.each(cases)("slug %s → %s", (slug, expected) => {
+    expect(categorize([{ slug }])).toBe(expected);
   });
 
-  test("unknown label → Other", () => {
-    expect(categorize([{ label: "Random Trivia" }])).toBe("Other");
+  test("non-canonical slug (specific tag like counter-strike-2) → Other on its own", () => {
+    expect(categorize([{ slug: "counter-strike-2" }])).toBe("Other");
+    expect(categorize([{ slug: "btc-eth" }])).toBe("Other");
   });
 
-  test("substring traps: word boundaries prevent false positives", () => {
-    // "inflation" contains "nfl" — must NOT match Sports
-    expect(categorize([{ label: "US Inflation" }])).toBe("Finance");
-    // "rain" contains "ai" — must NOT match Science
-    expect(categorize([{ label: "Will it rain tomorrow?" }])).toBe("Other");
-    // "Mlbgame" without word boundary → still no match (we want clean tags)
-    expect(categorize([{ label: "Mlbgame" }])).toBe("Other");
+  test("first canonical tag wins (Polymarket lists broadest tag first)", () => {
+    // Real CS2 market shape: [Sports, Esports, Games, counter strike 2]
+    expect(
+      categorize([
+        { slug: "sports" },
+        { slug: "esports" }, // not in our canonical map
+        { slug: "games" },
+        { slug: "counter-strike-2" },
+      ]),
+    ).toBe("Sports");
   });
 
-  test("first matching tag wins", () => {
-    expect(categorize([{ label: "Bitcoin" }, { label: "Sports" }])).toBe("Crypto");
+  test("skips slug-less tags and uses next canonical", () => {
+    expect(
+      categorize([
+        { label: "Counter-Strike" },
+        { slug: "sports" },
+      ]),
+    ).toBe("Sports");
   });
 
-  test("skips tags without labels and uses next", () => {
-    expect(categorize([{}, { label: "NBA Finals" }])).toBe("Sports");
+  test("politics + elections both present → first wins (politics)", () => {
+    expect(categorize([{ slug: "politics" }, { slug: "elections" }])).toBe("Politics");
+  });
+
+  test("CATEGORIES exposes the 9 buckets including Other", () => {
+    expect(CATEGORIES).toContain("Other");
+    expect(CATEGORIES.length).toBe(9);
+  });
+
+  test("real-world Polymarket tag shapes (sample from /markets?include_tag=true)", () => {
+    // Sport / Esports
+    expect(
+      categorize([
+        { id: "1", label: "Sports", slug: "sports" },
+        { id: "64", label: "Esports", slug: "esports" },
+      ]),
+    ).toBe("Sports");
+    // Crypto / Bitcoin
+    expect(
+      categorize([
+        { id: "21", label: "Crypto", slug: "crypto" },
+        { id: "235", label: "Bitcoin", slug: "bitcoin" },
+      ]),
+    ).toBe("Crypto");
+    // Politics / Elections subset (only 'elections' present)
+    expect(
+      categorize([
+        { id: "144", label: "Elections", slug: "elections" },
+      ]),
+    ).toBe("Politics");
   });
 });
