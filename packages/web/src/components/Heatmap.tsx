@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useHeatmap } from "@/hooks/useHeatmap";
 import { useSse } from "@/hooks/useSse";
+import { applySignal } from "@/lib/heatmap-apply";
 import { TOKENS } from "@/lib/tokens";
-import type { Category, HeatmapCell, HeatmapMetric, HeatmapRange } from "@/lib/types";
+import type { Category, HeatmapCell, HeatmapMetric, HeatmapRange, SignalEvent } from "@/lib/types";
 import { Grid } from "./Grid";
 import { Header } from "./Header";
 import { StatsBar } from "./StatsBar";
@@ -24,20 +25,40 @@ export function Heatmap() {
   const [range, setRange] = useState<HeatmapRange>("1h");
   const [hover, setHover] = useState<HoverState | null>(null);
   const [flashByCategory, setFlashByCategory] = useState<FlashByCategory>({});
+  // Optimistic queue of SSE signals received since the last /api/heatmap fetch.
+  // Folded into displayData via reduce; cleared whenever a fresh fetch arrives.
+  const [pendingSignals, setPendingSignals] = useState<SignalEvent[]>([]);
 
   const isLive = range === "1h";
 
-  const { data, loading, error } = useHeatmap(range);
+  const { data: fetchedData, loading, error } = useHeatmap(range);
+
+  // Authoritative server response replaces all optimistic state — drop the queue.
+  useEffect(() => {
+    setPendingSignals([]);
+  }, [fetchedData?.generatedAt]);
+
+  // Apply pending signals on top of the latest fetched data so cell values
+  // and the flash animation tick at the same moment.
+  const displayData = useMemo(() => {
+    if (!fetchedData) return null;
+    let acc = fetchedData;
+    for (const s of pendingSignals) acc = applySignal(acc, s);
+    return acc;
+  }, [fetchedData, pendingSignals]);
 
   useSse((s) => {
     if (!isLive) return; // only the LIVE 1h view flashes
     const cat = s.category as Category;
-    if (!data?.categories.includes(cat)) return;
+    if (!fetchedData?.categories.includes(cat)) return;
+    // Bump cell value + flash counter together — they re-render in the same
+    // React batch so the user sees the number tick AND the ring flash on the
+    // same frame.
+    setPendingSignals((prev) => [...prev, s]);
     setFlashByCategory((prev) => ({ ...prev, [cat]: (prev[cat] ?? 0) + 1 }));
   });
 
-  // Reset hover when range flips (data refresh keeps hover alive — bucket
-  // contents update but the user is still pointing at the same slot)
+  // Reset hover when range flips
   useEffect(() => {
     setHover(null);
   }, [range]);
@@ -82,13 +103,13 @@ export function Heatmap() {
             api error: {error}
           </div>
         )}
-        {loading && !data && (
+        {loading && !displayData && (
           <div style={{ color: TOKENS.textSec, fontSize: 13 }}>loading…</div>
         )}
-        {data && (
+        {displayData && (
           <>
             <Grid
-              data={data}
+              data={displayData}
               metric={metric}
               onHover={(h) => setHover(h)}
               flashByCategory={flashByCategory}
@@ -107,7 +128,7 @@ export function Heatmap() {
         )}
       </div>
 
-      {data && <StatsBar data={data} trackedCount={TRACKED_COUNT} />}
+      {displayData && <StatsBar data={displayData} trackedCount={TRACKED_COUNT} />}
     </div>
   );
 }
