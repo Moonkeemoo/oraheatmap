@@ -46,24 +46,62 @@ const TOP_WHALES_LIMIT = 10;
  *  beyond this would make the grid unreadable. Sorted by total signals desc. */
 const MAX_MARKETS_IN_DRILL = 30;
 
-/** Trim a market question for the L3 row label so it fits a 2-line clamp:
- *    1. drop the parent subcategory prefix ("Bitcoin Up or Down" → "Up or Down")
- *    2. drop leading "Will the " / "Will " (every prediction-market label
- *       starts with this — dead weight in the visible text)
- *    3. drop the parent subcategory prefix again (to catch "Will Bitcoin
- *       reach …" → "reach …")
- *    4. drop trailing "?" (universal at the end of a question)
- *  All steps are case-insensitive and idempotent. The full original label
- *  is still surfaced via the `title` attribute on hover. */
+/** Trim a market question for the L3 row label so it fits a 2-line clamp.
+ *  Stages run in order, each one a no-op when its pattern doesn't match.
+ *  Full original label is still surfaced via the `title` attribute on hover.
+ *
+ *  Universal:
+ *    1. drop subcategory prefix ("Bitcoin Up or Down" → "Up or Down")
+ *    2. drop leading "Will the " / "Will "
+ *    3. drop subcategory prefix again ("Will Bitcoin reach…" → "reach…")
+ *    4. drop trailing "?"
+ *
+ *  Pattern-specific (most common formats in the corpus):
+ *    5. "{team} wins the [YEAR] [LEAGUE] {Event}" → "{team} · {Event}"
+ *       e.g. "Lakers win the 2026 NBA Finals" → "Lakers · Finals"
+ *    6. "Up or Down - [Date,] {T1}-{T2} [TZ]" → "Up/Down {T1}–{T2}"
+ *       e.g. "Up or Down - May 3, 3:15PM-3:30PM ET" → "Up/Down 3:15PM–3:30PM"
+ *    7. "{highest|lowest} temperature in {City} be {Val} on {Date}"
+ *       → "{City} {max|min} {Val} · {Date}"
+ */
 function shortenMarketLabel(label: string, subcategoryLabel: string | null): string {
   let out = label.trim();
   const stripPrefix = (s: string, pfx: string): string => {
     const re = new RegExp(`^${pfx.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+`, "i");
     return s.replace(re, "");
   };
+
+  // 1-3 — universal prefixes
   if (subcategoryLabel) out = stripPrefix(out, subcategoryLabel);
   out = out.replace(/^Will\s+(the\s+)?/i, "");
   if (subcategoryLabel) out = stripPrefix(out, subcategoryLabel);
+
+  // 5 — league finals / championship / cup
+  // {team} (wins?) (the)? (YEAR)? (LEAGUE)? {Event}
+  out = out.replace(
+    /^(.+?)\s+wins?\s+(?:the\s+)?(?:\d{4}\s+)?(?:[A-Z]{2,5}\s+)?(Finals?|Championship|Stanley Cup|World Series|World Cup|Super Bowl|Cup|League)\??$/,
+    "$1 · $2",
+  );
+
+  // 6 — crypto perpetual "Up or Down - <date>, <T1>-<T2> [TZ]"
+  out = out.replace(
+    /^Up or Down\s*-?\s*(?:[A-Z][a-z]+\s+\d+,?\s*)?(\d{1,2}(?::\d{2})?\s*(?:AM|PM))-(\d{1,2}(?::\d{2})?\s*(?:AM|PM))(?:\s+(?:ET|UTC|GMT|EST|EDT))?\??$/i,
+    "Up/Down $1–$2",
+  );
+  // Single-time variant: "Up or Down - May 3, 2PM ET"
+  out = out.replace(
+    /^Up or Down\s*-?\s*(?:[A-Z][a-z]+\s+\d+,?\s*)?(\d{1,2}(?::\d{2})?\s*(?:AM|PM))(?:\s+(?:ET|UTC|GMT|EST|EDT))?\??$/i,
+    "Up/Down $1",
+  );
+
+  // 7 — temperature markets
+  out = out.replace(
+    /^(highest|lowest)\s+temperature\s+in\s+(.+?)\s+be\s+(.+?)\s+on\s+(.+?)\??$/i,
+    (_match, hl: string, city: string, val: string, date: string) =>
+      `${city} ${hl.toLowerCase() === "highest" ? "max" : "min"} ${val} · ${date}`,
+  );
+
+  // 4 — trailing "?"
   out = out.replace(/\?\s*$/, "");
   return out.length > 0 ? out : label;
 }
