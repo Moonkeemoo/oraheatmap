@@ -43,7 +43,9 @@ export function Cell({
   isNowCol,
   flashSeq,
   showDelta,
+  isLocked,
   onHover,
+  onClick,
 }: {
   cell: HeatmapCell;
   metric: HeatmapMetric;
@@ -52,7 +54,10 @@ export function Cell({
   flashSeq: number;
   /** Render the parenthetical delta next to the main value (PATTERN mode only). */
   showDelta: boolean;
+  /** This cell currently has the locked tooltip — render a persistent ring. */
+  isLocked: boolean;
   onHover: (h: { cell: HeatmapCell; anchor: TooltipAnchor } | null) => void;
+  onClick: (h: { cell: HeatmapCell; anchor: TooltipAnchor }) => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [hovered, setHovered] = useState(false);
@@ -70,23 +75,26 @@ export function Cell({
         ? TOKENS.neg
         : TOKENS.textSec;
 
-  const onEnter = (): void => {
-    setHovered(true);
-    if (isEmpty || !ref.current) return;
+  function captureAnchor(): TooltipAnchor | null {
+    if (!ref.current) return null;
     const r = ref.current.getBoundingClientRect();
     const parent = ref.current.closest("[data-hm-grid-wrap]") as HTMLElement | null;
     const pr = parent?.getBoundingClientRect();
-    onHover({
-      cell,
-      anchor: {
-        x: r.left - (pr?.left ?? 0),
-        y: r.top - (pr?.top ?? 0),
-        w: r.width,
-        h: r.height,
-        parentW: pr?.width ?? r.width,
-        parentH: pr?.height ?? r.height,
-      },
-    });
+    return {
+      x: r.left - (pr?.left ?? 0),
+      y: r.top - (pr?.top ?? 0),
+      w: r.width,
+      h: r.height,
+      parentW: pr?.width ?? r.width,
+      parentH: pr?.height ?? r.height,
+    };
+  }
+
+  const onEnter = (): void => {
+    setHovered(true);
+    if (isEmpty) return;
+    const anchor = captureAnchor();
+    if (anchor) onHover({ cell, anchor });
   };
 
   const onLeave = (): void => {
@@ -94,11 +102,18 @@ export function Cell({
     onHover(null);
   };
 
+  const onClickHandler = (): void => {
+    if (isEmpty) return;
+    const anchor = captureAnchor();
+    if (anchor) onClick({ cell, anchor });
+  };
+
   return (
     <div
       ref={ref}
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
+      onClick={onClickHandler}
       style={{
         background: bg,
         backgroundImage: isEmpty
@@ -114,11 +129,13 @@ export function Cell({
         transform: hovered && !isEmpty ? "scale(1.1)" : "scale(1)",
         transition: "transform .14s cubic-bezier(.2,.7,.3,1), box-shadow .14s, background .3s",
         boxShadow:
-          hovered && !isEmpty
-            ? `0 8px 22px rgba(0,0,0,0.55), 0 0 0 1px ${TOKENS.borderHi}`
-            : "none",
+          isLocked && !isEmpty
+            ? `0 8px 22px rgba(0,0,0,0.55), 0 0 0 2px ${TOKENS.accent}`
+            : hovered && !isEmpty
+              ? `0 8px 22px rgba(0,0,0,0.55), 0 0 0 1px ${TOKENS.borderHi}`
+              : "none",
         position: "relative",
-        zIndex: hovered ? 5 : 1,
+        zIndex: isLocked ? 6 : hovered ? 5 : 1,
         animation: "cellLand .35s cubic-bezier(.2,.7,.3,1) both",
         outline: isNowCol && !isEmpty ? `1px solid rgba(63,185,80,0.28)` : "none",
         outlineOffset: -1,

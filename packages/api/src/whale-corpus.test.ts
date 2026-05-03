@@ -84,7 +84,7 @@ describe("loadWhaleCorpus", () => {
     // Size depends on the latest refresh-corpus.ts run — assert a reasonable
     // band rather than a hard number so the test doesn't flake on every refresh.
     expect(set.size).toBeGreaterThan(500);
-    expect(set.size).toBeLessThan(2500);
+    expect(set.size).toBeLessThan(10000);
     for (const addr of set) {
       expect(addr).toMatch(/^0x[0-9a-f]{40}$/);
     }

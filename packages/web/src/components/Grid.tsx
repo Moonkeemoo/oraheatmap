@@ -16,7 +16,7 @@ const TIME_ROW_H = 26;
  * Bucket → human label.
  *   LIVE 1h/24h           → "16:35"  HH:MM, local TZ from bucket.ts
  *   LIVE 12d/12w          → "03/05"  DD/MM, local TZ
- *   PATTERN hour-of-day   → "16:00"  local hour after rotation (slotPosition is local hour)
+ *   PATTERN hour-of-day   → "16–18"  local 2-hour range (slotPosition is local slot 0..11)
  *   PATTERN day-of-week   → "Mon".."Sun" from server
  */
 function formatSlotLabel(
@@ -28,8 +28,10 @@ function formatSlotLabel(
 ): string {
   if (mode === "pattern") {
     if (patternKind === "hour-of-day") {
-      // After rotation, slotPosition IS the local hour (0..23).
-      return String(slotPosition).padStart(2, "0") + ":00";
+      // After rotation, slotPosition is the local 2-hour slot index (0..11).
+      const a = (slotPosition * 2) % 24;
+      const b = (a + 2) % 24;
+      return `${String(a).padStart(2, "0")}–${String(b).padStart(2, "0")}`;
     }
     return bucket.label ?? String(bucket.index);
   }
@@ -49,34 +51,38 @@ export function Grid({
   data,
   metric,
   onHover,
+  onClick,
+  lockedCellId,
   flashByCell,
   gridKey,
 }: {
   data: HeatmapResponse;
   metric: HeatmapMetric;
-  onHover: (h: { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string } | null) => void;
+  onHover: (h: { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string; cellId: string } | null) => void;
+  onClick: (h: { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string; cellId: string }) => void;
+  /** `${category}:${slotIdx}` of the currently locked cell, or null. */
+  lockedCellId: string | null;
   flashByCell: FlashByCell;
   gridKey: string;
 }) {
   const num = data.buckets.length;
   const isPattern = data.mode === "pattern";
 
-  // Backend pattern queries group by UTC hour / dow. To display in viewer's
-  // local TZ we rotate the bucket array.
+  // Backend pattern queries group by UTC slot. To display in viewer's local TZ
+  // we rotate the bucket array.
   //
-  // We want: displayColumn[localHour] to show server data for the UTC hour
-  // that corresponds to local `localHour`. utcHour = localHour - tzOffset.
-  // After slice+concat: displayColumn[i] = server[(i + shift) % 24].
-  // So shift = (-tzOffset mod 24).
+  // hour-of-day: 12 slots × 2h. shift unit = 2h. For non-even tzOffsets
+  // (e.g. UTC+5.5 India, UTC+3 Kyiv) the slot boundary doesn't align with
+  // the local hour boundary — we round to the nearest 2-hour slot, accepting
+  // up to a 1-hour skew. Acceptable for a pattern view.
   //
-  // Worked example for UTC+3 (Kyiv): tzOffset = +3, shift = 21.
-  //   displayColumn[14] = server[(14+21)%24] = server[11] = UTC 11 data
-  //   == "what happens at local 14:00, averaged"
+  // displayColumn[localSlot] = server[(localSlot + shift) % 12].
+  // shift = (-tzOffset/2) mod 12.
   const localShiftIdx = useMemo<number>(() => {
     if (data.mode !== "pattern") return 0;
     if (data.patternKind === "hour-of-day") {
       const tzOffset = -new Date().getTimezoneOffset() / 60;
-      return ((Math.round(-tzOffset) % 24) + 24) % 24;
+      return ((Math.round(-tzOffset / 2) % 12) + 12) % 12;
     }
     return 0; // day-of-week: leave UTC dow for MVP — TZ shift rarely changes day
   }, [data]);
@@ -114,7 +120,7 @@ export function Grid({
   // For hour-of-day after local rotation, NOW = local hour (column position).
   const nowSlotIndex = useMemo<number | null>(() => {
     if (data.mode === "live") return num - 1;
-    if (data.patternKind === "hour-of-day") return new Date().getHours();
+    if (data.patternKind === "hour-of-day") return Math.floor(new Date().getHours() / 2);
     if (data.patternKind === "day-of-week") {
       const dow = new Date().getDay(); // 0=Sun
       const monFirst = [1, 2, 3, 4, 5, 6, 0];
@@ -210,6 +216,8 @@ export function Grid({
               // index). After local-shift rotation, original index = (slot + shift) mod num.
               const originalIdx = (slot + localShiftIdx) % num;
               const flashSeq = flashByCell[`${cat}:${originalIdx}`] ?? 0;
+              const cellId = `${cat}:${slot}`;
+              const slotLabel = formatSlotLabel(buckets[slot]!, data.mode, data.patternKind, slot, data.range);
               return (
                 <Cell
                   key={`${cat}-${slot}-${gridKey}`}
@@ -219,17 +227,15 @@ export function Grid({
                   isNowCol={isNowCol}
                   flashSeq={flashSeq}
                   showDelta={isPattern}
+                  isLocked={lockedCellId === cellId}
                   onHover={(h) =>
                     onHover(
                       h
-                        ? {
-                            ...h,
-                            category: cat,
-                            slotLabel: formatSlotLabel(buckets[slot]!, data.mode, data.patternKind, slot, data.range),
-                          }
+                        ? { ...h, category: cat, slotLabel, cellId }
                         : null,
                     )
                   }
+                  onClick={(h) => onClick({ ...h, category: cat, slotLabel, cellId })}
                 />
               );
             })}

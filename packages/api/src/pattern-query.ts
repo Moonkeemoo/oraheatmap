@@ -74,8 +74,12 @@ function dayOfWeekLabel(dow: number): string {
   return labels[dow] ?? String(dow);
 }
 
-function hourLabel(hour: number): string {
-  return String(hour).padStart(2, "0") + ":00";
+/** Slot 0..11 → "00–02", "02–04", ..., "22–00". 2-hour buckets for parity with
+ *  LIVE mode's 12-column layout. */
+function hourSlotLabel(slot: number): string {
+  const a = (slot * 2) % 24;
+  const b = (a + 2) % 24;
+  return `${String(a).padStart(2, "0")}–${String(b).padStart(2, "0")}`;
 }
 
 /** Mon..Sun ordering — push Sunday to the end so the week reads naturally. */
@@ -112,18 +116,37 @@ async function queryHourOfDayRows(
   lookbackDays: number,
 ): Promise<ReadonlyArray<AggRow>> {
   const half = lookbackDays / 2;
+  // 12 slots × 2-hour buckets to match LIVE's 12-column layout. We sum the two
+  // hours that share a slot inside the per-day CTE, THEN average across days,
+  // so the value is "average per 2h slot" — comparable to a LIVE 24h cell.
   const rows = await sql<AggRow[]>`
-    WITH split AS (
+    WITH per_day_slot AS (
       SELECT
-        EXTRACT(hour FROM bucket AT TIME ZONE 'UTC')::int AS slot,
+        DATE_TRUNC('day', bucket AT TIME ZONE 'UTC')                         AS day,
+        (EXTRACT(hour FROM bucket AT TIME ZONE 'UTC')::int / 2)              AS slot,
         category,
-        signal_count, buy_volume_usd, realized_pnl_sum, win_count, loss_count,
-        CASE
-          WHEN bucket >= NOW() - (${`${half} days`}::interval) THEN 'recent'
-          ELSE 'older'
-        END AS period
+        SUM(signal_count)     AS slot_signals,
+        SUM(buy_volume_usd)   AS slot_volume,
+        SUM(realized_pnl_sum) AS slot_pnl,
+        SUM(win_count)        AS slot_wins,
+        SUM(loss_count)       AS slot_losses
       FROM signals_hourly
       WHERE bucket >= NOW() - (${`${lookbackDays} days`}::interval)
+      GROUP BY day, slot, category
+    ),
+    split AS (
+      SELECT
+        slot, category,
+        slot_signals AS signal_count,
+        slot_volume  AS buy_volume_usd,
+        slot_pnl     AS realized_pnl_sum,
+        slot_wins    AS win_count,
+        slot_losses  AS loss_count,
+        CASE
+          WHEN day >= NOW() - (${`${half} days`}::interval) THEN 'recent'
+          ELSE 'older'
+        END AS period
+      FROM per_day_slot
     )
     SELECT
       slot, category,
@@ -215,7 +238,7 @@ function winRateOf(wins: number, losses: number): number | null {
 
 function buildSlotOrder(kind: PatternKind): ReadonlyArray<{ slot: number; label: string }> {
   if (kind === "hour-of-day") {
-    return Array.from({ length: 24 }, (_, h) => ({ slot: h, label: hourLabel(h) }));
+    return Array.from({ length: 12 }, (_, s) => ({ slot: s, label: hourSlotLabel(s) }));
   }
   return DOW_DISPLAY_ORDER.map((d) => ({ slot: d, label: dayOfWeekLabel(d) }));
 }

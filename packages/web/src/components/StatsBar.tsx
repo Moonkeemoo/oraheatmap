@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { categoryMeta } from "@/lib/categories";
 import { fmtMoneyShort } from "@/lib/format";
 import { TOKENS } from "@/lib/tokens";
-import type { HeatmapResponse } from "@/lib/types";
+import type { Category, HeatmapResponse } from "@/lib/types";
 import { MiniSpark } from "./MiniSpark";
 
 type StatItem = {
@@ -182,51 +182,105 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
   const firstHalf = trendSignals.slice(0, half).reduce((a, b) => a + b, 0);
   const sigDelta = firstHalf > 0 ? Math.round(((lastHalf - firstHalf) / firstHalf) * 100) : 0;
 
-  // Heatmap.tsx only mounts StatsBar when totals exists (LIVE mode), but TS
-  // doesn't carry that constraint through props. Bail safely if absent.
-  if (!data.totals) return null;
+  // PATTERN totals derived client-side from the grid (server returns null in
+  // pattern mode — single-window totals don't have a clear meaning when each
+  // cell is itself an average). Sums across cells = "average daily total".
+  const isPattern = data.mode === "pattern";
+  const derived = useMemo(() => {
+    let signals = 0;
+    let volume = 0;
+    let pnl = 0;
+    let wins = 0;
+    let exits = 0;
+    let topCat: Category | null = null;
+    let topCount = 0;
+    const perCat: Record<string, number> = {};
+    for (const cat of data.categories) {
+      let catCount = 0;
+      for (const c of data.cells[cat]) {
+        signals += c.count;
+        volume += c.volume;
+        pnl += c.pnl;
+        catCount += c.count;
+        if (c.winRate !== null) {
+          // Approximate win/loss reconstruction not possible from rate alone;
+          // fall back to weighted avg: treat each non-null cell as 1 sample.
+          // Good enough for a footer summary; LIVE has the precise number.
+          wins += c.winRate;
+          exits += 1;
+        }
+      }
+      perCat[cat] = catCount;
+      if (catCount > topCount) {
+        topCount = catCount;
+        topCat = cat;
+      }
+    }
+    const winRate = exits > 0 ? wins / exits : null;
+    return { signals, volume, pnl, winRate, topCat, topCount };
+  }, [data]);
+
   const t = data.totals;
-  const topCatMeta = t.topCategory ? categoryMeta(t.topCategory) : null;
+  const topCategory = t?.topCategory ?? derived.topCat;
+  const topCatMeta = topCategory ? categoryMeta(topCategory as Category) : null;
+  const totalSignals = t?.signals ?? Math.round(derived.signals);
+  const totalVolume = t?.volume ?? derived.volume;
+  const totalWinRate = t?.winRate ?? derived.winRate;
 
   const items: StatItem[] = [
     {
-      label: "Total Signals",
-      value: t.signals.toLocaleString(),
-      delta: { val: sigDelta, dir: sigDelta >= 0 ? "up" : "down" },
+      label: isPattern ? "Avg Signals / Day" : "Total Signals",
+      value: totalSignals.toLocaleString(),
+      delta: isPattern ? undefined : { val: sigDelta, dir: sigDelta >= 0 ? "up" : "down" },
       spark: { values: trendSignals, color: TOKENS.link },
     },
     {
-      label: "Total Volume",
-      value: fmtMoneyShort(t.volume),
+      label: isPattern ? "Avg Volume / Day" : "Total Volume",
+      value: fmtMoneyShort(totalVolume),
       sub: "BUY entries (USD)",
       spark: { values: trendVolume, color: TOKENS.accent },
     },
     {
       label: "Win Rate",
-      value: t.winRate === null ? "—" : Math.round(t.winRate * 100) + "%",
-      pnlDir: t.winRate === null ? undefined : t.winRate >= 0.5 ? "up" : "down",
-      sub: "by exits",
+      value: totalWinRate === null ? "—" : Math.round(totalWinRate * 100) + "%",
+      pnlDir: totalWinRate === null ? undefined : totalWinRate >= 0.5 ? "up" : "down",
+      sub: isPattern ? "avg over slots" : "by exits",
     },
     topCatMeta
       ? {
           label: "Top Category",
           badge: { color: topCatMeta.color, label: topCatMeta.label },
-          sub: `${(t.signals).toLocaleString()} total signals`,
+          sub: isPattern
+            ? `${Math.round(derived.topCount).toLocaleString()} avg signals`
+            : `${totalSignals.toLocaleString()} total signals`,
         }
       : { label: "Top Category", value: "—" },
-    t.topWhale
+    isPattern
       ? {
-          label: "Top Whale",
-          whale: { color: t.topWhale.color, alias: t.topWhale.alias },
-          sub: "by USD entered",
+          label: "Lookback",
+          value: String(data.lookbackDays ?? 30),
+          suffix: "days",
+          sub: "trend window",
         }
-      : { label: "Top Whale", value: "—" },
-    {
-      label: "Active Whales",
-      value: t.activeWhales.toString(),
-      suffix: `/ ${trackedCount.toLocaleString()}`,
-      bar: trackedCount > 0 ? Math.min(1, t.activeWhales / trackedCount) : 0,
-    },
+      : t?.topWhale
+        ? {
+            label: "Top Whale",
+            whale: { color: t.topWhale.color, alias: t.topWhale.alias },
+            sub: "by USD entered",
+          }
+        : { label: "Top Whale", value: "—" },
+    isPattern
+      ? {
+          label: "Tracked Whales",
+          value: trackedCount.toLocaleString(),
+          sub: "corpus size",
+        }
+      : {
+          label: "Active Whales",
+          value: (t?.activeWhales ?? 0).toString(),
+          suffix: `/ ${trackedCount.toLocaleString()}`,
+          bar: trackedCount > 0 ? Math.min(1, (t?.activeWhales ?? 0) / trackedCount) : 0,
+        },
   ];
 
   return (

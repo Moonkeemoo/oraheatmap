@@ -145,6 +145,7 @@ export function Tooltip({
   patternKind,
   metric,
   lookbackDays,
+  locked,
 }: {
   cell: HeatmapCell;
   anchor: TooltipAnchor;
@@ -155,6 +156,9 @@ export function Tooltip({
   patternKind: PatternKind;
   metric: HeatmapMetric;
   lookbackDays: number;
+  /** When true, this tooltip is the click-locked one — show a different hint
+   *  and a subtle "pinned" border. */
+  locked: boolean;
 }) {
   const meta = categoryMeta(category);
   const isPattern = mode === "pattern";
@@ -222,14 +226,16 @@ export function Tooltip({
         top: pos.top,
         width: initialW,
         background: TOKENS.panel,
-        border: `1px solid ${TOKENS.borderHi}`,
+        border: `1px solid ${locked ? TOKENS.accent : TOKENS.borderHi}`,
         borderRadius: 8,
         padding: "12px 14px",
         fontFamily: TOKENS.font,
         color: TOKENS.text,
-        boxShadow: "0 10px 30px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.4)",
+        boxShadow: locked
+          ? `0 10px 30px rgba(0,0,0,0.55), 0 0 0 1px ${TOKENS.accent}55`
+          : "0 10px 30px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.4)",
         pointerEvents: "none",
-        zIndex: 30,
+        zIndex: locked ? 31 : 30,
         animation: "tipIn .12s ease-out",
         boxSizing: "border-box",
       }}
@@ -391,6 +397,21 @@ export function Tooltip({
           ))}
         </div>
       )}
+
+      <div
+        style={{
+          marginTop: 8,
+          paddingTop: 6,
+          borderTop: `1px dashed ${TOKENS.border}`,
+          fontSize: 9,
+          fontFamily: TOKENS.mono,
+          color: TOKENS.textMuted,
+          letterSpacing: 0.4,
+          textAlign: "center",
+        }}
+      >
+        {locked ? "клікни ще раз щоб розлочити" : "клікни щоб залочити"}
+      </div>
     </div>
   );
 }

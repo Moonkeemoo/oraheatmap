@@ -19,7 +19,13 @@ import { Header } from "./Header";
 import { StatsBar } from "./StatsBar";
 import { Tooltip, type TooltipAnchor } from "./Tooltip";
 
-type HoverState = { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string };
+type HoverState = {
+  cell: HeatmapCell;
+  anchor: TooltipAnchor;
+  category: string;
+  slotLabel: string;
+  cellId: string;
+};
 
 /** Per-(category × slot index) flash counter. Keyed by `${cat}:${slot}` so that
  *  in PATTERN mode the cell matching the signal's hour-of-day or day-of-week
@@ -31,7 +37,7 @@ const DOW_DISPLAY_ORDER: ReadonlyArray<number> = [1, 2, 3, 4, 5, 6, 0]; // Mon..
 
 /** Map a signal timestamp to the bucket index AS IT APPEARS IN SERVER RESPONSE.
  *  Grid handles local-TZ rotation separately for display. LIVE: last index (NOW).
- *  PATTERN-hour: UTC hour 0..23 (matches backend EXTRACT(hour FROM bucket AT TIME ZONE 'UTC')).
+ *  PATTERN-hour: UTC hour / 2 → 0..11 (12 two-hour slots, matches backend).
  *  PATTERN-dow: 0..6 in Mon..Sun display order. */
 function flashSlotIndex(
   mode: Mode,
@@ -41,7 +47,7 @@ function flashSlotIndex(
 ): number {
   if (mode === "live") return bucketCount - 1;
   const d = new Date(ts);
-  if (kind === "hour-of-day") return d.getUTCHours();
+  if (kind === "hour-of-day") return Math.floor(d.getUTCHours() / 2);
   if (kind === "day-of-week") return DOW_DISPLAY_ORDER.indexOf(d.getUTCDay());
   return -1;
 }
@@ -52,6 +58,7 @@ export function Heatmap() {
   const [patternKind, setPatternKind] = useState<PatternKind>("hour-of-day");
   const [metric, setMetric] = useState<HeatmapMetric>("signals");
   const [hover, setHover] = useState<HoverState | null>(null);
+  const [locked, setLocked] = useState<HoverState | null>(null);
   const [flashByCell, setFlashByCell] = useState<FlashByCell>({});
   const [pendingSignals, setPendingSignals] = useState<SignalEvent[]>([]);
 
@@ -98,9 +105,10 @@ export function Heatmap() {
     setFlashByCell((prev) => ({ ...prev, [key]: (prev[key] ?? 0) + 1 }));
   });
 
-  // Reset hover on mode/range/kind switches (data shape changes).
+  // Reset hover + lock on mode/range/kind switches (anchors/cell IDs are stale).
   useEffect(() => {
     setHover(null);
+    setLocked(null);
   }, [mode, range, patternKind]);
 
   const isLive = mode === "live";
@@ -168,10 +176,29 @@ export function Heatmap() {
               data={displayData}
               metric={metric}
               onHover={(h) => setHover(h)}
+              onClick={(h) => {
+                // Toggle: same cell unlocks, any other cell takes the lock.
+                setLocked((prev) => (prev?.cellId === h.cellId ? null : h));
+              }}
+              lockedCellId={locked?.cellId ?? null}
               flashByCell={flashByCell}
               gridKey={`${mode}-${range}-${patternKind}`}
             />
-            {hover && (
+            {locked && (
+              <Tooltip
+                cell={locked.cell}
+                anchor={locked.anchor}
+                category={locked.category as Category}
+                slotLabel={locked.slotLabel}
+                mode={displayData.mode}
+                range={range}
+                patternKind={patternKind}
+                metric={metric}
+                lookbackDays={displayData.lookbackDays ?? 30}
+                locked
+              />
+            )}
+            {hover && hover.cellId !== locked?.cellId && (
               <Tooltip
                 cell={hover.cell}
                 anchor={hover.anchor}
@@ -182,13 +209,14 @@ export function Heatmap() {
                 patternKind={patternKind}
                 metric={metric}
                 lookbackDays={displayData.lookbackDays ?? 30}
+                locked={false}
               />
             )}
           </>
         )}
       </div>
 
-      {displayData?.totals && (
+      {displayData && (
         <StatsBar data={displayData} trackedCount={displayData.trackedWhales} />
       )}
     </div>
