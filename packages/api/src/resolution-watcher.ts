@@ -27,6 +27,9 @@ type ClosedMarket = {
   clobTokenIds?: string;
   tags?: GammaTag[];
   closed?: boolean;
+  /** Per-market slug; events[].slug preferred for the public URL builder. */
+  slug?: string;
+  events?: Array<{ slug?: string }>;
 };
 
 export type ResolutionWatcher = {
@@ -99,6 +102,7 @@ export function buildSettlementSignals(args: {
   marketQuestion: string | null;
   category: string;
   tags: ReadonlyArray<GammaTag>;
+  marketSlug: string | null;
   settlements: ReadonlyArray<{
     ts: Date;
     whaleAddr: string;
@@ -123,6 +127,7 @@ export function buildSettlementSignals(args: {
     realizedPnl: s.realizedPnl,
     exitKind: "RESOLUTION",
     subcategory,
+    marketSlug: args.marketSlug,
   }));
 }
 
@@ -199,6 +204,11 @@ export function createResolutionWatcher(opts: ResolutionWatcherOptions): Resolut
 
     const category = categorize(m.tags);
     const marketQuestion = typeof m.question === "string" ? m.question : null;
+    // Prefer parent event slug — that's the canonical /event/{slug} URL.
+    const marketSlug =
+      (Array.isArray(m.events) && m.events[0]?.slug) ? m.events[0]!.slug! :
+      (typeof m.slug === "string" && m.slug.length > 0) ? m.slug :
+      null;
 
     let settlementCount = 0;
     let totalPnl = 0;
@@ -219,6 +229,7 @@ export function createResolutionWatcher(opts: ResolutionWatcherOptions): Resolut
         marketQuestion,
         category,
         tags: m.tags ?? [],
+        marketSlug,
         settlements,
       });
 

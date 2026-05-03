@@ -187,6 +187,7 @@ export function createIngestor(deps: IngestorDeps): Ingestor {
       realizedPnl,
       exitKind,
       subcategory,
+      marketSlug: market?.slug ?? null,
     };
     stats.signalsEmitted += 1;
     log.info("whale signal", {

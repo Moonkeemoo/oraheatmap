@@ -22,6 +22,15 @@ export type TooltipAnchor = {
 };
 
 const TOP_N = 5;
+/** Personal Polymarket referral code — bake into all market URLs we render.
+ *  Override at build time with NEXT_PUBLIC_POLYMARKET_REFERRAL. */
+const POLY_REFERRAL =
+  (typeof process !== "undefined" && process.env["NEXT_PUBLIC_POLYMARKET_REFERRAL"]) || "Moonkeee";
+
+function marketUrl(slug: string | null): string | null {
+  if (!slug) return null;
+  return `https://polymarket.com/event/${encodeURIComponent(slug)}?r=${encodeURIComponent(POLY_REFERRAL)}`;
+}
 
 function rangeUnit(r: LiveRange | undefined, mode: Mode, kind: PatternKind | undefined): string {
   if (mode === "pattern") return kind === "hour-of-day" ? "hour" : "day";
@@ -234,7 +243,10 @@ export function Tooltip({
         boxShadow: locked
           ? `0 10px 30px rgba(0,0,0,0.55), 0 0 0 1px ${TOKENS.accent}55`
           : "0 10px 30px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.4)",
-        pointerEvents: "none",
+        // Locked tooltip is interactive (so the user can click market links).
+        // Hover tooltip stays pointer-transparent so it doesn't hijack the
+        // mouse during cell-to-cell comparison.
+        pointerEvents: locked ? "auto" : "none",
         zIndex: locked ? 31 : 30,
         animation: "tipIn .12s ease-out",
         boxSizing: "border-box",
@@ -369,18 +381,47 @@ export function Tooltip({
               <span style={{ color: TOKENS.textMuted, fontFamily: TOKENS.mono, fontSize: 10, fontWeight: 700 }}>
                 {i + 1}.
               </span>
-              <span
-                style={{
+              {(() => {
+                const label = m.marketQuestion ?? "(unknown market)";
+                const url = marketUrl(m.marketSlug);
+                const baseStyle: React.CSSProperties = {
                   color: TOKENS.text,
                   display: "-webkit-box",
                   WebkitLineClamp: 3,
                   WebkitBoxOrient: "vertical",
                   overflow: "hidden",
-                }}
-                title={m.marketQuestion ?? "(unknown market)"}
-              >
-                {m.marketQuestion ?? "(unknown market)"}
-              </span>
+                  textDecoration: "none",
+                };
+                // Locked tooltip is interactive (pointerEvents: auto on root)
+                // so anchors actually receive clicks. The hover (transient)
+                // tooltip stays pointer-transparent so the user can compare
+                // adjacent cells without the floating panel hijacking the
+                // mouse — links still render but aren't clickable until lock.
+                if (!url) {
+                  return (
+                    <span style={baseStyle} title={label}>
+                      {label}
+                    </span>
+                  );
+                }
+                return (
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ ...baseStyle, color: TOKENS.link, cursor: "pointer" }}
+                    title={`${label} — open on Polymarket`}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLAnchorElement).style.textDecoration = "underline";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLAnchorElement).style.textDecoration = "none";
+                    }}
+                  >
+                    {label}
+                  </a>
+                );
+              })()}
               <span
                 style={{
                   color: metricColor(metric, m),

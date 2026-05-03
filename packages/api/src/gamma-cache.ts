@@ -13,6 +13,10 @@ type RawGammaMarket = {
   outcomes?: unknown;
   outcomePrices?: unknown;
   tags?: unknown;
+  /** Per-market slug (e.g. "russia-ukraine-ceasefire-before-gta-vi-554"). */
+  slug?: unknown;
+  /** Parent event(s); the modern public URL format is /event/{event.slug}. */
+  events?: unknown;
 };
 
 export type GammaCache = {
@@ -55,6 +59,18 @@ function parseNumberArray(field: unknown): number[] {
   }
 }
 
+function pickSlug(raw: RawGammaMarket): string | null {
+  // Prefer the parent event's slug — that's the canonical /event/{slug} URL
+  // on polymarket.com and lands on a real page even for grouped events.
+  // Fall back to the per-market slug if no event is attached.
+  if (Array.isArray(raw.events) && raw.events.length > 0) {
+    const ev = raw.events[0] as { slug?: unknown };
+    if (typeof ev?.slug === "string" && ev.slug.length > 0) return ev.slug;
+  }
+  if (typeof raw.slug === "string" && raw.slug.length > 0) return raw.slug;
+  return null;
+}
+
 function asGammaMarket(raw: RawGammaMarket): GammaMarket {
   const tags = Array.isArray(raw.tags) ? (raw.tags as GammaTag[]) : [];
   return {
@@ -65,6 +81,7 @@ function asGammaMarket(raw: RawGammaMarket): GammaMarket {
     active: Boolean(raw.active) && Boolean(raw.acceptingOrders) && !raw.closed,
     outcomes: parseStringArray(raw.outcomes),
     outcomePrices: parseNumberArray(raw.outcomePrices),
+    slug: pickSlug(raw),
   };
 }
 

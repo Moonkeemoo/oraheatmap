@@ -24,6 +24,9 @@ export type HeatmapMetric = "signals" | "volume" | "pnl" | "winrate";
 export type MarketSummary = {
   conditionId: string;
   marketQuestion: string | null;
+  /** Polymarket event slug — frontend builds the public URL from this.
+   *  NULL for legacy rows that predate slug capture. */
+  marketSlug: string | null;
   count: number;
   volume: number;
   pnl: number;
@@ -104,6 +107,7 @@ export type SignalEvent = {
   marketQuestion: string | null;
   category: Category | string;
   subcategory: string | null;
+  marketSlug: string | null;
   side: "BUY" | "SELL" | "SETTLEMENT";
   price: number;
   size: number;

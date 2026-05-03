@@ -46,6 +46,7 @@ function signalToWire(s: Signal): Record<string, unknown> {
     assetId: s.assetId,
     conditionId: s.conditionId,
     marketQuestion: s.marketQuestion,
+    marketSlug: s.marketSlug,
     category: s.category,
     subcategory: s.subcategory,
     side: s.side,

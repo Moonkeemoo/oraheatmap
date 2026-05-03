@@ -9,6 +9,7 @@ describe("buildSettlementSignals", () => {
       marketQuestion: "Will X happen?",
       category: "Crypto",
       tags: [{ slug: "crypto" }, { slug: "bitcoin" }],
+      marketSlug: "will-x-happen",
       settlements: [
         {
           ts: new Date("2026-05-03T12:00:00Z"),

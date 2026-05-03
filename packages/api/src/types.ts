@@ -59,6 +59,9 @@ export type GammaMarket = {
   active: boolean;
   outcomes: string[];
   outcomePrices: number[];
+  /** Polymarket event slug — used to build the public market URL. NULL when
+   *  Gamma's response doesn't include one (legacy / unusual markets). */
+  slug: string | null;
 };
 
 /** Row inserted into the `signals` hypertable. */
@@ -80,6 +83,9 @@ export type Signal = {
   exitKind: "SELL" | "RESOLUTION" | null;
   /** Most-specific known sub-tag slug (e.g. 'nba', 'bitcoin', 'north-america'). NULL when nothing matched. */
   subcategory: string | null;
+  /** Polymarket market/event slug — frontend builds the link from this.
+   *  NULL when Gamma omitted it or for old rows from before this column existed. */
+  marketSlug: string | null;
 };
 
 /** Discriminated union for ingestor lifecycle (used by /api/health later). */

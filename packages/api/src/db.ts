@@ -51,6 +51,7 @@ function toInsertRow(s: Signal): SignalInsert {
     realizedPnl: s.realizedPnl,
     exitKind: s.exitKind,
     subcategory: s.subcategory,
+    marketSlug: s.marketSlug,
   };
 }
 

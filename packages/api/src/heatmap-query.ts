@@ -40,6 +40,9 @@ export const RANGE_CONFIG: Readonly<Record<HeatmapRange, RangeConfig>> = Object.
 export type MarketSummary = {
   conditionId: string;
   marketQuestion: string | null;
+  /** Polymarket event slug for the public URL. NULL for legacy rows that
+   *  predate slug capture. */
+  marketSlug: string | null;
   count: number;
   volume: number;
   pnl: number;
@@ -108,6 +111,7 @@ type MarketRow = {
   category: string;
   condition_id: string;
   market_question: string | null;
+  market_slug: string | null;
   signals: string | number;
   volume_usd: string | number;
   pnl_usd: string | number | null;
@@ -258,6 +262,7 @@ export function assembleHeatmap(
     cell.markets.push({
       conditionId: m.condition_id,
       marketQuestion: m.market_question,
+      marketSlug: m.market_slug,
       count: num(m.signals),
       volume: num(m.volume_usd),
       pnl: num(m.pnl_usd),
@@ -412,11 +417,12 @@ export async function queryTopMarketsPerCell(
   drillCategory: Category | null = null,
 ): Promise<ReadonlyArray<MarketRow>> {
   const cfg = RANGE_CONFIG[range];
-  // For drill mode we also restrict to raw — same rationale as queryHeatmapAggRows.
-  // Top markets per cell are only computed when source is raw (1h) or when
-  // drilling. For 24h+/non-drill we skip this enrichment (UI tooltip omits
-  // markets section).
-  if (cfg.source !== "raw" && drillCategory === null) return [];
+  // Always scan raw signals (the hourly continuous aggregate doesn't carry
+  // condition_id). For top-level views we cap at 24h — 12d/12w would mean
+  // multi-million-row scans per request. Drill mode keeps it on for all
+  // ranges since the WHERE category=X filter narrows the scan substantially.
+  const heavy = range === "12d" || range === "12w";
+  if (heavy && drillCategory === null) return [];
 
   const bucketInterval = `${cfg.bucketMinutes} minutes`;
   const windowInterval = `${cfg.windowMinutes} minutes`;
@@ -448,7 +454,7 @@ export async function queryTopMarketsPerCell(
       )
       SELECT
         to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
-        category, condition_id, market_question, signals, volume_usd, pnl_usd, win_count, loss_count
+        category, condition_id, market_question, market_slug, signals, volume_usd, pnl_usd, win_count, loss_count
       FROM ranked
       WHERE rn <= ${perCellLimit}
     `;
@@ -462,6 +468,7 @@ export async function queryTopMarketsPerCell(
         category,
         condition_id,
         MAX(market_question)                                                  AS market_question,
+        MAX(market_slug)                                                      AS market_slug,
         COUNT(*)::bigint                                                      AS signals,
         COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)            AS volume_usd,
         COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd,
@@ -479,7 +486,7 @@ export async function queryTopMarketsPerCell(
     )
     SELECT
       to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
-      category, condition_id, market_question, signals, volume_usd, pnl_usd, win_count, loss_count
+      category, condition_id, market_question, market_slug, signals, volume_usd, pnl_usd, win_count, loss_count
     FROM ranked
     WHERE rn <= ${perCellLimit}
   `;
