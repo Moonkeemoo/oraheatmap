@@ -103,9 +103,7 @@ export function Tooltip({
           {meta.label}
         </span>
         <span style={{ color: TOKENS.textSec, fontSize: 11, fontFamily: TOKENS.mono }}>
-          {slotLabel === "NOW" || slotLabel === "TODAY"
-            ? `last ${rangeUnit(range)}`
-            : slotLabel}
+          {slotLabel} · {rangeUnit(range)}
         </span>
       </div>
 

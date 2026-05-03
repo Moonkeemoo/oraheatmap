@@ -11,16 +11,15 @@ export function Cell({
   metric,
   intensityFn,
   isNowCol,
-  justArrived,
-  gridKey,
+  flashSeq,
   onHover,
 }: {
   cell: HeatmapCell;
   metric: HeatmapMetric;
   intensityFn: (c: HeatmapCell) => number;
   isNowCol: boolean;
-  justArrived: boolean;
-  gridKey: string;
+  /** Monotonic counter: bumped each time THIS cell receives a fresh SSE signal. */
+  flashSeq: number;
   onHover: (h: { cell: HeatmapCell; anchor: TooltipAnchor } | null) => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -55,16 +54,9 @@ export function Cell({
     onHover(null);
   };
 
-  // gridKey forces React to recreate the node when range/tick changes,
-  // re-running cellLand animation.
-  const animation = justArrived
-    ? "cellLand .35s cubic-bezier(.2,.7,.3,1) both, flashRing .9s ease-out .05s"
-    : "cellLand .35s cubic-bezier(.2,.7,.3,1) both";
-
   return (
     <div
       ref={ref}
-      data-grid-key={gridKey}
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
       style={{
@@ -87,11 +79,29 @@ export function Cell({
             : "none",
         position: "relative",
         zIndex: hovered ? 5 : 1,
-        animation,
+        // cellLand runs once on mount (when grid is rebuilt — i.e. on initial
+        // load or range change). Data refresh keeps the same cell mounted, so
+        // no animation flicker on every refetch.
+        animation: "cellLand .35s cubic-bezier(.2,.7,.3,1) both",
         outline: isNowCol && !isEmpty ? `1px solid rgba(63,185,80,0.28)` : "none",
         outlineOffset: -1,
       }}
     >
+      {/* Flash overlay: only present when flashSeq > 0. The key includes flashSeq
+          so each new signal re-mounts the overlay and re-runs the flashRing
+          animation exactly once per signal — no more nonstop blinking. */}
+      {flashSeq > 0 && (
+        <span
+          key={`flash-${flashSeq}`}
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: 7,
+            pointerEvents: "none",
+            animation: "flashRing .9s ease-out forwards",
+          }}
+        />
+      )}
       {!isEmpty && (
         <span
           style={{
@@ -101,6 +111,8 @@ export function Cell({
             fontVariantNumeric: "tabular-nums",
             letterSpacing: 0.2,
             textShadow: "0 1px 2px rgba(0,0,0,0.5)",
+            position: "relative",
+            zIndex: 1,
           }}
         >
           {value}

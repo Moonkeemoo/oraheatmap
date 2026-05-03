@@ -14,31 +14,33 @@ const TRACKED_COUNT = 1504;
 
 type HoverState = { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string };
 
+/** Per-category flash counter. Bumped each time an SSE signal arrives for that
+ *  category; the NOW cell of that category re-keys its flash overlay and
+ *  re-runs the flashRing animation. Cells of other categories don't flicker. */
+export type FlashByCategory = Partial<Record<Category, number>>;
+
 export function Heatmap() {
   const [metric, setMetric] = useState<HeatmapMetric>("signals");
   const [range, setRange] = useState<HeatmapRange>("1h");
   const [hover, setHover] = useState<HoverState | null>(null);
-  const [justArrivedTick, setJustArrivedTick] = useState(false);
+  const [flashByCategory, setFlashByCategory] = useState<FlashByCategory>({});
 
   const isLive = range === "1h";
 
   const { data, loading, error } = useHeatmap(range);
 
-  // Live cell flash: when SSE pushes a new whale signal whose category exists
-  // in the current grid, briefly toggle the "justArrived" flag so the NOW
-  // column flashes via cellLand+flashRing.
   useSse((s) => {
-    if (!data) return;
-    if (!isLive) return; // only flash on the live 1h view
-    if (!data.categories.includes(s.category as Category)) return;
-    setJustArrivedTick(true);
-    setTimeout(() => setJustArrivedTick(false), 900);
+    if (!isLive) return; // only the LIVE 1h view flashes
+    const cat = s.category as Category;
+    if (!data?.categories.includes(cat)) return;
+    setFlashByCategory((prev) => ({ ...prev, [cat]: (prev[cat] ?? 0) + 1 }));
   });
 
-  // Reset hover when range/data flips
+  // Reset hover when range flips (data refresh keeps hover alive — bucket
+  // contents update but the user is still pointing at the same slot)
   useEffect(() => {
     setHover(null);
-  }, [range, data?.generatedAt]);
+  }, [range]);
 
   return (
     <div
@@ -89,8 +91,8 @@ export function Heatmap() {
               data={data}
               metric={metric}
               onHover={(h) => setHover(h)}
-              justArrivedTick={justArrivedTick}
-              gridKey={`${range}-${data.generatedAt}`}
+              flashByCategory={flashByCategory}
+              gridKey={range}
             />
             {hover && (
               <Tooltip

@@ -4,40 +4,59 @@ import { Fragment, useMemo } from "react";
 import { categoryMeta } from "@/lib/categories";
 import { makeIntensityFn } from "@/lib/colors";
 import { TOKENS } from "@/lib/tokens";
-import type { HeatmapCell, HeatmapMetric, HeatmapRange, HeatmapResponse } from "@/lib/types";
+import type { Category, HeatmapCell, HeatmapMetric, HeatmapRange, HeatmapResponse } from "@/lib/types";
 import { Cell } from "./Cell";
+import type { FlashByCategory } from "./Heatmap";
 import type { TooltipAnchor } from "./Tooltip";
 
-const LABEL_W = 124;
-const TIME_ROW_H = 28;
+const LABEL_W = 100;
+const TIME_ROW_H = 26;
 
-function slotLabel(range: HeatmapRange, slotIdx: number, total: number): string {
-  const fromEnd = total - 1 - slotIdx;
-  if (fromEnd === 0) return range === "7d" || range === "30d" ? "TODAY" : "NOW";
-  if (range === "1h") return `-${fromEnd * 5}m`;
-  if (range === "24h") return `-${fromEnd}h`;
-  return `-${fromEnd}d`;
+/**
+ * Bucket timestamp → human label in the viewer's LOCAL timezone.
+ *   1h  / 24h → "16:35" (HH:MM)
+ *   7d  / 30d → "03/05" (DD/MM)
+ * Time labels move with the chart automatically because each bucket carries
+ * its own ts; shifting the window shifts the visible labels with it.
+ */
+function formatSlotLabel(range: HeatmapRange, ts: string): string {
+  const d = new Date(ts);
+  if (range === "1h" || range === "24h") {
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return `${hh}:${mm}`;
+  }
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}/${mo}`;
+}
+
+/** How often to actually render a label (others render blank to avoid crowding). */
+function labelStride(range: HeatmapRange, num: number): number {
+  if (range === "1h") return 1;
+  if (range === "24h") return 2; // 24 buckets → label every 2h
+  if (range === "7d") return 1;  // 7 buckets → all
+  return Math.max(1, Math.ceil(num / 12)); // 30d → ~2-3 day stride
 }
 
 export function Grid({
   data,
   metric,
   onHover,
-  justArrivedTick,
+  flashByCategory,
   gridKey,
 }: {
   data: HeatmapResponse;
   metric: HeatmapMetric;
   onHover: (h: { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string } | null) => void;
-  justArrivedTick: boolean;
+  flashByCategory: FlashByCategory;
   gridKey: string;
 }) {
   const num = data.buckets.length;
 
-  // Per-grid intensity normalization. Computed once per (data, metric).
   const intensityFn = useMemo(() => {
     if (metric === "winrate") {
-      return (c: HeatmapCell) => (c.winRate ?? 0);
+      return (c: HeatmapCell) => c.winRate ?? 0;
     }
     const key = metric === "pnl" ? "pnl" : metric === "volume" ? "volume" : "count";
     const flat: HeatmapCell[] = [];
@@ -46,6 +65,7 @@ export function Grid({
   }, [data, metric]);
 
   const cellFontSize = num > 16 ? 10 : 12;
+  const stride = labelStride(data.range, num);
 
   return (
     <div
@@ -54,18 +74,19 @@ export function Grid({
         display: "grid",
         gridTemplateColumns: `${LABEL_W}px repeat(${num}, minmax(0, 1fr))`,
         gridTemplateRows: `${TIME_ROW_H}px repeat(${data.categories.length}, minmax(0, 1fr))`,
-        gap: 5,
+        gap: 4,
         width: "100%",
         height: "100%",
         position: "relative",
         fontSize: cellFontSize,
+        boxSizing: "border-box",
       }}
     >
       <div />
-      {Array.from({ length: num }).map((_, i) => {
-        const lbl = slotLabel(data.range, i, num);
-        const showLabel = num <= 12 || i % Math.ceil(num / 12) === 0 || i === num - 1;
-        const isNow = lbl === "NOW" || lbl === "TODAY";
+      {data.buckets.map((b, i) => {
+        const lbl = formatSlotLabel(data.range, b.ts);
+        const isNow = i === num - 1;
+        const visible = isNow || i % stride === 0;
         return (
           <div
             key={i}
@@ -75,11 +96,10 @@ export function Grid({
               color: isNow ? TOKENS.pos : TOKENS.textSec,
               fontWeight: isNow ? 700 : 500,
               letterSpacing: 0.5,
-              textTransform: "uppercase",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              opacity: showLabel ? 1 : 0,
+              opacity: visible ? 1 : 0,
             }}
           >
             {isNow ? (
@@ -132,7 +152,10 @@ export function Grid({
             </div>
             {data.cells[cat].map((cell, slot) => {
               const isNowCol = slot === num - 1;
-              const justArrived = isNowCol && justArrivedTick;
+              // Per-cell flash sequence — only the NOW cell of a category that
+              // received a fresh signal will have a non-zero, monotonically
+              // growing seq. Other cells stay at 0 → no flash.
+              const flashSeq = isNowCol ? (flashByCategory[cat as Category] ?? 0) : 0;
               return (
                 <Cell
                   key={`${cat}-${slot}-${gridKey}`}
@@ -140,12 +163,15 @@ export function Grid({
                   metric={metric}
                   intensityFn={intensityFn}
                   isNowCol={isNowCol}
-                  justArrived={justArrived}
-                  gridKey={gridKey}
+                  flashSeq={flashSeq}
                   onHover={(h) =>
                     onHover(
                       h
-                        ? { ...h, category: cat, slotLabel: slotLabel(data.range, slot, num) }
+                        ? {
+                            ...h,
+                            category: cat,
+                            slotLabel: formatSlotLabel(data.range, data.buckets[slot]?.ts ?? ""),
+                          }
                         : null,
                     )
                   }
