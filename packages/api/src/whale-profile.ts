@@ -98,11 +98,11 @@ export async function fetchWhaleProfile(
     net_shares: number;
     avg_entry_price: number;
     total_cost_usd: number;
-    opened_at: Date;
-    last_modified_at: Date;
+    opened_at: Date | string;
+    last_modified_at: Date | string;
   };
   type TradeRow = {
-    ts: Date;
+    ts: Date | string;
     side: "BUY" | "SELL" | "SETTLEMENT";
     category: string;
     subcategory: string | null;
@@ -114,6 +114,10 @@ export async function fetchWhaleProfile(
     realized_pnl: number | null;
     exit_kind: "SELL" | "RESOLUTION" | null;
   };
+
+  function toIso(v: Date | string): string {
+    return v instanceof Date ? v.toISOString() : new Date(v).toISOString();
+  }
 
   // Window-wide stats + per-category split + recent trades all hit the same
   // (whale_addr, ts) index. Run them in parallel.
@@ -198,12 +202,12 @@ export async function fetchWhaleProfile(
     netShares: p.net_shares,
     avgEntry: p.avg_entry_price,
     totalCost: p.total_cost_usd,
-    openedAt: p.opened_at.toISOString(),
-    lastModifiedAt: p.last_modified_at.toISOString(),
+    openedAt: toIso(p.opened_at),
+    lastModifiedAt: toIso(p.last_modified_at),
   }));
 
   const recentTrades: WhaleRecentTrade[] = tradeRows.map((t) => ({
-    ts: t.ts.toISOString(),
+    ts: toIso(t.ts),
     side: t.side,
     category: t.category,
     subcategory: t.subcategory,
