@@ -325,6 +325,7 @@ export async function queryHeatmapAggRows(
   sql: Sql,
   range: HeatmapRange,
   drillCategory: Category | null = null,
+  drillSubcategory: string | null = null,
 ): Promise<ReadonlyArray<AggRow>> {
   const cfg = RANGE_CONFIG[range];
   const bucketInterval = `${cfg.bucketMinutes} minutes`;
@@ -337,6 +338,31 @@ export async function queryHeatmapAggRows(
   const useRaw = cfg.source === "raw" || drillCategory !== null;
 
   if (useRaw) {
+    // L3: drilled into (category, subcategory) → rows are individual markets.
+    // The row key is condition_id; the API layer turns those into labels via
+    // the freshest known market_question for each one.
+    if (drillCategory !== null && drillSubcategory !== null) {
+      const rows = await sql<AggRow[]>`
+        SELECT
+          to_char(time_bucket(${bucketInterval}::interval, ts) AT TIME ZONE 'UTC',
+                  'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
+          condition_id                                                  AS category,
+          COUNT(*)::bigint                                              AS signal_count,
+          COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS buy_volume_usd,
+          COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS realized_pnl_sum,
+          COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS win_count,
+          COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS loss_count,
+          COUNT(DISTINCT whale_addr)::bigint                            AS unique_whales
+        FROM signals
+        WHERE ts >= NOW() - (${windowInterval}::interval)
+          AND category = ${drillCategory}
+          AND subcategory = ${drillSubcategory}
+          AND condition_id IS NOT NULL
+        GROUP BY bucket, condition_id
+        ORDER BY bucket
+      `;
+      return rows;
+    }
     if (drillCategory !== null) {
       const rows = await sql<AggRow[]>`
         SELECT
@@ -492,6 +518,41 @@ export async function queryTopMarketsPerCell(
     WHERE rn <= ${perCellLimit}
   `;
   return rows;
+}
+
+/** Map condition_id → freshest known market_question for a set of markets.
+ *  Used at L3 to label rows of the heatmap (one row per market). */
+export async function fetchMarketLabels(
+  sql: Sql,
+  conditionIds: ReadonlyArray<string>,
+): Promise<Record<string, string>> {
+  if (conditionIds.length === 0) return {};
+  const rows = await sql<{ condition_id: string; market_question: string | null }[]>`
+    SELECT DISTINCT ON (condition_id) condition_id, market_question
+    FROM signals
+    WHERE condition_id IN ${sql(conditionIds)}
+    ORDER BY condition_id, ts DESC
+  `;
+  const out: Record<string, string> = {};
+  for (const r of rows) {
+    if (r.market_question) out[r.condition_id] = r.market_question;
+  }
+  return out;
+}
+
+/** Subset of `conditionIds` that have already resolved (per processed_resolutions).
+ *  At L3 the UI fades resolved markets so the user sees what's still live. */
+export async function fetchResolvedMarkets(
+  sql: Sql,
+  conditionIds: ReadonlyArray<string>,
+): Promise<ReadonlySet<string>> {
+  if (conditionIds.length === 0) return new Set();
+  const rows = await sql<{ condition_id: string }[]>`
+    SELECT condition_id
+    FROM processed_resolutions
+    WHERE condition_id IN ${sql(conditionIds)}
+  `;
+  return new Set(rows.map((r) => r.condition_id));
 }
 
 /** Top whale across the whole window by total USD entered (BUY only). */

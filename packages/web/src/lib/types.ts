@@ -84,7 +84,18 @@ export type HeatmapResponse = {
   // grid for the named Category. `categories` holds subcategory slugs;
   // `subcategoryLabels` maps slug → display label. Both `null` at top level.
   drillCategory: Category | null;
+  /** Non-null at L3 (drilled into a specific subcategory). When set, `categories`
+   *  holds condition_ids of individual markets, not subcategory slugs. */
+  drillSubcategory: string | null;
+  /** Display name for the drilled subcategory (e.g. "NBA"). Carried separately
+   *  so the breadcrumb has it even when subcategoryLabels holds market labels. */
+  drillSubcategoryLabel: string | null;
+  /** Row-key → display label map. At L2 it's slug → display name; at L3 it's
+   *  conditionId → marketQuestion. NULL at L1. */
   subcategoryLabels: Record<string, string> | null;
+  /** L3 only: subset of row keys whose markets have already resolved.
+   *  Frontend fades these rows. Empty at L1/L2. */
+  resolvedRows: ReadonlyArray<string>;
   /** Top-N whales by BUY USD volume in the current window. NULL in PATTERN
    *  mode. In drill mode, restricted to the chosen category so the StatsBar
    *  hover popover matches what the user sees on the grid. */

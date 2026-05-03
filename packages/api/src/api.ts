@@ -7,6 +7,8 @@ import {
   assembleHeatmap,
   buildBuckets,
   fetchDataSpan,
+  fetchMarketLabels,
+  fetchResolvedMarkets,
   fetchTopWhale,
   fetchUniqueWhalesInWindow,
   type HeatmapRange,
@@ -40,6 +42,9 @@ const SSE_HEARTBEAT_MS = 25_000;
 const TOP_MARKETS_PER_CELL = 10;
 /** Whales surfaced in the StatsBar "Top Whale" hover popover. */
 const TOP_WHALES_LIMIT = 10;
+/** Hard cap on rows in the L3 "markets in subcategory" heatmap — anything
+ *  beyond this would make the grid unreadable. Sorted by total signals desc. */
+const MAX_MARKETS_IN_DRILL = 30;
 
 function signalToWire(s: Signal): Record<string, unknown> {
   return {
@@ -105,14 +110,22 @@ export function createApi(deps: ApiDeps) {
         const dataSpan = await fetchDataSpan(deps.sql);
         const trackedWhales = deps.whaleCount();
 
-        // Drill: only meaningful for top-level Categories that have rules.
-        // Unknown / "Other" / no rules → silently treat as no-drill.
+        // Drill levels:
+        //   L1 (no params):                rows = 9 categories
+        //   L2 (?category=X):              rows = subcategories of X
+        //   L3 (?category=X&subcategory=Y): rows = individual markets in (X, Y)
+        // Unknown values silently fall back to a higher level.
         const drillCategory: Category | null =
           query.category && (CATEGORIES as ReadonlyArray<string>).includes(query.category)
             ? (query.category as Category)
             : null;
         const drillRules = drillCategory ? subcategoriesOf(drillCategory) : [];
         const isDrill = drillCategory !== null && drillRules.length > 0;
+        const drillSubcategory: string | null =
+          isDrill && query.subcategory && drillRules.some((r) => r.slug === query.subcategory)
+            ? query.subcategory
+            : null;
+        const isDrillL3 = drillSubcategory !== null;
 
         if (mode === "pattern") {
           const kind: PatternKind = query.kind ?? "hour-of-day";
@@ -132,8 +145,13 @@ export function createApi(deps: ApiDeps) {
             generatedAt: now.toISOString(),
             trackedWhales,
             drillCategory: pattern.drillCategory,
+            // L3 (per-market) drill not implemented in PATTERN; UI hides
+            // the affordance there via `drillSubcategory: null`.
+            drillSubcategory: null,
+            drillSubcategoryLabel: null,
             categories: pattern.categories,
             subcategoryLabels: patternSubcategoryLabels,
+            resolvedRows: [],
             topWhales: null,
             buckets: pattern.buckets,
             cells: pattern.cells,
@@ -149,13 +167,22 @@ export function createApi(deps: ApiDeps) {
         const buckets = buildBuckets(now, cfg.bucketMinutes, cfg.slots);
         const [aggRows, marketRows, topWhaleAddr, uniqueWhales, topWhaleRows] =
           await Promise.all([
-            queryHeatmapAggRows(deps.sql, range, isDrill ? drillCategory : null),
-            queryTopMarketsPerCell(
+            queryHeatmapAggRows(
               deps.sql,
               range,
-              TOP_MARKETS_PER_CELL,
               isDrill ? drillCategory : null,
+              drillSubcategory,
             ),
+            // L3 rows ARE individual markets — top-markets-per-cell becomes
+            // self-referential and uninformative. Skip the extra query there.
+            isDrillL3
+              ? Promise.resolve([])
+              : queryTopMarketsPerCell(
+                  deps.sql,
+                  range,
+                  TOP_MARKETS_PER_CELL,
+                  isDrill ? drillCategory : null,
+                ),
             fetchTopWhale(deps.sql, range),
             fetchUniqueWhalesInWindow(deps.sql, range),
             queryTopWhales(
@@ -166,16 +193,42 @@ export function createApi(deps: ApiDeps) {
             ),
           ]);
 
-        const rowKeys = isDrill ? drillRules.map((r) => r.slug) : undefined;
+        // Row-key set differs by drill level:
+        //   L1 → undefined (assembleHeatmap defaults to CATEGORIES)
+        //   L2 → fixed list of subcategory slugs from rules
+        //   L3 → dynamically derived from agg result (top-N condition_ids by signals)
+        let rowKeys: ReadonlyArray<string> | undefined;
+        let rowLabels: Record<string, string> | null = null;
+        let resolvedRows: ReadonlyArray<string> = [];
+        if (isDrillL3) {
+          const totals = new Map<string, number>();
+          for (const r of aggRows) {
+            totals.set(r.category, (totals.get(r.category) ?? 0) + Number(r.signal_count));
+          }
+          const sortedConditionIds = Array.from(totals.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, MAX_MARKETS_IN_DRILL)
+            .map(([k]) => k);
+          rowKeys = sortedConditionIds;
+          const [labels, resolvedSet] = await Promise.all([
+            fetchMarketLabels(deps.sql, sortedConditionIds),
+            fetchResolvedMarkets(deps.sql, sortedConditionIds),
+          ]);
+          rowLabels = labels;
+          resolvedRows = sortedConditionIds.filter((cid) => resolvedSet.has(cid));
+        } else if (isDrill) {
+          rowKeys = drillRules.map((r) => r.slug);
+          rowLabels = Object.fromEntries(
+            drillRules.map((r) => [r.slug, SUBCATEGORY_LABELS[r.slug] ?? r.slug]),
+          );
+        }
+
         const grid = assembleHeatmap(aggRows, marketRows, buckets, range, now, {
           rowKeys,
           drillCategory: isDrill ? drillCategory : null,
         });
         const topWhale = topWhaleAddr
           ? { addr: topWhaleAddr, alias: whaleAlias(topWhaleAddr), color: whaleColor(topWhaleAddr) }
-          : null;
-        const subcategoryLabels = isDrill
-          ? Object.fromEntries(drillRules.map((r) => [r.slug, SUBCATEGORY_LABELS[r.slug] ?? r.slug]))
           : null;
         const topWhales = topWhaleRows.map((r) => {
           const addr = r.whale_addr;
@@ -192,11 +245,22 @@ export function createApi(deps: ApiDeps) {
                 : Number(r.pnl_usd),
           };
         });
+        const drillSubcategoryLabel = drillSubcategory
+          ? SUBCATEGORY_LABELS[drillSubcategory] ?? drillSubcategory
+          : null;
         return {
           ...grid,
           mode: "live" as const,
           trackedWhales,
-          subcategoryLabels,
+          drillSubcategory,
+          // Display name of the drilled subcategory — surfaced separately so the
+          // breadcrumb can show it cleanly even when subcategoryLabels has been
+          // re-purposed to hold conditionId→marketQuestion at L3.
+          drillSubcategoryLabel,
+          // Row-label map: at L2 it's slug→display, at L3 it's conditionId→marketQuestion.
+          // Frontend reads it generically as "give me a label for this row key".
+          subcategoryLabels: rowLabels,
+          resolvedRows,
           topWhales,
           totals: {
             ...grid.totals,
@@ -226,10 +290,15 @@ export function createApi(deps: ApiDeps) {
               t.Literal("winrate"),
             ]),
           ),
-          /** Drill-down: when set to a Category name (e.g. "Sports"), the
+          /** Drill-down L2: when set to a Category name (e.g. "Sports"), the
            *  response groups by that category's subcategories instead of
            *  the top-level 9 buckets. Unknown values are ignored silently. */
           category: t.Optional(t.String()),
+          /** Drill-down L3: requires `category` to also be set. When set to a
+           *  known subcategory slug of that category (e.g. "nba"), groups by
+           *  individual market (condition_id) instead of subcategory.
+           *  rowLabels in the response then map condition_id → marketQuestion. */
+          subcategory: t.Optional(t.String()),
         }),
       },
     )

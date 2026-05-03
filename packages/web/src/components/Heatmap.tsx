@@ -60,6 +60,7 @@ export function Heatmap() {
   const [patternKind, setPatternKind] = useState<PatternKind>("hour-of-day");
   const [metric, setMetric] = useState<HeatmapMetric>("signals");
   const [drillCategory, setDrillCategory] = useState<Category | null>(null);
+  const [drillSubcategory, setDrillSubcategory] = useState<string | null>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
   const [locked, setLocked] = useState<HoverState | null>(null);
   const [lockedRect, setLockedRect] = useState<TooltipRect | null>(null);
@@ -73,6 +74,8 @@ export function Heatmap() {
     kind: mode === "pattern" ? patternKind : undefined,
     lookbackDays: mode === "pattern" ? 30 : undefined,
     drillCategory,
+    // L3 (per-market) only meaningful in LIVE mode for now.
+    drillSubcategory: mode === "live" ? drillSubcategory : null,
   });
 
   // Whenever a fresh fetch arrives, drop the optimistic queue.
@@ -95,10 +98,19 @@ export function Heatmap() {
     if (!metricAffectedBy(metric, s)) return;
 
     // Determine the row key the signal belongs to in the current view:
-    //   top-level → s.category (must match one of fetchedData.categories)
-    //   drill     → s.subcategory (must be in this category's sublist)
+    //   L1 → s.category (must match one of fetchedData.categories)
+    //   L2 → s.subcategory (must be in the drilled category's sublist)
+    //   L3 → s.conditionId (must be one of the markets currently shown)
     let rowKey: string;
-    if (fetchedData.drillCategory) {
+    if (fetchedData.drillSubcategory) {
+      if (
+        s.category !== fetchedData.drillCategory ||
+        s.subcategory !== fetchedData.drillSubcategory ||
+        !s.conditionId
+      ) return;
+      if (!fetchedData.categories.includes(s.conditionId)) return;
+      rowKey = s.conditionId;
+    } else if (fetchedData.drillCategory) {
       if (s.category !== fetchedData.drillCategory || !s.subcategory) return;
       if (!fetchedData.categories.includes(s.subcategory)) return;
       rowKey = s.subcategory;
@@ -128,7 +140,13 @@ export function Heatmap() {
     setHover(null);
     setLocked(null);
     setLockedRect(null);
-  }, [mode, range, patternKind, drillCategory]);
+  }, [mode, range, patternKind, drillCategory, drillSubcategory]);
+
+  // Drilling out of a category should also clear any L3 state — going from
+  // (Sports/NBA) back to "All categories" must NOT keep `nba` lying around.
+  useEffect(() => {
+    if (drillCategory === null && drillSubcategory !== null) setDrillSubcategory(null);
+  }, [drillCategory, drillSubcategory]);
 
 
   const isLive = mode === "live";
@@ -200,7 +218,17 @@ export function Heatmap() {
             {displayData.drillCategory && (
               <Breadcrumb
                 drillCategory={displayData.drillCategory}
-                onBack={() => setDrillCategory(null)}
+                drillSubcategory={displayData.drillSubcategory}
+                drillSubcategoryLabel={
+                  displayData.drillSubcategory
+                    ? displayData.subcategoryLabels?.[displayData.drillSubcategory] ?? null
+                    : null
+                }
+                onBackToTop={() => {
+                  setDrillCategory(null);
+                  setDrillSubcategory(null);
+                }}
+                onBackToCategory={() => setDrillSubcategory(null)}
               />
             )}
             <Grid
@@ -221,10 +249,14 @@ export function Heatmap() {
                 });
               }}
               onRowClick={
-                // Top-level (any mode): clicking a category row drills in.
                 !displayData.drillCategory
-                  ? (cat) => setDrillCategory(cat)
-                  : undefined
+                  ? // L1 → click category, drill into it
+                    (key) => setDrillCategory(key as Category)
+                  : !displayData.drillSubcategory
+                    ? // L2 → click subcategory slug, drill into it
+                      (key) => setDrillSubcategory(key)
+                    : // L3 → no further drill
+                      undefined
               }
               lockedCellId={locked?.cellId ?? null}
               flashByCell={flashByCell}

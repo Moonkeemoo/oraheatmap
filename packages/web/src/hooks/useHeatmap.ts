@@ -27,6 +27,7 @@ export function useHeatmap(args: {
   kind?: PatternKind;
   lookbackDays?: number;
   drillCategory?: Category | null;
+  drillSubcategory?: string | null;
 }): UseHeatmapResult {
   const [data, setData] = useState<HeatmapResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -66,7 +67,7 @@ export function useHeatmap(args: {
       clearInterval(id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [args.mode, args.range, args.kind, args.lookbackDays, args.drillCategory]);
+  }, [args.mode, args.range, args.kind, args.lookbackDays, args.drillCategory, args.drillSubcategory]);
 
   return { data, loading, error, refetch: fetchOnce };
 }

@@ -19,10 +19,17 @@ import type { Category, HeatmapResponse, SignalEvent } from "./types";
  * full re-rank). Those go slightly stale between refetches; acceptable.
  */
 export function applySignal(d: HeatmapResponse, s: SignalEvent): HeatmapResponse {
-  // In drill mode rows are subcategory slugs; signal must match the parent
-  // category AND have a known subcategory present in this view.
+  // L1 → row=category, L2 → row=subcategory, L3 → row=conditionId.
   let rowKey: string;
-  if (d.drillCategory) {
+  if (d.drillSubcategory) {
+    if (
+      s.category !== d.drillCategory ||
+      s.subcategory !== d.drillSubcategory ||
+      !s.conditionId
+    ) return d;
+    if (!d.categories.includes(s.conditionId)) return d;
+    rowKey = s.conditionId;
+  } else if (d.drillCategory) {
     if (s.category !== d.drillCategory || !s.subcategory) return d;
     if (!d.categories.includes(s.subcategory)) return d;
     rowKey = s.subcategory;

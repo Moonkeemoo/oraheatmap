@@ -22,6 +22,7 @@ export async function fetchHeatmap(args: {
   kind?: PatternKind;
   lookbackDays?: number;
   drillCategory?: Category | null;
+  drillSubcategory?: string | null;
 }): Promise<HeatmapResponse> {
   const params = new URLSearchParams();
   params.set("mode", args.mode);
@@ -30,8 +31,9 @@ export async function fetchHeatmap(args: {
     if (args.kind) params.set("kind", args.kind);
     if (args.lookbackDays) params.set("lookbackDays", String(args.lookbackDays));
   }
-  if (args.mode === "live" && args.drillCategory) {
-    params.set("category", args.drillCategory);
+  if (args.drillCategory) params.set("category", args.drillCategory);
+  if (args.drillCategory && args.drillSubcategory) {
+    params.set("subcategory", args.drillSubcategory);
   }
   const res = await fetch(`${apiBase()}/api/heatmap?${params.toString()}`, {
     cache: "no-store",

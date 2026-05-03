@@ -78,8 +78,9 @@ export function Grid({
   metric: HeatmapMetric;
   onHover: (h: { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string; cellId: string } | null) => void;
   onClick: (h: { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string; cellId: string }) => void;
-  /** Top-level only: when defined, clicking a category badge drills in. */
-  onRowClick?: (cat: Category) => void;
+  /** Clicking a row badge drills one level deeper. At L1 the arg is a Category
+   *  name, at L2 a subcategory slug. L3 has no further drill. */
+  onRowClick?: (rowKey: string) => void;
   /** `${category}:${slotIdx}` of the currently locked cell, or null. */
   lockedCellId: string | null;
   flashByCell: FlashByCell;
@@ -204,18 +205,28 @@ export function Grid({
       })}
 
       {data.categories.map((cat) => {
-        // In drill mode `cat` is a subcategory slug; we colour all rows with a
-        // single tinted variant of the parent category's hue so the grid still
-        // reads as "this is Sports". Top-level uses the unique category color.
+        // In drill mode `cat` is a subcategory slug (L2) or condition_id (L3);
+        // we colour all rows with a single tinted variant of the parent
+        // category's hue so the grid still reads as "this is Sports". L3 rows
+        // get a slightly stronger tint when the market has resolved.
         const isDrillRow = data.drillCategory !== null;
+        const isL3 = data.drillSubcategory !== null;
+        const isResolved = isL3 && data.resolvedRows.includes(cat);
         const baseColor = isDrillRow
           ? categoryMeta(data.drillCategory as Category).color
           : categoryMeta(cat as Category).color;
-        const rowColor = isDrillRow ? tint(baseColor, 0.05) : baseColor;
-        const rowLabel = isDrillRow
-          ? data.subcategoryLabels?.[cat] ?? cat.toUpperCase()
+        const rowColor = isDrillRow ? tint(baseColor, isResolved ? 0.4 : 0.05) : baseColor;
+        const rawLabel = isDrillRow
+          ? data.subcategoryLabels?.[cat] ?? (isL3 ? "(unknown)" : cat.toUpperCase())
           : categoryMeta(cat as Category).label;
-        const clickableRow = !isDrillRow && onRowClick !== undefined;
+        // Market questions are long; truncate the label column itself but keep
+        // the full text in the title for hover.
+        const rowLabel = isL3 && rawLabel.length > 18
+          ? rawLabel.slice(0, 16) + "…"
+          : rawLabel;
+        // L1 → click drills into category. L2 → click drills into subcategory.
+        // L3 → no further drill.
+        const clickableRow = !isL3 && onRowClick !== undefined;
         return (
           <Fragment key={cat}>
             <div
@@ -228,9 +239,15 @@ export function Grid({
             >
               <button
                 type="button"
-                onClick={clickableRow ? () => onRowClick!(cat as Category) : undefined}
+                onClick={clickableRow ? () => onRowClick!(cat) : undefined}
                 disabled={!clickableRow}
-                title={clickableRow ? "Drill into subcategories" : undefined}
+                title={
+                  isL3
+                    ? `${rawLabel}${isResolved ? " · resolved" : ""}`
+                    : clickableRow
+                      ? `Drill into ${isDrillRow ? "markets" : "subcategories"}`
+                      : undefined
+                }
                 style={{
                   background: rowColor,
                   color: "#fff",
@@ -241,10 +258,14 @@ export function Grid({
                   letterSpacing: 0.6,
                   padding: "5px 10px",
                   borderRadius: 3,
-                  textTransform: "uppercase",
+                  // L3 market labels look better mixed-case (long sentences)
+                  // than ALL CAPS — only category/subcategory rows shout.
+                  textTransform: isL3 ? "none" : "uppercase",
                   whiteSpace: "nowrap",
                   cursor: clickableRow ? "pointer" : "default",
                   transition: "filter .12s, transform .12s",
+                  opacity: isResolved ? 0.55 : 1,
+                  textDecoration: isResolved ? "line-through" : "none",
                 }}
                 onMouseEnter={(e) => {
                   if (clickableRow) {
