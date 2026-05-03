@@ -1,10 +1,11 @@
-import { categorize, type GammaTag } from "./categorize";
+import { categorize, type Category, type GammaTag } from "./categorize";
 import type { Db } from "./db";
 import type { FetchLike } from "./gamma-cache";
 import { log } from "./log";
 import type { PositionTracker } from "./position-tracker";
 import { processedResolutions } from "./schema";
 import type { SignalHub } from "./signal-hub";
+import { pickSubcategory } from "./subcategorize";
 import type { Signal } from "./types";
 
 /**
@@ -97,6 +98,7 @@ export function buildSettlementSignals(args: {
   conditionId: string;
   marketQuestion: string | null;
   category: string;
+  tags: ReadonlyArray<GammaTag>;
   settlements: ReadonlyArray<{
     ts: Date;
     whaleAddr: string;
@@ -106,6 +108,7 @@ export function buildSettlementSignals(args: {
     realizedPnl: number;
   }>;
 }): Signal[] {
+  const subcategory = pickSubcategory(args.category as Category, args.tags, args.marketQuestion);
   return args.settlements.map((s) => ({
     ts: s.ts,
     whaleAddr: s.whaleAddr,
@@ -119,6 +122,7 @@ export function buildSettlementSignals(args: {
     txHash: null,
     realizedPnl: s.realizedPnl,
     exitKind: "RESOLUTION",
+    subcategory,
   }));
 }
 
@@ -214,6 +218,7 @@ export function createResolutionWatcher(opts: ResolutionWatcherOptions): Resolut
         conditionId,
         marketQuestion,
         category,
+        tags: m.tags ?? [],
         settlements,
       });
 

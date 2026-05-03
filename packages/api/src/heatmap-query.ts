@@ -1,6 +1,7 @@
 import type { Sql } from "postgres";
 
 import { CATEGORIES, type Category } from "./categorize";
+import { subcategoriesOf } from "./subcategorize";
 
 // ─── Range definitions ───────────────────────────────────────────────────────
 //
@@ -78,9 +79,12 @@ export type HeatmapResponse = {
   windowStart: string;
   windowMinutes: number;
   bucketMinutes: number;
-  categories: ReadonlyArray<Category>;
+  /** When non-null, this response is a drill-down view of `drillCategory` —
+   *  `categories` are subcategory slugs, not the 9 top-level buckets. */
+  drillCategory: Category | null;
+  categories: ReadonlyArray<string>;
   buckets: ReadonlyArray<{ ts: string; index: number }>;
-  cells: Record<Category, ReadonlyArray<HeatmapCell>>;
+  cells: Record<string, ReadonlyArray<HeatmapCell>>;
   totals: HeatmapTotals;
 };
 
@@ -156,25 +160,47 @@ export function buildBuckets(
 
 // ─── Pure assembler ──────────────────────────────────────────────────────────
 
+export type AssembleOptions = {
+  /** Row keys for the grid. Defaults to CATEGORIES (top-level view). In
+   *  drill mode, pass the subcategory slugs for the chosen bucket. */
+  rowKeys?: ReadonlyArray<string>;
+  /** Non-null in drill mode — propagated to the response so the UI can
+   *  render the breadcrumb. Doesn't affect aggregation. */
+  drillCategory?: Category | null;
+};
+
 export function assembleHeatmap(
   aggRows: ReadonlyArray<AggRow>,
   marketRows: ReadonlyArray<MarketRow>,
   buckets: ReadonlyArray<{ ts: string; index: number }>,
   range: HeatmapRange,
   now: Date,
+  options: AssembleOptions = {},
 ): HeatmapResponse {
   const cfg = RANGE_CONFIG[range];
   const slotCount = buckets.length;
+  const drillCategory = options.drillCategory ?? null;
+  const isDrill = drillCategory !== null;
+  const rowKeys = options.rowKeys ?? CATEGORIES;
+  const rowKeySet = new Set(rowKeys);
 
   // Init zero grid
   const cells = Object.fromEntries(
-    CATEGORIES.map((c) => [
-      c,
+    rowKeys.map((k) => [
+      k,
       Array.from({ length: slotCount }, (): HeatmapCell => ({ ...ZERO_CELL, markets: [] })),
     ]),
-  ) as Record<Category, HeatmapCell[]>;
+  ) as Record<string, HeatmapCell[]>;
 
   const bucketIndex = new Map(buckets.map((b) => [b.ts, b.index]));
+
+  // In top-level mode, unknown categories fall into "Other". In drill mode we
+  // simply drop rows whose key is not in the provided rowKeys (no catch-all).
+  function pickRowKey(raw: string): string | null {
+    if (rowKeySet.has(raw)) return raw;
+    if (!isDrill && rowKeySet.has("Other")) return "Other";
+    return null;
+  }
 
   // Aggregate metrics. Win rate denominator = wins + losses (excludes
   // breakeven exits where realized_pnl == 0; rare but possible especially
@@ -184,10 +210,11 @@ export function assembleHeatmap(
   let totalPnl = 0;
   let totalWins = 0;
   let totalLosses = 0;
-  const perCategoryCount = new Map<Category, number>();
+  const perRowCount = new Map<string, number>();
 
   for (const r of aggRows) {
-    const cat = toCategory(r.category);
+    const key = pickRowKey(r.category);
+    if (key === null) continue;
     const idx = bucketIndex.get(r.bucket);
     if (idx === undefined) continue;
     const count = num(r.signal_count);
@@ -197,7 +224,7 @@ export function assembleHeatmap(
     const losses = num(r.loss_count);
     const unique = num(r.unique_whales);
 
-    const cell = cells[cat][idx];
+    const cell = cells[key]?.[idx];
     if (!cell) continue;
     cell.count += count;
     cell.volume += volume;
@@ -213,16 +240,17 @@ export function assembleHeatmap(
     totalPnl += pnl;
     totalWins += wins;
     totalLosses += losses;
-    perCategoryCount.set(cat, (perCategoryCount.get(cat) ?? 0) + count);
+    perRowCount.set(key, (perRowCount.get(key) ?? 0) + count);
   }
 
-  // Markets — already sliced to top-N per (cat, bucket) by SQL, ordered by
+  // Markets — already sliced to top-N per (rowKey, bucket) by SQL, ordered by
   // signal count desc. UI re-sorts by active metric and slices to top-5.
   for (const m of marketRows) {
-    const cat = toCategory(m.category);
+    const key = pickRowKey(m.category);
+    if (key === null) continue;
     const idx = bucketIndex.get(m.bucket);
     if (idx === undefined) continue;
-    const cell = cells[cat][idx];
+    const cell = cells[key]?.[idx];
     if (!cell) continue;
     const wins = num(m.win_count);
     const losses = num(m.loss_count);
@@ -237,13 +265,17 @@ export function assembleHeatmap(
     });
   }
 
-  // Top category by signal count
+  // Top category — only meaningful at the top level. In drill mode there's no
+  // sensible single-bucket "top category" (we're already inside one), so we
+  // leave it null to avoid misleading the UI.
   let topCategory: Category | null = null;
-  let topCount = 0;
-  for (const [cat, count] of perCategoryCount) {
-    if (count > topCount) {
-      topCount = count;
-      topCategory = cat;
+  if (!isDrill) {
+    let topCount = 0;
+    for (const [key, count] of perRowCount) {
+      if (count > topCount) {
+        topCount = count;
+        topCategory = toCategory(key);
+      }
     }
   }
 
@@ -254,7 +286,8 @@ export function assembleHeatmap(
     windowStart: buckets[0]?.ts ?? now.toISOString(),
     windowMinutes: cfg.windowMinutes,
     bucketMinutes: cfg.bucketMinutes,
-    categories: CATEGORIES,
+    drillCategory,
+    categories: rowKeys,
     buckets,
     cells,
     totals: {
@@ -286,12 +319,40 @@ export function assembleHeatmap(
 export async function queryHeatmapAggRows(
   sql: Sql,
   range: HeatmapRange,
+  drillCategory: Category | null = null,
 ): Promise<ReadonlyArray<AggRow>> {
   const cfg = RANGE_CONFIG[range];
   const bucketInterval = `${cfg.bucketMinutes} minutes`;
   const windowInterval = `${cfg.windowMinutes} minutes`;
 
-  if (cfg.source === "raw") {
+  // In drill mode we always read from raw signals — the hourly agg only
+  // groups by category, not subcategory, so it's useless here. For 24h+ this
+  // is more expensive but acceptable: the user only drills into one category
+  // at a time, narrowing the row set substantially via the WHERE filter.
+  const useRaw = cfg.source === "raw" || drillCategory !== null;
+
+  if (useRaw) {
+    if (drillCategory !== null) {
+      const rows = await sql<AggRow[]>`
+        SELECT
+          to_char(time_bucket(${bucketInterval}::interval, ts) AT TIME ZONE 'UTC',
+                  'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
+          subcategory                                                   AS category,
+          COUNT(*)::bigint                                              AS signal_count,
+          COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS buy_volume_usd,
+          COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS realized_pnl_sum,
+          COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS win_count,
+          COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS loss_count,
+          COUNT(DISTINCT whale_addr)::bigint                            AS unique_whales
+        FROM signals
+        WHERE ts >= NOW() - (${windowInterval}::interval)
+          AND category = ${drillCategory}
+          AND subcategory IS NOT NULL
+        GROUP BY bucket, subcategory
+        ORDER BY bucket
+      `;
+      return rows;
+    }
     const rows = await sql<AggRow[]>`
       SELECT
         to_char(time_bucket(${bucketInterval}::interval, ts) AT TIME ZONE 'UTC',
@@ -348,12 +409,52 @@ export async function queryTopMarketsPerCell(
   sql: Sql,
   range: HeatmapRange,
   perCellLimit: number,
+  drillCategory: Category | null = null,
 ): Promise<ReadonlyArray<MarketRow>> {
   const cfg = RANGE_CONFIG[range];
-  if (cfg.source !== "raw") return [];
+  // For drill mode we also restrict to raw — same rationale as queryHeatmapAggRows.
+  // Top markets per cell are only computed when source is raw (1h) or when
+  // drilling. For 24h+/non-drill we skip this enrichment (UI tooltip omits
+  // markets section).
+  if (cfg.source !== "raw" && drillCategory === null) return [];
 
   const bucketInterval = `${cfg.bucketMinutes} minutes`;
   const windowInterval = `${cfg.windowMinutes} minutes`;
+
+  if (drillCategory !== null) {
+    const rows = await sql<MarketRow[]>`
+      WITH per_market AS (
+        SELECT
+          time_bucket(${bucketInterval}::interval, ts)                          AS bucket_ts,
+          subcategory                                                           AS category,
+          condition_id,
+          MAX(market_question)                                                  AS market_question,
+          COUNT(*)::bigint                                                      AS signals,
+          COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)            AS volume_usd,
+          COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd,
+          COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint                      AS win_count,
+          COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                      AS loss_count
+        FROM signals
+        WHERE ts >= NOW() - (${windowInterval}::interval)
+          AND category = ${drillCategory}
+          AND subcategory IS NOT NULL
+          AND condition_id IS NOT NULL
+        GROUP BY bucket_ts, subcategory, condition_id
+      ),
+      ranked AS (
+        SELECT *,
+          ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY signals DESC) AS rn
+        FROM per_market
+      )
+      SELECT
+        to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
+        category, condition_id, market_question, signals, volume_usd, pnl_usd, win_count, loss_count
+      FROM ranked
+      WHERE rn <= ${perCellLimit}
+    `;
+    return rows;
+  }
+
   const rows = await sql<MarketRow[]>`
     WITH per_market AS (
       SELECT

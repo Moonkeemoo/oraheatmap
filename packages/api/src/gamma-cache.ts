@@ -60,6 +60,7 @@ function asGammaMarket(raw: RawGammaMarket): GammaMarket {
   return {
     question: typeof raw.question === "string" ? raw.question : "",
     category: categorize(tags),
+    tags,
     endDate: typeof raw.endDate === "string" ? raw.endDate : null,
     active: Boolean(raw.active) && Boolean(raw.acceptingOrders) && !raw.closed,
     outcomes: parseStringArray(raw.outcomes),

@@ -8,6 +8,7 @@ describe("buildSettlementSignals", () => {
       conditionId: "0xcond",
       marketQuestion: "Will X happen?",
       category: "Crypto",
+      tags: [{ slug: "crypto" }, { slug: "bitcoin" }],
       settlements: [
         {
           ts: new Date("2026-05-03T12:00:00Z"),
@@ -50,6 +51,7 @@ describe("buildSettlementSignals", () => {
         conditionId: "0xc",
         marketQuestion: null,
         category: "Other",
+        tags: [],
         settlements: [],
       }),
     ).toEqual([]);

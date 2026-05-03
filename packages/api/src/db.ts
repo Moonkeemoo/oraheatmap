@@ -50,6 +50,7 @@ function toInsertRow(s: Signal): SignalInsert {
     txHash: s.txHash,
     realizedPnl: s.realizedPnl,
     exitKind: s.exitKind,
+    subcategory: s.subcategory,
   };
 }
 

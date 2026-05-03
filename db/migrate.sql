@@ -22,12 +22,17 @@ CREATE TABLE IF NOT EXISTS signals (
   tx_hash         TEXT,
   realized_pnl    REAL,                      -- NULL for entries (BUY) and unmatched exits;
                                              -- USD for SELL/SETTLEMENT where prior position is known
-  exit_kind       TEXT                       -- NULL for entry; 'SELL' for sell-back; 'RESOLUTION' for settlement
+  exit_kind       TEXT,                      -- NULL for entry; 'SELL' for sell-back; 'RESOLUTION' for settlement
+  subcategory     TEXT                       -- NULL when no canonical sub-tag matched (or pre-deploy rows)
 );
 
 -- Idempotent backfill of new columns for already-existing tables (PG ≥ 9.6)
 ALTER TABLE signals ADD COLUMN IF NOT EXISTS realized_pnl REAL;
 ALTER TABLE signals ADD COLUMN IF NOT EXISTS exit_kind    TEXT;
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS subcategory  TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_signals_cat_sub_ts
+  ON signals (category, subcategory, ts DESC) WHERE subcategory IS NOT NULL;
 
 -- Convert to hypertable (partitioned by ts, chunk interval 1 day)
 SELECT create_hypertable('signals', 'ts',

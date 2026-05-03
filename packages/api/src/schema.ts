@@ -19,6 +19,7 @@ export const signals = pgTable("signals", {
   txHash: text("tx_hash"),
   realizedPnl: real("realized_pnl"),
   exitKind: text("exit_kind"),
+  subcategory: text("subcategory"),
 });
 
 export type SignalInsert = typeof signals.$inferInsert;

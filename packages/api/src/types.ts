@@ -53,6 +53,8 @@ export type RtdsTradePayload = {
 export type GammaMarket = {
   question: string;
   category: string;
+  /** Full Polymarket tags (slugs incl. canonical sub-tags like 'nba', 'bitcoin', 'trump'). */
+  tags: Array<{ id?: string; label?: string; slug?: string }>;
   endDate: string | null;
   active: boolean;
   outcomes: string[];
@@ -76,6 +78,8 @@ export type Signal = {
   realizedPnl: number | null;
   /** NULL for entries; "SELL" for sell-back exits; "RESOLUTION" for settlements. */
   exitKind: "SELL" | "RESOLUTION" | null;
+  /** Most-specific known sub-tag slug (e.g. 'nba', 'bitcoin', 'north-america'). NULL when nothing matched. */
+  subcategory: string | null;
 };
 
 /** Discriminated union for ingestor lifecycle (used by /api/health later). */

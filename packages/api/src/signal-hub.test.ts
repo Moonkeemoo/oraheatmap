@@ -15,6 +15,7 @@ const stubSignal = (whale = "0xabc"): Signal => ({
   txHash: null,
   realizedPnl: null,
   exitKind: null,
+  subcategory: null,
 });
 
 describe("signal-hub", () => {

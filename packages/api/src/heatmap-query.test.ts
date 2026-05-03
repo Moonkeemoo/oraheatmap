@@ -75,8 +75,8 @@ describe("assembleHeatmap — metric aggregation", () => {
     expect(out.totals.pnl).toBe(0);
     expect(out.totals.winRate).toBeNull();
     expect(out.totals.topCategory).toBeNull();
-    expect(out.cells.Sports.length).toBe(12);
-    expect(out.cells.Sports.every((c) => c.count === 0 && c.winRate === null && c.markets.length === 0)).toBe(true);
+    expect(out.cells.Sports!.length).toBe(12);
+    expect(out.cells.Sports!.every((c) => c.count === 0 && c.winRate === null && c.markets.length === 0)).toBe(true);
   });
 
   test("places aggregate metrics in correct bucket index", () => {
@@ -98,7 +98,7 @@ describe("assembleHeatmap — metric aggregation", () => {
       "1h",
       now,
     );
-    const cell = out.cells.Sports[11];
+    const cell = out.cells.Sports![11];
     expect(cell?.count).toBe(5);
     expect(cell?.volume).toBe(250);
     expect(cell?.pnl).toBe(30);
@@ -137,9 +137,9 @@ describe("assembleHeatmap — metric aggregation", () => {
     expect(out.totals.signals).toBe(18);
     expect(out.totals.volume).toBe(280);
     expect(out.totals.topCategory).toBe("Crypto");
-    expect(out.cells.Sports[0]?.count).toBe(3);
-    expect(out.cells.Sports[11]?.count).toBe(5);
-    expect(out.cells.Crypto[11]?.count).toBe(10);
+    expect(out.cells.Sports![0]?.count).toBe(3);
+    expect(out.cells.Sports![11]?.count).toBe(5);
+    expect(out.cells.Crypto![11]?.count).toBe(10);
   });
 
   test("unknown category falls into Other", () => {
@@ -156,7 +156,7 @@ describe("assembleHeatmap — metric aggregation", () => {
       "1h",
       now,
     );
-    expect(out.cells.Other[11]?.count).toBe(7);
+    expect(out.cells.Other![11]?.count).toBe(7);
   });
 
   test("rows outside the window are silently dropped", () => {
@@ -202,7 +202,7 @@ describe("assembleHeatmap — markets", () => {
       "1h",
       now,
     );
-    const markets = out.cells.Sports[11]?.markets ?? [];
+    const markets = out.cells.Sports![11]?.markets ?? [];
     expect(markets.length).toBe(1);
     expect(markets[0]?.conditionId).toBe("0xcond1");
     expect(markets[0]?.marketQuestion).toBe("Will Lakers win?");
@@ -226,7 +226,7 @@ describe("assembleHeatmap — markets", () => {
       },
     ];
     const out = assembleHeatmap([], markets, buckets, "1h", now);
-    const cellMarkets = out.cells.Crypto[11]?.markets ?? [];
+    const cellMarkets = out.cells.Crypto![11]?.markets ?? [];
     expect(cellMarkets.length).toBe(2);
     expect(cellMarkets[0]?.conditionId).toBe("0xa");
     expect(cellMarkets[1]?.conditionId).toBe("0xb");
@@ -245,7 +245,7 @@ describe("assembleHeatmap — markets", () => {
       ],
       buckets, "1h", now,
     );
-    expect(out.cells.Sports[11]?.markets[0]?.winRate).toBeNull();
+    expect(out.cells.Sports![11]?.markets[0]?.winRate).toBeNull();
   });
 
   test("market rows outside window are dropped", () => {
@@ -260,7 +260,7 @@ describe("assembleHeatmap — markets", () => {
       ],
       buckets, "1h", now,
     );
-    expect(out.cells.Sports[11]?.markets.length).toBe(0);
+    expect(out.cells.Sports![11]?.markets.length).toBe(0);
   });
 });
 
@@ -280,7 +280,7 @@ describe("assembleHeatmap — winRate corner cases", () => {
       ],
       [], buckets, "1h", now,
     );
-    expect(out.cells.Sports[11]?.winRate).toBeNull();
+    expect(out.cells.Sports![11]?.winRate).toBeNull();
   });
 
   test("totals.winRate aggregates across cells", () => {

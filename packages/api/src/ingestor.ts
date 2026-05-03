@@ -1,8 +1,10 @@
 import { ConnectionStatus, type Message, RealTimeDataClient } from "@polymarket/real-time-data-client";
 
+import type { Category } from "./categorize";
 import type { GammaCache } from "./gamma-cache";
 import { log } from "./log";
 import type { PositionTracker } from "./position-tracker";
+import { pickSubcategory } from "./subcategorize";
 import type { IngestorStatus, RtdsTradePayload, Signal } from "./types";
 
 export type IngestorDeps = {
@@ -167,19 +169,24 @@ export function createIngestor(deps: IngestorDeps): Ingestor {
       ts,
     });
 
+    const category = (market?.category ?? "Other") as Category;
+    const marketQuestion = market?.question ?? pickTitle(payload);
+    const subcategory = pickSubcategory(category, market?.tags ?? null, marketQuestion);
+
     const signal: Signal = {
       ts,
       whaleAddr: wallet,
       assetId,
       conditionId: pickConditionId(payload),
-      marketQuestion: market?.question ?? pickTitle(payload),
-      category: market?.category ?? "Other",
+      marketQuestion,
+      category,
       side,
       price,
       size,
       txHash: pickTxHash(payload),
       realizedPnl,
       exitKind,
+      subcategory,
     };
     stats.signalsEmitted += 1;
     log.info("whale signal", {
