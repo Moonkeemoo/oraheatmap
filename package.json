@@ -1,0 +1,20 @@
+{
+  "name": "oraheatmap",
+  "version": "0.1.0",
+  "description": "Polymarket whale signal heatmap — real-time dashboard of smart-money activity",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run --filter '@oraheatmap/api' dev",
+    "test": "bun run --filter '*' test",
+    "typecheck": "bun run --filter '*' typecheck",
+    "db:up": "docker compose up -d db",
+    "db:logs": "docker compose logs -f db",
+    "db:psql": "docker compose exec db psql -U postgres -d whale_heatmap",
+    "stack:up": "docker compose up -d",
+    "stack:down": "docker compose down",
+    "stack:logs": "docker compose logs -f"
+  }
+}

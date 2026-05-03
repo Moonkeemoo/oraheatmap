@@ -1,0 +1,13 @@
+# Replace :80 with your domain (e.g. heatmap.example.com) for auto-HTTPS via Let's Encrypt.
+:80 {
+  # API + SSE
+  handle /api/* {
+    reverse_proxy api:3001
+  }
+
+  # Frontend (Next.js) — service `web` will be added to docker-compose.yml in Day 2.
+  # Until then, root falls through to api so the dev surface is reachable.
+  handle {
+    reverse_proxy api:3001
+  }
+}

@@ -1,0 +1,23 @@
+.git
+.gitignore
+.DS_Store
+.env
+.env.local
+*.log
+
+node_modules
+**/node_modules
+dist
+**/dist
+.next
+**/.next
+
+# Large artifacts not needed at runtime
+data/wallet_profiles_v1.json
+
+# Frontend not part of api image
+packages/web
+
+# Docs / dev-only
+docs
+CLAUDE.md
