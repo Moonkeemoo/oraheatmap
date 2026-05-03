@@ -1,9 +1,13 @@
 import { TOKENS } from "@/lib/tokens";
-import type { HeatmapMetric, HeatmapRange } from "@/lib/types";
+import type { HeatmapMetric, LiveRange, Mode, PatternKind } from "@/lib/types";
 import { LiveDot } from "./LiveDot";
 import { ScaleLegend } from "./ScaleLegend";
 
-const RANGES: ReadonlyArray<HeatmapRange> = ["1h", "24h", "12d", "12w"];
+const LIVE_RANGES: ReadonlyArray<LiveRange> = ["1h", "24h", "12d", "12w"];
+const PATTERN_KINDS: ReadonlyArray<{ kind: PatternKind; label: string }> = [
+  { kind: "hour-of-day", label: "HOUR" },
+  { kind: "day-of-week", label: "DOW" },
+];
 const METRICS: ReadonlyArray<{ id: HeatmapMetric; label: string; unit: string }> = [
   { id: "pnl", label: "PNL", unit: "$" },
   { id: "volume", label: "VOLUME", unit: "$" },
@@ -11,22 +15,33 @@ const METRICS: ReadonlyArray<{ id: HeatmapMetric; label: string; unit: string }>
   { id: "winrate", label: "WIN RATE", unit: "%" },
 ];
 
-function RangePill({
+function Pill({
   active,
   onClick,
+  disabled,
+  title,
   children,
 }: {
   active: boolean;
-  onClick: () => void;
+  onClick?: () => void;
+  disabled?: boolean;
+  title?: string;
   children: React.ReactNode;
 }) {
   return (
     <button
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      title={title}
       style={{
-        background: active ? TOKENS.accent : "transparent",
-        border: `1px solid ${active ? TOKENS.accent : TOKENS.border}`,
-        color: active ? "#1a1410" : TOKENS.textSec,
+        background: active && !disabled ? TOKENS.accent : "transparent",
+        border: `1px solid ${active && !disabled ? TOKENS.accent : TOKENS.border}`,
+        color: disabled
+          ? TOKENS.textMuted
+          : active
+            ? "#1a1410"
+            : TOKENS.textSec,
+        opacity: disabled ? 0.45 : 1,
         fontFamily: TOKENS.font,
         fontSize: 11,
         fontWeight: 700,
@@ -34,7 +49,7 @@ function RangePill({
         textTransform: "uppercase",
         padding: "6px 12px",
         borderRadius: 999,
-        cursor: "pointer",
+        cursor: disabled ? "not-allowed" : "pointer",
         transition: "all .12s",
         minWidth: 44,
       }}
@@ -77,7 +92,81 @@ function MetricTab({
   );
 }
 
-function rangeSubtitle(range: HeatmapRange): string {
+function ModeToggle({
+  mode,
+  setMode,
+  patternUnlocked,
+  daysOfData,
+}: {
+  mode: Mode;
+  setMode: (m: Mode) => void;
+  patternUnlocked: boolean;
+  daysOfData: number;
+}) {
+  const patternTitle = patternUnlocked
+    ? "Cyclical pattern view (avg over lookback)"
+    : `Unlocks at ≥7 days of data — currently ${daysOfData.toFixed(1)} days`;
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 0,
+        background: TOKENS.panel,
+        padding: 3,
+        borderRadius: 8,
+        border: `1px solid ${TOKENS.border}`,
+      }}
+    >
+      <button
+        onClick={() => setMode("live")}
+        style={{
+          background: mode === "live" ? TOKENS.panel2 : "transparent",
+          border: "none",
+          color: mode === "live" ? TOKENS.pos : TOKENS.textSec,
+          fontFamily: TOKENS.font,
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: 0.5,
+          textTransform: "uppercase",
+          padding: "7px 14px",
+          borderRadius: 6,
+          cursor: "pointer",
+          boxShadow: mode === "live" ? `inset 0 0 0 1px ${TOKENS.borderHi}` : "none",
+        }}
+      >
+        LIVE
+      </button>
+      <button
+        onClick={() => patternUnlocked && setMode("pattern")}
+        disabled={!patternUnlocked}
+        title={patternTitle}
+        style={{
+          background: mode === "pattern" ? TOKENS.panel2 : "transparent",
+          border: "none",
+          color: !patternUnlocked
+            ? TOKENS.textMuted
+            : mode === "pattern"
+              ? TOKENS.accent
+              : TOKENS.textSec,
+          opacity: !patternUnlocked ? 0.45 : 1,
+          fontFamily: TOKENS.font,
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: 0.5,
+          textTransform: "uppercase",
+          padding: "7px 14px",
+          borderRadius: 6,
+          cursor: patternUnlocked ? "pointer" : "not-allowed",
+          boxShadow: mode === "pattern" ? `inset 0 0 0 1px ${TOKENS.borderHi}` : "none",
+        }}
+      >
+        PATTERN
+      </button>
+    </div>
+  );
+}
+
+function liveRangeSubtitle(range: LiveRange): string {
   if (range === "1h") return "last 60 min";
   if (range === "24h") return "last 24 hours";
   if (range === "12d") return "last 12 days";
@@ -85,20 +174,45 @@ function rangeSubtitle(range: HeatmapRange): string {
 }
 
 export function Header({
+  mode,
+  setMode,
   metric,
   setMetric,
   range,
   setRange,
+  patternKind,
+  setPatternKind,
   isLive,
   trackedCount,
+  lookbackDays,
+  patternUnlocked,
+  daysOfData,
 }: {
+  mode: Mode;
+  setMode: (m: Mode) => void;
   metric: HeatmapMetric;
   setMetric: (m: HeatmapMetric) => void;
-  range: HeatmapRange;
-  setRange: (r: HeatmapRange) => void;
+  range: LiveRange;
+  setRange: (r: LiveRange) => void;
+  patternKind: PatternKind;
+  setPatternKind: (k: PatternKind) => void;
   isLive: boolean;
   trackedCount: number;
+  lookbackDays: number;
+  patternUnlocked: boolean;
+  daysOfData: number;
 }) {
+  const subtitle = isLive
+    ? liveRangeSubtitle(range)
+    : `cyclical avg · last ${lookbackDays} days`;
+
+  const tag = isLive ? (range === "1h" ? "LIVE" : "HISTORICAL") : "PATTERN";
+  const tagColor = isLive
+    ? range === "1h"
+      ? TOKENS.pos
+      : TOKENS.textSec
+    : TOKENS.accent;
+
   return (
     <div
       style={{
@@ -131,12 +245,10 @@ export function Header({
               gap: 10,
             }}
           >
-            {isLive && <LiveDot />}
-            <span style={{ color: isLive ? TOKENS.pos : TOKENS.textSec }}>
-              {isLive ? "LIVE" : "HISTORICAL"}
-            </span>
+            {isLive && range === "1h" && <LiveDot />}
+            <span style={{ color: tagColor }}>{tag}</span>
             <span style={{ color: TOKENS.borderHi }}>·</span>
-            <span>{rangeSubtitle(range)}</span>
+            <span>{subtitle}</span>
             <span style={{ color: TOKENS.borderHi }}>·</span>
             <span>{trackedCount.toLocaleString()} whales tracked</span>
           </div>
@@ -169,14 +281,34 @@ export function Header({
       >
         <ScaleLegend metric={metric} />
         <div style={{ width: 1, height: 26, background: TOKENS.border }} />
-        <div style={{ display: "flex", gap: 5 }}>
-          {RANGES.map((r) => (
-            <RangePill key={r} active={range === r} onClick={() => setRange(r)}>
-              {r}
-            </RangePill>
-          ))}
-        </div>
+
+        <ModeToggle
+          mode={mode}
+          setMode={setMode}
+          patternUnlocked={patternUnlocked}
+          daysOfData={daysOfData}
+        />
         <div style={{ width: 1, height: 26, background: TOKENS.border }} />
+
+        {isLive ? (
+          <div style={{ display: "flex", gap: 5 }}>
+            {LIVE_RANGES.map((r) => (
+              <Pill key={r} active={range === r} onClick={() => setRange(r)}>
+                {r}
+              </Pill>
+            ))}
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 5 }}>
+            {PATTERN_KINDS.map((p) => (
+              <Pill key={p.kind} active={patternKind === p.kind} onClick={() => setPatternKind(p.kind)}>
+                {p.label}
+              </Pill>
+            ))}
+          </div>
+        )}
+        <div style={{ width: 1, height: 26, background: TOKENS.border }} />
+
         <div
           style={{
             display: "flex",

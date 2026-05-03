@@ -2,9 +2,11 @@ import { cors } from "@elysiajs/cors";
 import { Elysia, t } from "elysia";
 import type { Sql } from "postgres";
 
+import { CATEGORIES } from "./categorize";
 import {
   assembleHeatmap,
   buildBuckets,
+  fetchDataSpan,
   fetchTopWhale,
   fetchUniqueWhalesInWindow,
   type HeatmapRange,
@@ -14,6 +16,7 @@ import {
 } from "./heatmap-query";
 import type { Ingestor } from "./ingestor";
 import { log } from "./log";
+import { type PatternKind, queryPattern } from "./pattern-query";
 import type { SignalHub } from "./signal-hub";
 import type { Signal } from "./types";
 import { whaleAlias, whaleColor } from "./whale-display";
@@ -89,9 +92,34 @@ export function createApi(deps: ApiDeps) {
     .get(
       "/api/heatmap",
       async ({ query }) => {
+        const mode = query.mode ?? "live";
+        const metric = query.metric ?? "signals";
+        const now = new Date();
+        const dataSpan = await fetchDataSpan(deps.sql);
+        const trackedWhales = deps.whaleCount();
+
+        if (mode === "pattern") {
+          const kind: PatternKind = query.kind ?? "hour-of-day";
+          const lookbackDays = query.lookbackDays ?? 30;
+          const pattern = await queryPattern(deps.sql, kind, lookbackDays);
+          return {
+            mode: "pattern" as const,
+            patternKind: kind,
+            lookbackDays,
+            generatedAt: now.toISOString(),
+            trackedWhales,
+            categories: CATEGORIES,
+            buckets: pattern.buckets,
+            cells: pattern.cells,
+            totals: null, // pattern doesn't carry single-window totals
+            metric,
+            dataSpan,
+          };
+        }
+
+        // live (default)
         const range: HeatmapRange = query.range ?? "1h";
         const cfg = RANGE_CONFIG[range];
-        const now = new Date();
         const buckets = buildBuckets(now, cfg.bucketMinutes, cfg.slots);
         const [aggRows, marketRows, topWhaleAddr, uniqueWhales] = await Promise.all([
           queryHeatmapAggRows(deps.sql, range),
@@ -105,24 +133,28 @@ export function createApi(deps: ApiDeps) {
           : null;
         return {
           ...grid,
-          trackedWhales: deps.whaleCount(),
+          mode: "live" as const,
+          trackedWhales,
           totals: {
             ...grid.totals,
             uniqueWhales,
-            // For MVP, "active" = "seen any trade in window" — same as uniqueWhales.
-            // Reserve a separate field so the UI can show both later if we
-            // tighten the active-definition (e.g. ≥ N trades).
             activeWhales: uniqueWhales,
             topWhale,
           },
-          metric: query.metric ?? "signals",
+          metric,
+          dataSpan,
         };
       },
       {
         query: t.Object({
+          mode: t.Optional(t.Union([t.Literal("live"), t.Literal("pattern")])),
           range: t.Optional(
             t.Union([t.Literal("1h"), t.Literal("24h"), t.Literal("12d"), t.Literal("12w")]),
           ),
+          kind: t.Optional(
+            t.Union([t.Literal("hour-of-day"), t.Literal("day-of-week")]),
+          ),
+          lookbackDays: t.Optional(t.Numeric({ minimum: 1, maximum: 90 })),
           metric: t.Optional(
             t.Union([
               t.Literal("signals"),

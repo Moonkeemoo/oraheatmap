@@ -2,9 +2,39 @@
 
 import { useRef, useState } from "react";
 import { getCellFill, getCellValue, getValueColor } from "@/lib/colors";
+import { fmtCellValue } from "@/lib/format";
 import { TOKENS } from "@/lib/tokens";
 import type { HeatmapCell, HeatmapMetric } from "@/lib/types";
 import type { TooltipAnchor } from "./Tooltip";
+
+function deltaForMetric(metric: HeatmapMetric, cell: HeatmapCell): number | null {
+  const d = cell.delta;
+  if (!d) return null;
+  switch (metric) {
+    case "signals":
+      return d.count;
+    case "volume":
+      return d.volume;
+    case "pnl":
+      return d.pnl;
+    case "winrate":
+      return d.winRate; // already a delta of 0..1 fractions
+  }
+}
+
+function fmtDelta(metric: HeatmapMetric, delta: number): string {
+  if (metric === "winrate") {
+    const pct = Math.round(delta * 100);
+    return (pct >= 0 ? "+" : "") + pct + "%";
+  }
+  if (metric === "pnl" || metric === "volume") {
+    const sign = delta > 0 ? "+" : "";
+    return sign + fmtCellValue(delta);
+  }
+  // signals
+  const sign = delta > 0 ? "+" : "";
+  return sign + Math.round(delta);
+}
 
 export function Cell({
   cell,
@@ -12,14 +42,16 @@ export function Cell({
   intensityFn,
   isNowCol,
   flashSeq,
+  showDelta,
   onHover,
 }: {
   cell: HeatmapCell;
   metric: HeatmapMetric;
   intensityFn: (c: HeatmapCell) => number;
   isNowCol: boolean;
-  /** Monotonic counter: bumped each time THIS cell receives a fresh SSE signal. */
   flashSeq: number;
+  /** Render the parenthetical delta next to the main value (PATTERN mode only). */
+  showDelta: boolean;
   onHover: (h: { cell: HeatmapCell; anchor: TooltipAnchor } | null) => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -29,6 +61,14 @@ export function Cell({
   const bg = getCellFill(metric, cell, intensityFn);
   const value = isEmpty ? "" : getCellValue(metric, cell);
   const valColor = isEmpty ? TOKENS.text : getValueColor(metric, cell);
+  const delta = showDelta && !isEmpty ? deltaForMetric(metric, cell) : null;
+  const deltaColor = delta === null
+    ? TOKENS.textMuted
+    : delta > 0
+      ? TOKENS.pos
+      : delta < 0
+        ? TOKENS.neg
+        : TOKENS.textSec;
 
   const onEnter = (): void => {
     setHovered(true);
@@ -79,17 +119,11 @@ export function Cell({
             : "none",
         position: "relative",
         zIndex: hovered ? 5 : 1,
-        // cellLand runs once on mount (when grid is rebuilt — i.e. on initial
-        // load or range change). Data refresh keeps the same cell mounted, so
-        // no animation flicker on every refetch.
         animation: "cellLand .35s cubic-bezier(.2,.7,.3,1) both",
         outline: isNowCol && !isEmpty ? `1px solid rgba(63,185,80,0.28)` : "none",
         outlineOffset: -1,
       }}
     >
-      {/* Flash overlay: only present when flashSeq > 0. The key includes flashSeq
-          so each new signal re-mounts the overlay and re-runs the flashRing
-          animation exactly once per signal — no more nonstop blinking. */}
       {flashSeq > 0 && (
         <span
           key={`flash-${flashSeq}`}
@@ -105,9 +139,9 @@ export function Cell({
       {!isEmpty && (
         <span
           style={{
-            fontSize: 12,
-            fontWeight: 700,
-            color: valColor,
+            display: "inline-flex",
+            alignItems: "baseline",
+            gap: 4,
             fontVariantNumeric: "tabular-nums",
             letterSpacing: 0.2,
             textShadow: "0 1px 2px rgba(0,0,0,0.5)",
@@ -115,7 +149,12 @@ export function Cell({
             zIndex: 1,
           }}
         >
-          {value}
+          <span style={{ fontSize: 12, fontWeight: 700, color: valColor }}>{value}</span>
+          {delta !== null && delta !== 0 && (
+            <span style={{ fontSize: 9, fontWeight: 700, color: deltaColor }}>
+              ({fmtDelta(metric, delta)})
+            </span>
+          )}
         </span>
       )}
     </div>

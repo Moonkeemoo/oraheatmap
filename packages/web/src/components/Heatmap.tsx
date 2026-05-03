@@ -5,7 +5,15 @@ import { useHeatmap } from "@/hooks/useHeatmap";
 import { useSse } from "@/hooks/useSse";
 import { applySignal } from "@/lib/heatmap-apply";
 import { TOKENS } from "@/lib/tokens";
-import type { Category, HeatmapCell, HeatmapMetric, HeatmapRange, SignalEvent } from "@/lib/types";
+import type {
+  Category,
+  HeatmapCell,
+  HeatmapMetric,
+  LiveRange,
+  Mode,
+  PatternKind,
+  SignalEvent,
+} from "@/lib/types";
 import { Grid } from "./Grid";
 import { Header } from "./Header";
 import { StatsBar } from "./StatsBar";
@@ -13,81 +21,91 @@ import { Tooltip, type TooltipAnchor } from "./Tooltip";
 
 type HoverState = { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string };
 
-/** Per-category flash counter. Bumped each time an SSE signal arrives for that
- *  category AND the currently visible metric is affected by it; the NOW cell
- *  of that category re-keys its flash overlay and re-runs the flashRing
- *  animation. Cells of other categories don't flicker. */
-export type FlashByCategory = Partial<Record<Category, number>>;
+/** Per-(category × slot index) flash counter. Keyed by `${cat}:${slot}` so that
+ *  in PATTERN mode the cell matching the signal's hour-of-day or day-of-week
+ *  flashes (not always the rightmost), and in LIVE mode only the NOW slot
+ *  flashes. */
+export type FlashByCell = Record<string, number>;
 
-/**
- * Whether a signal would visibly change the displayed metric of a cell.
- * Mirrors what `applySignal` actually mutates per metric:
- *   signals → every event bumps count
- *   volume  → only BUY events add to USD volume (SELLs don't enter our volume)
- *   pnl     → only events with non-zero realized_pnl change the sum
- *   winrate → same as pnl (decided exits are the only ones that move the ratio)
- */
-function metricAffectedBy(metric: HeatmapMetric, s: SignalEvent): boolean {
-  switch (metric) {
-    case "signals":
-      return true;
-    case "volume":
-      return s.side === "BUY";
-    case "pnl":
-    case "winrate":
-      return s.realizedPnl !== null && s.realizedPnl !== 0;
-  }
+const DOW_DISPLAY_ORDER: ReadonlyArray<number> = [1, 2, 3, 4, 5, 6, 0]; // Mon..Sun, Sun last
+
+/** Map a signal timestamp to the bucket index AS IT APPEARS IN SERVER RESPONSE.
+ *  Grid handles local-TZ rotation separately for display. LIVE: last index (NOW).
+ *  PATTERN-hour: UTC hour 0..23 (matches backend EXTRACT(hour FROM bucket AT TIME ZONE 'UTC')).
+ *  PATTERN-dow: 0..6 in Mon..Sun display order. */
+function flashSlotIndex(
+  mode: Mode,
+  kind: PatternKind | undefined,
+  ts: string,
+  bucketCount: number,
+): number {
+  if (mode === "live") return bucketCount - 1;
+  const d = new Date(ts);
+  if (kind === "hour-of-day") return d.getUTCHours();
+  if (kind === "day-of-week") return DOW_DISPLAY_ORDER.indexOf(d.getUTCDay());
+  return -1;
 }
 
 export function Heatmap() {
+  const [mode, setMode] = useState<Mode>("live");
+  const [range, setRange] = useState<LiveRange>("1h");
+  const [patternKind, setPatternKind] = useState<PatternKind>("hour-of-day");
   const [metric, setMetric] = useState<HeatmapMetric>("signals");
-  const [range, setRange] = useState<HeatmapRange>("1h");
   const [hover, setHover] = useState<HoverState | null>(null);
-  const [flashByCategory, setFlashByCategory] = useState<FlashByCategory>({});
-  // Optimistic queue of SSE signals received since the last /api/heatmap fetch.
-  // Folded into displayData via reduce; cleared whenever a fresh fetch arrives.
+  const [flashByCell, setFlashByCell] = useState<FlashByCell>({});
   const [pendingSignals, setPendingSignals] = useState<SignalEvent[]>([]);
 
-  const isLive = range === "1h";
+  const { data: fetchedData, loading, error } = useHeatmap({
+    mode,
+    range: mode === "live" ? range : undefined,
+    kind: mode === "pattern" ? patternKind : undefined,
+    lookbackDays: mode === "pattern" ? 30 : undefined,
+  });
 
-  const { data: fetchedData, loading, error } = useHeatmap(range);
-
-  // Authoritative server response replaces all optimistic state — drop the queue.
+  // Whenever a fresh fetch arrives, drop the optimistic queue.
   useEffect(() => {
     setPendingSignals([]);
   }, [fetchedData?.generatedAt]);
 
-  // Apply pending signals on top of the latest fetched data so cell values
-  // and the flash animation tick at the same moment.
+  // Optimistic merge — only meaningful in LIVE mode (PATTERN values are
+  // averages, not running sums; bumping by 1 doesn't make sense).
   const displayData = useMemo(() => {
     if (!fetchedData) return null;
+    if (fetchedData.mode === "pattern") return fetchedData;
     let acc = fetchedData;
     for (const s of pendingSignals) acc = applySignal(acc, s);
     return acc;
   }, [fetchedData, pendingSignals]);
 
   useSse((s) => {
-    if (!isLive) return; // only the LIVE 1h view flashes
+    if (!fetchedData) return;
     const cat = s.category as Category;
-    if (!fetchedData?.categories.includes(cat)) return;
+    if (!fetchedData.categories.includes(cat)) return;
+    if (!metricAffectedBy(metric, s)) return;
 
-    // Always queue the signal — keeps cell values accurate even when user
-    // is on a metric tab that this signal doesn't affect (e.g. SIGNALS still
-    // ticks for a NULL-pnl SELL because count incremented).
-    setPendingSignals((prev) => [...prev, s]);
+    const slotIdx = flashSlotIndex(
+      fetchedData.mode,
+      fetchedData.patternKind,
+      s.ts,
+      fetchedData.buckets.length,
+    );
+    if (slotIdx < 0 || slotIdx >= fetchedData.buckets.length) return;
 
-    // But only flash if the CURRENTLY VISIBLE metric actually changed for
-    // this cell — otherwise PNL/VOLUME cells flash on signals that don't
-    // touch their value, which looks broken.
-    if (metricAffectedBy(metric, s)) {
-      setFlashByCategory((prev) => ({ ...prev, [cat]: (prev[cat] ?? 0) + 1 }));
+    if (fetchedData.mode === "live") {
+      setPendingSignals((prev) => [...prev, s]);
     }
+    const key = `${cat}:${slotIdx}`;
+    setFlashByCell((prev) => ({ ...prev, [key]: (prev[key] ?? 0) + 1 }));
   });
 
-  // Reset hover when range flips
+  // Reset hover on mode/range/kind switches (data shape changes).
   useEffect(() => {
     setHover(null);
-  }, [range]);
+  }, [mode, range, patternKind]);
+
+  const isLive = mode === "live";
+  const daysOfData = displayData?.dataSpan.daysOfData ?? 0;
+  const patternUnlocked = daysOfData >= 7;
 
   return (
     <div
@@ -106,12 +124,19 @@ export function Heatmap() {
       }}
     >
       <Header
+        mode={mode}
+        setMode={setMode}
         metric={metric}
         setMetric={setMetric}
         range={range}
         setRange={setRange}
+        patternKind={patternKind}
+        setPatternKind={setPatternKind}
         isLive={isLive}
         trackedCount={displayData?.trackedWhales ?? 0}
+        lookbackDays={displayData?.lookbackDays ?? 30}
+        patternUnlocked={patternUnlocked}
+        daysOfData={daysOfData}
       />
 
       <div
@@ -138,8 +163,8 @@ export function Heatmap() {
               data={displayData}
               metric={metric}
               onHover={(h) => setHover(h)}
-              flashByCategory={flashByCategory}
-              gridKey={range}
+              flashByCell={flashByCell}
+              gridKey={`${mode}-${range}-${patternKind}`}
             />
             {hover && (
               <Tooltip
@@ -147,15 +172,32 @@ export function Heatmap() {
                 anchor={hover.anchor}
                 category={hover.category as Category}
                 slotLabel={hover.slotLabel}
+                mode={displayData.mode}
                 range={range}
+                patternKind={patternKind}
                 metric={metric}
+                lookbackDays={displayData.lookbackDays ?? 30}
               />
             )}
           </>
         )}
       </div>
 
-      {displayData && <StatsBar data={displayData} trackedCount={displayData.trackedWhales} />}
+      {displayData?.totals && (
+        <StatsBar data={displayData} trackedCount={displayData.trackedWhales} />
+      )}
     </div>
   );
+}
+
+function metricAffectedBy(metric: HeatmapMetric, s: SignalEvent): boolean {
+  switch (metric) {
+    case "signals":
+      return true;
+    case "volume":
+      return s.side === "BUY";
+    case "pnl":
+    case "winrate":
+      return s.realizedPnl !== null && s.realizedPnl !== 0;
+  }
 }

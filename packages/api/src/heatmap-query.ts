@@ -404,6 +404,26 @@ export async function fetchTopWhale(
   return rows[0]?.whale_addr ?? null;
 }
 
+/** Earliest signal ts → number of full days of data we have. UI uses this to
+ *  enable/disable PATTERN mode (needs ≥7 days). */
+export async function fetchDataSpan(
+  sql: Sql,
+): Promise<{ earliestTs: string | null; daysOfData: number }> {
+  const rows = await sql<{ earliest: string | null; days: string | number | null }[]>`
+    SELECT
+      to_char(MIN(ts) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS earliest,
+      EXTRACT(epoch FROM (NOW() - MIN(ts))) / 86400.0 AS days
+    FROM signals
+  `;
+  const r = rows[0];
+  if (!r || r.earliest === null) return { earliestTs: null, daysOfData: 0 };
+  const days = typeof r.days === "number" ? r.days : Number(r.days);
+  return {
+    earliestTs: r.earliest,
+    daysOfData: Number.isFinite(days) ? Math.max(0, days) : 0,
+  };
+}
+
 /** DISTINCT whales seen in window (any trade kind). */
 export async function fetchUniqueWhalesInWindow(
   sql: Sql,

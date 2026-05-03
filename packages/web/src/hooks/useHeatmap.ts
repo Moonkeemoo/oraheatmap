@@ -2,16 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import { fetchHeatmap } from "@/lib/api";
-import type { HeatmapRange, HeatmapResponse } from "@/lib/types";
+import type { HeatmapResponse, LiveRange, Mode, PatternKind } from "@/lib/types";
 
-// How often to re-fetch the heatmap per range. Shorter ranges → faster
-// refresh because the data shifts more often. Longer ranges → keep cheap.
-const REFRESH_MS: Record<HeatmapRange, number> = {
+const REFRESH_MS_LIVE: Record<LiveRange, number> = {
   "1h": 10_000,
   "24h": 30_000,
   "12d": 60_000,
   "12w": 180_000,
 };
+
+// PATTERN refreshes are slower — averages over weeks don't shift each second.
+const REFRESH_MS_PATTERN = 60_000;
 
 export type UseHeatmapResult = {
   data: HeatmapResponse | null;
@@ -20,15 +21,25 @@ export type UseHeatmapResult = {
   refetch(): Promise<void>;
 };
 
-export function useHeatmap(range: HeatmapRange): UseHeatmapResult {
+export function useHeatmap(args: {
+  mode: Mode;
+  range?: LiveRange;
+  kind?: PatternKind;
+  lookbackDays?: number;
+}): UseHeatmapResult {
   const [data, setData] = useState<HeatmapResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const cancelledRef = useRef(false);
 
+  const refreshMs =
+    args.mode === "live"
+      ? REFRESH_MS_LIVE[args.range ?? "1h"]
+      : REFRESH_MS_PATTERN;
+
   const fetchOnce = async (): Promise<void> => {
     try {
-      const r = await fetchHeatmap(range);
+      const r = await fetchHeatmap(args);
       if (cancelledRef.current) return;
       setData(r);
       setError(null);
@@ -44,15 +55,13 @@ export function useHeatmap(range: HeatmapRange): UseHeatmapResult {
     cancelledRef.current = false;
     setLoading(true);
     void fetchOnce();
-    const id = setInterval(() => void fetchOnce(), REFRESH_MS[range]);
+    const id = setInterval(() => void fetchOnce(), refreshMs);
     return () => {
       cancelledRef.current = true;
       clearInterval(id);
     };
-    // fetchOnce is stable because it closes over latest range via closure;
-    // we recreate the interval on range change above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range]);
+  }, [args.mode, args.range, args.kind, args.lookbackDays]);
 
   return { data, loading, error, refetch: fetchOnce };
 }

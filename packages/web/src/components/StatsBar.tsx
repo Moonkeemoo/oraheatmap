@@ -182,6 +182,9 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
   const firstHalf = trendSignals.slice(0, half).reduce((a, b) => a + b, 0);
   const sigDelta = firstHalf > 0 ? Math.round(((lastHalf - firstHalf) / firstHalf) * 100) : 0;
 
+  // Heatmap.tsx only mounts StatsBar when totals exists (LIVE mode), but TS
+  // doesn't carry that constraint through props. Bail safely if absent.
+  if (!data.totals) return null;
   const t = data.totals;
   const topCatMeta = t.topCategory ? categoryMeta(t.topCategory) : null;
 

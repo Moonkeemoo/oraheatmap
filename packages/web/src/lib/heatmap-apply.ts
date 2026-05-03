@@ -43,17 +43,23 @@ export function applySignal(d: HeatmapResponse, s: SignalEvent): HeatmapResponse
     pnl: oldCell.pnl + pnlAdd,
   };
 
+  // Heatmap.tsx never calls applySignal in PATTERN mode (totals is null
+  // there), but the type allows null so we guard.
+  const totals = d.totals
+    ? {
+        ...d.totals,
+        signals: d.totals.signals + 1,
+        volume: d.totals.volume + buyVolumeAdd,
+        pnl: d.totals.pnl + pnlAdd,
+      }
+    : d.totals;
+
   return {
     ...d,
     cells: {
       ...d.cells,
       [cat]: row.map((c, i) => (i === slotIdx ? newCell : c)),
     },
-    totals: {
-      ...d.totals,
-      signals: d.totals.signals + 1,
-      volume: d.totals.volume + buyVolumeAdd,
-      pnl: d.totals.pnl + pnlAdd,
-    },
+    totals,
   };
 }

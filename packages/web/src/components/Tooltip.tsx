@@ -2,10 +2,17 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { categoryMeta } from "@/lib/categories";
 import { fmtMoney, fmtMoneyShort } from "@/lib/format";
 import { TOKENS } from "@/lib/tokens";
-import type { Category, HeatmapCell, HeatmapMetric, HeatmapRange, MarketSummary } from "@/lib/types";
+import type {
+  Category,
+  HeatmapCell,
+  HeatmapMetric,
+  LiveRange,
+  MarketSummary,
+  Mode,
+  PatternKind,
+} from "@/lib/types";
 
 export type TooltipAnchor = {
-  /** anchor's left/top relative to the tooltip's positioning parent */
   x: number;
   y: number;
   w: number;
@@ -16,14 +23,14 @@ export type TooltipAnchor = {
 
 const TOP_N = 5;
 
-function rangeUnit(r: HeatmapRange): string {
+function rangeUnit(r: LiveRange | undefined, mode: Mode, kind: PatternKind | undefined): string {
+  if (mode === "pattern") return kind === "hour-of-day" ? "hour" : "day";
   if (r === "1h") return "5m";
   if (r === "24h") return "2h";
   if (r === "12d") return "1d";
   return "1w";
 }
 
-/** Compare for descending sort. nulls / undefined sort last. */
 function cmpDesc(a: number | null, b: number | null): number {
   const av = a ?? -Infinity;
   const bv = b ?? -Infinity;
@@ -31,7 +38,6 @@ function cmpDesc(a: number | null, b: number | null): number {
 }
 
 function sortMarkets(markets: ReadonlyArray<MarketSummary>, metric: HeatmapMetric): MarketSummary[] {
-  // Don't mutate the caller's array.
   const copy = markets.slice();
   switch (metric) {
     case "signals":
@@ -41,12 +47,9 @@ function sortMarkets(markets: ReadonlyArray<MarketSummary>, metric: HeatmapMetri
       copy.sort((a, b) => cmpDesc(a.volume, b.volume));
       break;
     case "pnl":
-      // Sort by absolute PnL so big losers also surface (they're informative).
       copy.sort((a, b) => cmpDesc(Math.abs(a.pnl), Math.abs(b.pnl)));
       break;
     case "winrate":
-      // Top by win rate is fragile on small samples. Tiebreak by count to
-      // promote markets with more decided exits.
       copy.sort((a, b) => {
         const c = cmpDesc(a.winRate, b.winRate);
         return c !== 0 ? c : cmpDesc(a.count, b.count);
@@ -56,7 +59,6 @@ function sortMarkets(markets: ReadonlyArray<MarketSummary>, metric: HeatmapMetri
   return copy;
 }
 
-/** Format the metric value as it appears in the tooltip's secondary column. */
 function fmtMetric(metric: HeatmapMetric, m: MarketSummary): string {
   if (metric === "signals") return String(m.count);
   if (metric === "volume") return fmtMoneyShort(m.volume);
@@ -102,39 +104,75 @@ function Stat({ label, value, color }: { label: string; value: React.ReactNode; 
   );
 }
 
+function fmtDeltaInline(metric: HeatmapMetric, d: HeatmapCell["delta"]): { text: string; color: string } {
+  if (!d) return { text: "—", color: TOKENS.textSec };
+  const v =
+    metric === "signals" ? d.count
+    : metric === "volume" ? d.volume
+    : metric === "pnl" ? d.pnl
+    : d.winRate;
+  if (v === null) return { text: "—", color: TOKENS.textSec };
+  const sign = v > 0 ? "+" : "";
+  const display =
+    metric === "winrate" ? sign + Math.round(v * 100) + "%"
+    : metric === "signals" ? sign + Math.round(v)
+    : sign + (Math.abs(v) >= 1e3 ? "$" + (v / 1e3).toFixed(1) + "k" : "$" + Math.round(v));
+  const color = v > 0 ? TOKENS.pos : v < 0 ? TOKENS.neg : TOKENS.textSec;
+  return { text: display, color };
+}
+
+function metricMin(metric: HeatmapMetric, cell: HeatmapCell): number {
+  if (!cell.min) return 0;
+  if (metric === "volume") return cell.min.volume;
+  if (metric === "pnl") return cell.min.pnl;
+  return cell.min.count;
+}
+
+function metricMax(metric: HeatmapMetric, cell: HeatmapCell): number {
+  if (!cell.max) return 0;
+  if (metric === "volume") return cell.max.volume;
+  if (metric === "pnl") return cell.max.pnl;
+  return cell.max.count;
+}
+
 export function Tooltip({
   cell,
   anchor,
   category,
   slotLabel,
+  mode,
   range,
+  patternKind,
   metric,
+  lookbackDays,
 }: {
   cell: HeatmapCell;
   anchor: TooltipAnchor;
   category: Category;
   slotLabel: string;
-  range: HeatmapRange;
+  mode: Mode;
+  range: LiveRange;
+  patternKind: PatternKind;
   metric: HeatmapMetric;
+  lookbackDays: number;
 }) {
   const meta = categoryMeta(category);
-  const sortedMarkets = sortMarkets(cell.markets, metric).slice(0, TOP_N);
+  const isPattern = mode === "pattern";
+  const sortedMarkets = isPattern ? [] : sortMarkets(cell.markets, metric).slice(0, TOP_N);
 
   const ref = useRef<HTMLDivElement | null>(null);
-  // Initial position (computed in render): try above the anchor; if no room
-  // there, fall back below; clamp horizontally to the parent. Once mounted
-  // we measure actual rendered size and re-clamp to the viewport via
-  // useLayoutEffect — handles edge cases where the tooltip would clip the
-  // bottom or right of the screen.
   const margin = 10;
   const initialW = 340;
-  const initialH = sortedMarkets.length > 0 ? 240 + sortedMarkets.length * 26 : 140;
+  const initialH = isPattern
+    ? 230
+    : sortedMarkets.length > 0
+      ? 240 + sortedMarkets.length * 26
+      : 140;
 
   const initialPos = {
     left: clamp(anchor.x + anchor.w / 2 - initialW / 2, 8, anchor.parentW - initialW - 8),
     top: anchor.y - initialH - margin >= 8 ? anchor.y - initialH - margin : anchor.y + anchor.h + margin,
   };
-
   const [pos, setPos] = useState(initialPos);
 
   useLayoutEffect(() => {
@@ -147,8 +185,6 @@ export function Tooltip({
     const W = r.width;
     const H = r.height;
 
-    // Where can it fit? Try in this order: above, below, right, left, then
-    // wherever there's most room (clamped).
     const fitsAbove = anchor.y - H - margin >= 8;
     const fitsBelow = anchor.y + anchor.h + H + margin <= ph - 8;
     const fitsRight = anchor.x + anchor.w + W + margin <= pw - 8;
@@ -170,13 +206,12 @@ export function Tooltip({
       left = anchor.x - W - margin;
       top = clamp(anchor.y + anchor.h / 2 - H / 2, 8, ph - H - 8);
     } else {
-      // Nothing fits — pin to the largest available area, clamped.
       left = clamp(anchor.x + anchor.w / 2 - W / 2, 8, pw - W - 8);
       top = clamp(anchor.y + anchor.h / 2 - H / 2, 8, ph - H - 8);
     }
 
     setPos({ left, top });
-  }, [anchor, sortedMarkets.length]);
+  }, [anchor, sortedMarkets.length, isPattern]);
 
   return (
     <div
@@ -215,18 +250,23 @@ export function Tooltip({
           {meta.label}
         </span>
         <span style={{ color: TOKENS.textSec, fontSize: 11, fontFamily: TOKENS.mono }}>
-          {slotLabel} · {rangeUnit(range)}
+          {slotLabel} · {rangeUnit(range, mode, patternKind)}
+          {isPattern && (
+            <span style={{ marginLeft: 6, color: TOKENS.textMuted }}>
+              · avg over {lookbackDays}d
+            </span>
+          )}
         </span>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
-        <Stat label="SIGNALS" value={cell.count} />
+        <Stat label={isPattern ? "AVG SIGNALS" : "SIGNALS"} value={Math.round(cell.count)} />
         <Stat
-          label="PNL"
+          label={isPattern ? "AVG PNL" : "PNL"}
           value={fmtMoney(cell.pnl)}
           color={cell.pnl > 0 ? TOKENS.pos : cell.pnl < 0 ? TOKENS.neg : TOKENS.textSec}
         />
-        <Stat label="VOLUME" value={cell.volume ? fmtMoneyShort(cell.volume) : "—"} />
+        <Stat label={isPattern ? "AVG VOLUME" : "VOLUME"} value={cell.volume ? fmtMoneyShort(cell.volume) : "—"} />
         <Stat
           label="WIN"
           value={cell.winRate === null ? "—" : Math.round(cell.winRate * 100) + "%"}
@@ -234,7 +274,63 @@ export function Tooltip({
         />
       </div>
 
-      {sortedMarkets.length > 0 && (
+      {isPattern && cell.delta && (
+        <div
+          style={{
+            borderTop: `1px solid ${TOKENS.border}`,
+            paddingTop: 8,
+            marginBottom: sortedMarkets.length > 0 ? 8 : 0,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 9,
+              letterSpacing: 0.5,
+              color: TOKENS.textMuted,
+              textTransform: "uppercase",
+              marginBottom: 6,
+              fontWeight: 600,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <span>Trend (recent vs older half)</span>
+            {cell.sampleCount !== undefined && (
+              <span style={{ color: TOKENS.textSec }}>n={cell.sampleCount}</span>
+            )}
+          </div>
+          {(() => {
+            const d = fmtDeltaInline(metric, cell.delta);
+            return (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <span style={{ fontSize: 11, color: TOKENS.textSec }}>
+                  Δ {metric}
+                </span>
+                <span style={{ fontSize: 14, color: d.color, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                  {d.text}
+                </span>
+              </div>
+            );
+          })()}
+          {(metric === "signals" || metric === "volume" || metric === "pnl") && cell.min && cell.max && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontSize: 10,
+                color: TOKENS.textMuted,
+                marginTop: 4,
+                fontFamily: TOKENS.mono,
+              }}
+            >
+              <span>min {fmtCellShort(metric, metricMin(metric, cell))}</span>
+              <span>max {fmtCellShort(metric, metricMax(metric, cell))}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!isPattern && sortedMarkets.length > 0 && (
         <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8 }}>
           <div
             style={{
@@ -264,21 +360,12 @@ export function Tooltip({
                 lineHeight: 1.3,
               }}
             >
-              <span
-                style={{
-                  color: TOKENS.textMuted,
-                  fontFamily: TOKENS.mono,
-                  fontSize: 10,
-                  fontWeight: 700,
-                }}
-              >
+              <span style={{ color: TOKENS.textMuted, fontFamily: TOKENS.mono, fontSize: 10, fontWeight: 700 }}>
                 {i + 1}.
               </span>
               <span
                 style={{
                   color: TOKENS.text,
-                  // Wrap long market questions so they're fully readable.
-                  // Cap at ~3 lines via -webkit-line-clamp; longer titles get an ellipsis.
                   display: "-webkit-box",
                   WebkitLineClamp: 3,
                   WebkitBoxOrient: "vertical",
@@ -306,6 +393,12 @@ export function Tooltip({
       )}
     </div>
   );
+}
+
+function fmtCellShort(metric: HeatmapMetric, v: number): string {
+  if (metric === "signals") return String(Math.round(v));
+  if (Math.abs(v) >= 1e3) return "$" + (v / 1e3).toFixed(1) + "k";
+  return "$" + Math.round(v);
 }
 
 function clamp(v: number, min: number, max: number): number {
