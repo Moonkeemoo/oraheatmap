@@ -1,0 +1,20 @@
+// Ported 1:1 from Reference/heatmap-shared.jsx — GitHub-dark palette.
+export const TOKENS = {
+  bg: "#0d1117",
+  panel: "#161b22",
+  panel2: "#1c2128",
+  border: "#21262d",
+  borderHi: "#30363d",
+  text: "#e6edf3",
+  textSec: "#7d8590",
+  textMuted: "#8b949e",
+  accent: "#f0b429",
+  link: "#58a6ff",
+  pos: "#3fb950",
+  posDim: "#238636",
+  posDeep: "#2ea043",
+  neg: "#f85149",
+  negDeep: "#da3633",
+  font: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  mono: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+} as const;

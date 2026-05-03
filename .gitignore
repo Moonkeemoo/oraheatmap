@@ -11,3 +11,4 @@ dist/
 
 # v1 archive: full wallet profiles snapshot (2.2MB), kept locally only
 data/wallet_profiles_v1.json
+*.tsbuildinfo

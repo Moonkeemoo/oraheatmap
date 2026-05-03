@@ -66,8 +66,8 @@ describe("assembleHeatmap — metric aggregation", () => {
           signal_count: 5,
           buy_volume_usd: 250,
           realized_pnl_sum: 30,
-          exit_count: 2,
           win_count: 1,
+          loss_count: 1,
           unique_whales: 3,
         },
       ],
@@ -93,17 +93,17 @@ describe("assembleHeatmap — metric aggregation", () => {
       [
         {
           bucket: latestBucketTs, category: "Sports", signal_count: 5,
-          buy_volume_usd: 200, realized_pnl_sum: 0, exit_count: 0, win_count: 0,
+          buy_volume_usd: 200, realized_pnl_sum: 0, win_count: 0, loss_count: 0,
           unique_whales: 2,
         },
         {
           bucket: latestBucketTs, category: "Crypto", signal_count: 10,
-          buy_volume_usd: 50, realized_pnl_sum: 0, exit_count: 0, win_count: 0,
+          buy_volume_usd: 50, realized_pnl_sum: 0, win_count: 0, loss_count: 0,
           unique_whales: 4,
         },
         {
           bucket: oldestBucketTs, category: "Sports", signal_count: 3,
-          buy_volume_usd: 30, realized_pnl_sum: 0, exit_count: 0, win_count: 0,
+          buy_volume_usd: 30, realized_pnl_sum: 0, win_count: 0, loss_count: 0,
           unique_whales: 1,
         },
       ],
@@ -125,7 +125,7 @@ describe("assembleHeatmap — metric aggregation", () => {
       [
         {
           bucket: latestBucketTs, category: "Madeup", signal_count: 7,
-          buy_volume_usd: 99, realized_pnl_sum: 0, exit_count: 0, win_count: 0,
+          buy_volume_usd: 99, realized_pnl_sum: 0, win_count: 0, loss_count: 0,
           unique_whales: 1,
         },
       ],
@@ -142,7 +142,7 @@ describe("assembleHeatmap — metric aggregation", () => {
       [
         {
           bucket: "1999-01-01T00:00:00.000Z", category: "Sports", signal_count: 99,
-          buy_volume_usd: 999, realized_pnl_sum: 0, exit_count: 0, win_count: 0,
+          buy_volume_usd: 999, realized_pnl_sum: 0, win_count: 0, loss_count: 0,
           unique_whales: 9,
         },
       ],
@@ -235,7 +235,7 @@ describe("assembleHeatmap — winRate corner cases", () => {
       [
         {
           bucket: latestBucketTs, category: "Sports", signal_count: 5,
-          buy_volume_usd: 250, realized_pnl_sum: 0, exit_count: 0, win_count: 0,
+          buy_volume_usd: 250, realized_pnl_sum: 0, win_count: 0, loss_count: 0,
           unique_whales: 2,
         },
       ],
@@ -249,12 +249,12 @@ describe("assembleHeatmap — winRate corner cases", () => {
       [
         {
           bucket: latestBucketTs, category: "Sports", signal_count: 1,
-          buy_volume_usd: 0, realized_pnl_sum: 50, exit_count: 4, win_count: 3,
+          buy_volume_usd: 0, realized_pnl_sum: 50, win_count: 3, loss_count: 1,
           unique_whales: 1,
         },
         {
           bucket: latestBucketTs, category: "Crypto", signal_count: 1,
-          buy_volume_usd: 0, realized_pnl_sum: -10, exit_count: 6, win_count: 1,
+          buy_volume_usd: 0, realized_pnl_sum: -10, win_count: 1, loss_count: 5,
           unique_whales: 1,
         },
       ],

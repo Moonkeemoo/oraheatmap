@@ -77,8 +77,10 @@ type AggRow = {
   signal_count: string | number;
   buy_volume_usd: string | number;
   realized_pnl_sum: string | number | null;
-  exit_count: string | number;
+  /** wins = exits with realized_pnl > 0 */
   win_count: string | number;
+  /** losses = exits with realized_pnl < 0 */
+  loss_count: string | number;
   unique_whales: string | number;
 };
 
@@ -158,12 +160,14 @@ export function assembleHeatmap(
 
   const bucketIndex = new Map(buckets.map((b) => [b.ts, b.index]));
 
-  // Aggregate metrics
+  // Aggregate metrics. Win rate denominator = wins + losses (excludes
+  // breakeven exits where realized_pnl == 0; rare but possible especially
+  // for SETTLEMENT rows where avg_entry coincides with payout).
   let totalSignals = 0;
   let totalVolume = 0;
   let totalPnl = 0;
-  let totalExits = 0;
   let totalWins = 0;
+  let totalLosses = 0;
   const perCategoryCount = new Map<Category, number>();
 
   for (const r of aggRows) {
@@ -173,8 +177,8 @@ export function assembleHeatmap(
     const count = num(r.signal_count);
     const volume = num(r.buy_volume_usd);
     const pnl = num(r.realized_pnl_sum);
-    const exits = num(r.exit_count);
     const wins = num(r.win_count);
+    const losses = num(r.loss_count);
     const unique = num(r.unique_whales);
 
     const cell = cells[cat][idx];
@@ -183,15 +187,16 @@ export function assembleHeatmap(
     cell.volume += volume;
     cell.pnl += pnl;
     cell.uniqueWhales += unique;
-    if (exits > 0) {
-      cell.winRate = wins / exits;
+    const decided = wins + losses;
+    if (decided > 0) {
+      cell.winRate = wins / decided;
     }
 
     totalSignals += count;
     totalVolume += volume;
     totalPnl += pnl;
-    totalExits += exits;
     totalWins += wins;
+    totalLosses += losses;
     perCategoryCount.set(cat, (perCategoryCount.get(cat) ?? 0) + count);
   }
 
@@ -237,7 +242,7 @@ export function assembleHeatmap(
       signals: totalSignals,
       volume: totalVolume,
       pnl: totalPnl,
-      winRate: totalExits > 0 ? totalWins / totalExits : null,
+      winRate: totalWins + totalLosses > 0 ? totalWins / (totalWins + totalLosses) : null,
       uniqueWhales: 0, // filled by API layer (DISTINCT across whole window)
       activeWhales: 0, // same
       topCategory,
@@ -271,8 +276,8 @@ export async function queryHeatmapAggRows(
       COUNT(*)::bigint                                              AS signal_count,
       COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS buy_volume_usd,
       COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS realized_pnl_sum,
-      COUNT(*) FILTER (WHERE realized_pnl IS NOT NULL)::bigint      AS exit_count,
       COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS win_count,
+      COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS loss_count,
       COUNT(DISTINCT whale_addr)::bigint                            AS unique_whales
     FROM signals
     WHERE ts >= NOW() - (${windowInterval}::interval)
