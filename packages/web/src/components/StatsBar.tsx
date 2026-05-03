@@ -286,7 +286,11 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
         padding: "14px 32px",
         background: TOKENS.panel,
         display: "grid",
-        gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+        // 6 cards (after dropping Top Category) — `1fr` each would give Win
+        // Rate (minimal content) the same width as Top Whale (long alias).
+        // Tuned per content: cards with sparklines get equal share, Win Rate
+        // takes less, Top Whale takes a bit more so usernames don't truncate.
+        gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,0.7fr) minmax(0,1.3fr) minmax(0,1fr)",
         gap: 22,
         flexShrink: 0,
       }}

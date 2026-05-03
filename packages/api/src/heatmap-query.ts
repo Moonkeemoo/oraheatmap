@@ -513,6 +513,51 @@ export async function fetchTopWhale(
   return rows[0]?.whale_addr ?? null;
 }
 
+/** Top-N whales by BUY USD volume in the window. Optionally restricted to a
+ *  category — when drilled, the leaderboard only counts trades inside that
+ *  bucket so the StatsBar matches what the user is looking at. */
+export type TopWhaleRow = {
+  whale_addr: string;
+  signals: string | number;
+  volume_usd: string | number;
+  pnl_usd: string | number | null;
+};
+
+export async function queryTopWhales(
+  sql: Sql,
+  range: HeatmapRange,
+  drillCategory: Category | null,
+  limit: number,
+): Promise<ReadonlyArray<TopWhaleRow>> {
+  const cfg = RANGE_CONFIG[range];
+  const windowInterval = `${cfg.windowMinutes} minutes`;
+  if (drillCategory !== null) {
+    return sql<TopWhaleRow[]>`
+      SELECT whale_addr,
+        COUNT(*)::bigint                                                       AS signals,
+        COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)             AS volume_usd,
+        COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd
+      FROM signals
+      WHERE ts >= NOW() - (${windowInterval}::interval)
+        AND category = ${drillCategory}
+      GROUP BY whale_addr
+      ORDER BY volume_usd DESC, signals DESC
+      LIMIT ${limit}
+    `;
+  }
+  return sql<TopWhaleRow[]>`
+    SELECT whale_addr,
+      COUNT(*)::bigint                                                       AS signals,
+      COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)             AS volume_usd,
+      COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd
+    FROM signals
+    WHERE ts >= NOW() - (${windowInterval}::interval)
+    GROUP BY whale_addr
+    ORDER BY volume_usd DESC, signals DESC
+    LIMIT ${limit}
+  `;
+}
+
 /** Earliest signal ts → number of full days of data we have. UI uses this to
  *  enable/disable PATTERN mode (needs ≥7 days). */
 export async function fetchDataSpan(
