@@ -9,8 +9,8 @@ import type { HeatmapRange, HeatmapResponse } from "@/lib/types";
 const REFRESH_MS: Record<HeatmapRange, number> = {
   "1h": 10_000,
   "24h": 30_000,
-  "7d": 60_000,
-  "30d": 120_000,
+  "12d": 60_000,
+  "12w": 180_000,
 };
 
 export type UseHeatmapResult = {

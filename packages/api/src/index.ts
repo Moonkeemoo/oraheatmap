@@ -62,6 +62,7 @@ async function main(): Promise<void> {
     ingestor,
     bufferSize: () => buffer.size(),
     gammaCacheSize: () => gamma.size(),
+    whaleCount: () => whales.size,
   });
 
   // Periodic stats line so logs show liveness even when no whale matches happen.

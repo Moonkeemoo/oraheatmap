@@ -11,8 +11,6 @@ import { Header } from "./Header";
 import { StatsBar } from "./StatsBar";
 import { Tooltip, type TooltipAnchor } from "./Tooltip";
 
-const TRACKED_COUNT = 1504;
-
 type HoverState = { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string };
 
 /** Per-category flash counter. Bumped each time an SSE signal arrives for that
@@ -113,7 +111,7 @@ export function Heatmap() {
         range={range}
         setRange={setRange}
         isLive={isLive}
-        trackedCount={TRACKED_COUNT}
+        trackedCount={displayData?.trackedWhales ?? 0}
       />
 
       <div
@@ -156,7 +154,7 @@ export function Heatmap() {
         )}
       </div>
 
-      {displayData && <StatsBar data={displayData} trackedCount={TRACKED_COUNT} />}
+      {displayData && <StatsBar data={displayData} trackedCount={displayData.trackedWhales} />}
     </div>
   );
 }

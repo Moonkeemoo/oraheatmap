@@ -3,7 +3,7 @@ import type { HeatmapMetric, HeatmapRange } from "@/lib/types";
 import { LiveDot } from "./LiveDot";
 import { ScaleLegend } from "./ScaleLegend";
 
-const RANGES: ReadonlyArray<HeatmapRange> = ["1h", "24h", "7d", "30d"];
+const RANGES: ReadonlyArray<HeatmapRange> = ["1h", "24h", "12d", "12w"];
 const METRICS: ReadonlyArray<{ id: HeatmapMetric; label: string; unit: string }> = [
   { id: "pnl", label: "PNL", unit: "$" },
   { id: "volume", label: "VOLUME", unit: "$" },
@@ -80,8 +80,8 @@ function MetricTab({
 function rangeSubtitle(range: HeatmapRange): string {
   if (range === "1h") return "last 60 min";
   if (range === "24h") return "last 24 hours";
-  if (range === "7d") return "last 7 days";
-  return "last 30 days";
+  if (range === "12d") return "last 12 days";
+  return "last 12 weeks";
 }
 
 export function Header({

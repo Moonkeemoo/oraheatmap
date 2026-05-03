@@ -12,7 +12,7 @@ export type Category =
   | "Climate"
   | "Other";
 
-export type HeatmapRange = "1h" | "24h" | "7d" | "30d";
+export type HeatmapRange = "1h" | "24h" | "12d" | "12w";
 export type HeatmapMetric = "signals" | "volume" | "pnl" | "winrate";
 
 export type TradeSummary = {
@@ -52,6 +52,8 @@ export type HeatmapResponse = {
   windowEnd: string;
   windowMinutes: number;
   bucketMinutes: number;
+  /** Total whales currently in the watchlist (size of the loaded corpus Set). */
+  trackedWhales: number;
   categories: ReadonlyArray<Category>;
   buckets: ReadonlyArray<{ ts: string; index: number }>;
   cells: Record<Category, ReadonlyArray<HeatmapCell>>;

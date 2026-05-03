@@ -24,6 +24,7 @@ export type ApiDeps = {
   ingestor: Ingestor;
   bufferSize: () => number;
   gammaCacheSize: () => number;
+  whaleCount: () => number;
 };
 
 const SSE_HEARTBEAT_MS = 25_000;
@@ -101,6 +102,7 @@ export function createApi(deps: ApiDeps) {
           : null;
         return {
           ...grid,
+          trackedWhales: deps.whaleCount(),
           totals: {
             ...grid.totals,
             uniqueWhales,
@@ -116,7 +118,7 @@ export function createApi(deps: ApiDeps) {
       {
         query: t.Object({
           range: t.Optional(
-            t.Union([t.Literal("1h"), t.Literal("24h"), t.Literal("7d"), t.Literal("30d")]),
+            t.Union([t.Literal("1h"), t.Literal("24h"), t.Literal("12d"), t.Literal("12w")]),
           ),
           metric: t.Optional(
             t.Union([

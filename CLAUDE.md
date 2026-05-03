@@ -85,11 +85,15 @@ Full data source docs: `docs/handoff-polymarket-whale-feeds.md` (from oralab rep
 
 ## Whale corpus
 
-**It's a watchlist, not a profile DB.** Flat list of 1504 lowercase addresses we want to catch trades from. No classification, no confidence, no metrics — neither in the corpus, nor in `Set<string>` we load it into, nor on `signals` rows.
+**It's a watchlist, not a profile DB.** Flat list of lowercase addresses we want to catch trades from. No classification, no confidence, no metrics — neither in the corpus, nor in `Set<string>` we load it into, nor on `signals` rows.
 
-Source: v1 archive `output/_local_backup_1777785223/wallet_profiles.json` from `Moonkeemoo/ora-et-labora` was used to extract addresses. Full archive is preserved as `data/wallet_profiles_v1.json` (2.2MB) for any future ad-hoc reuse, but no code reads it. Working file is `data/whale_corpus.json` — `string[]` of 1504 addresses, ~70KB.
+**Source (current):** Polymarket's official `/v1/leaderboard` API. We harvest top-**200** by `PNL` `ALL`-time for each leaderboard category we care about (POLITICS, SPORTS, CRYPTO, CULTURE, MENTIONS, WEATHER, ECONOMICS, FINANCE, TECH), dedupe across categories, and write the result to `data/whale_corpus.json` (~600-1000 unique addresses). Bonus: `data/whale_aliases.json` carries Polymarket username, X handle, verified badge, and per-category PNL/VOL/rank for each whale — not yet wired into UI but available for tooltips/profile pages later.
 
-`whale-corpus.ts` loads it into `Set<string>` at startup. Match = `set.has(trade.user.toLowerCase())`. That's the entire whale logic.
+**Refresh policy:** weekly. Manually for now via `bun run packages/api/scripts/refresh-corpus.ts`; weekly cron is a v1.1 task. Each refresh REPLACES the corpus (does not merge with previous) so the watchlist stays focused on currently-leading traders. Followed by `TRUNCATE signals, whale_positions, processed_resolutions` to start clean.
+
+**Historical:** v1 archive `output/_local_backup_1777785223/wallet_profiles.json` from `Moonkeemoo/ora-et-labora` (1504 wallets) was the bootstrap source. Replaced 2026-05-03 — see `feedback_oralab_caveat.md` (oralab project was stopped; its classification was unreliable).
+
+`whale-corpus.ts` loads `whale_corpus.json` into `Set<string>` at startup. Match = `set.has(trade.user.toLowerCase())`. That's the entire whale logic.
 
 (SIG-5 in the critical-rules table is obsolete in this project — we don't carry confidence at all. Kept the row only as a reference to the v1 lesson.)
 
@@ -118,8 +122,9 @@ packages/
     └── Dockerfile
 
 data/
-├── whale_corpus.json             — flat array of 1504 lowercase addresses (the watchlist)
-└── wallet_profiles_v1.json       — full v1 archive snapshot (offline; no code reads it)
+├── whale_corpus.json             — flat array of lowercase addresses (the watchlist; refreshed weekly via scripts/refresh-corpus.ts)
+├── whale_aliases.json            — { addr: { alias, xHandle, verified, sources } } from Polymarket leaderboard (UI hookup = v1.1)
+└── wallet_profiles_v1.json       — historical v1 archive snapshot (offline; no code reads it)
 
 db/
 └── migrate.sql                   — TimescaleDB schema + continuous aggregates + compression + retention
@@ -139,8 +144,8 @@ Don't refactor `heatmap-query.ts` to be mode-aware in MVP — add `pattern-query
 
 | Phase | Days | What |
 |---|---|---|
-| **MVP** | 1-3 | RTDS ingestor + whale match + gamma enrich + TimescaleDB + API + Next.js heatmap UI in **LIVE** mode (1h window, 5min slots) |
-| **v1.1** | 4-5 | Time scale selector (1h/24h/7d) for LIVE. **PATTERN mode** (daily + weekly cyclical, queries `signals_hourly`). Hourly continuous aggregate. SSE live cell flash |
+| **MVP** | 1-3 | RTDS ingestor + whale match + gamma enrich + TimescaleDB + API + Next.js heatmap UI in **LIVE** mode (1h × 5min slots, all 4 ranges 1h/24h/12d/12w each 12 buckets) |
+| **v1.1** | 4-5 | Weekly cron for `refresh-corpus.ts` (currently manual). Wire `whale_aliases.json` into UI (replace hash-derived alias with Polymarket usernames). **PATTERN mode** (cyclical hour/dow overlay, queries `signals_hourly`). Mobile responsive |
 | **v1.2** | 6-7 | Drill-down: category → subcategory → market. Breadcrumb nav |
 | **v1.3** | 8-9 | Whale profiles (click whale → history). TG alerts for large signals ($500+) |
 | **v2** | 10-14 | Trade execution via CLOB v2. Mobile responsive. Real PnL tracking (resolution) |

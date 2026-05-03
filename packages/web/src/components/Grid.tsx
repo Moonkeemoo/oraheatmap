@@ -14,8 +14,11 @@ const TIME_ROW_H = 26;
 
 /**
  * Bucket timestamp → human label in the viewer's LOCAL timezone.
- *   1h  / 24h → "16:35" (HH:MM)
- *   7d  / 30d → "03/05" (DD/MM)
+ * Each range has 12 buckets, so we always show all 12 labels — no crowding.
+ *   1h  → "16:35"  HH:MM (5-min boundary)
+ *   24h → "16:00"  HH:00 (2-hour boundary)
+ *   12d → "03/05"  DD/MM (day boundary)
+ *   12w → "21/04"  DD/MM (week-start, day boundary)
  * Time labels move with the chart automatically because each bucket carries
  * its own ts; shifting the window shifts the visible labels with it.
  */
@@ -26,17 +29,10 @@ function formatSlotLabel(range: HeatmapRange, ts: string): string {
     const mm = String(d.getMinutes()).padStart(2, "0");
     return `${hh}:${mm}`;
   }
+  // 12d / 12w
   const dd = String(d.getDate()).padStart(2, "0");
   const mo = String(d.getMonth() + 1).padStart(2, "0");
   return `${dd}/${mo}`;
-}
-
-/** How often to actually render a label (others render blank to avoid crowding). */
-function labelStride(range: HeatmapRange, num: number): number {
-  if (range === "1h") return 1;
-  if (range === "24h") return 2; // 24 buckets → label every 2h
-  if (range === "7d") return 1;  // 7 buckets → all
-  return Math.max(1, Math.ceil(num / 12)); // 30d → ~2-3 day stride
 }
 
 export function Grid({
@@ -64,8 +60,7 @@ export function Grid({
     return makeIntensityFn(flat, key);
   }, [data, metric]);
 
-  const cellFontSize = num > 16 ? 10 : 12;
-  const stride = labelStride(data.range, num);
+  const cellFontSize = 12;
 
   return (
     <div
@@ -86,12 +81,11 @@ export function Grid({
       {data.buckets.map((b, i) => {
         const lbl = formatSlotLabel(data.range, b.ts);
         const isNow = i === num - 1;
-        const visible = isNow || i % stride === 0;
         return (
           <div
             key={i}
             style={{
-              fontSize: num > 16 ? 9 : 10,
+              fontSize: 10,
               fontFamily: TOKENS.mono,
               color: isNow ? TOKENS.pos : TOKENS.textSec,
               fontWeight: isNow ? 700 : 500,
@@ -99,7 +93,6 @@ export function Grid({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              opacity: visible ? 1 : 0,
             }}
           >
             {isNow ? (

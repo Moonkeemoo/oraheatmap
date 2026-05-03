@@ -17,12 +17,22 @@ describe("buildBuckets", () => {
     expect(buckets[buckets.length - 1]?.ts).toBe("2026-05-03T11:00:00.000Z");
   });
 
-  test("7 buckets aligned to day boundaries (7d)", () => {
+  test("12 buckets aligned to day boundaries (12d)", () => {
     const now = new Date("2026-05-03T11:32:17Z");
-    const buckets = buildBuckets(now, 24 * 60, 7);
-    expect(buckets.length).toBe(7);
+    const buckets = buildBuckets(now, 24 * 60, 12);
+    expect(buckets.length).toBe(12);
     expect(buckets[buckets.length - 1]?.ts).toBe("2026-05-03T00:00:00.000Z");
-    expect(buckets[0]?.ts).toBe("2026-04-27T00:00:00.000Z");
+    // 12 days back from 03 May = 22 Apr
+    expect(buckets[0]?.ts).toBe("2026-04-22T00:00:00.000Z");
+  });
+
+  test("12 buckets aligned to week boundaries (12w)", () => {
+    const now = new Date("2026-05-03T11:32:17Z");
+    const buckets = buildBuckets(now, 7 * 24 * 60, 12);
+    expect(buckets.length).toBe(12);
+    // Each bucket = 1 week; 12 weeks = 84 days
+    const expectedStart = new Date(buckets[buckets.length - 1]!.ts).getTime() - 11 * 7 * 24 * 3_600_000;
+    expect(new Date(buckets[0]!.ts).getTime()).toBe(expectedStart);
   });
 
   test("indices ascending 0..n-1", () => {
@@ -32,11 +42,23 @@ describe("buildBuckets", () => {
 });
 
 describe("RANGE_CONFIG", () => {
-  test("expected bucket / window / slot count for each range", () => {
-    expect(RANGE_CONFIG["1h"]).toEqual({ bucketMinutes: 5, windowMinutes: 60, slots: 12 });
-    expect(RANGE_CONFIG["24h"]).toEqual({ bucketMinutes: 60, windowMinutes: 1440, slots: 24 });
-    expect(RANGE_CONFIG["7d"]).toEqual({ bucketMinutes: 1440, windowMinutes: 10080, slots: 7 });
-    expect(RANGE_CONFIG["30d"]).toEqual({ bucketMinutes: 1440, windowMinutes: 43200, slots: 30 });
+  test("every range is exactly 12 buckets", () => {
+    for (const r of ["1h", "24h", "12d", "12w"] as const) {
+      expect(RANGE_CONFIG[r].slots).toBe(12);
+      expect(RANGE_CONFIG[r].bucketMinutes * 12).toBe(RANGE_CONFIG[r].windowMinutes);
+    }
+  });
+  test("bucket sizes scale per range", () => {
+    expect(RANGE_CONFIG["1h"].bucketMinutes).toBe(5);            // 5 min
+    expect(RANGE_CONFIG["24h"].bucketMinutes).toBe(120);         // 2 h
+    expect(RANGE_CONFIG["12d"].bucketMinutes).toBe(1440);        // 1 d
+    expect(RANGE_CONFIG["12w"].bucketMinutes).toBe(7 * 1440);    // 1 wk
+  });
+  test("source is raw for 1h, hourly_agg otherwise", () => {
+    expect(RANGE_CONFIG["1h"].source).toBe("raw");
+    expect(RANGE_CONFIG["24h"].source).toBe("hourly_agg");
+    expect(RANGE_CONFIG["12d"].source).toBe("hourly_agg");
+    expect(RANGE_CONFIG["12w"].source).toBe("hourly_agg");
   });
 });
 

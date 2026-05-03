@@ -49,20 +49,14 @@ CREATE INDEX IF NOT EXISTS idx_signals_whale_ts
 CREATE MATERIALIZED VIEW IF NOT EXISTS signals_5min
 WITH (timescaledb.continuous) AS
 SELECT
-  time_bucket('5 minutes', ts) AS bucket,
+  time_bucket('5 minutes', ts)                                        AS bucket,
   category,
-  COUNT(*)                     AS signal_count,
-  SUM(size * price)            AS total_volume,    -- USD value (size is shares)
-  AVG(size * price)            AS avg_size,        -- avg USD per trade
-  COUNT(DISTINCT whale_addr)   AS unique_whales,
-  -- Directional PnL proxy:
-  -- BUY at price>0.5 = bullish bet, BUY at price<0.5 = contrarian bet
-  -- We track net "smart money direction" weighted by size
-  SUM(CASE
-    WHEN side = 'BUY'  THEN size * (price - 0.5) * 2
-    WHEN side = 'SELL' THEN size * (0.5 - price) * 2
-    ELSE 0
-  END)                         AS directional_score
+  COUNT(*)                                                            AS signal_count,
+  COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)          AS buy_volume_usd,
+  COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS realized_pnl_sum,
+  COUNT(*) FILTER (WHERE realized_pnl > 0)                            AS win_count,
+  COUNT(*) FILTER (WHERE realized_pnl < 0)                            AS loss_count,
+  COUNT(DISTINCT whale_addr)                                          AS unique_whales
 FROM signals
 GROUP BY bucket, category
 WITH NO DATA;
@@ -82,23 +76,20 @@ SELECT add_continuous_aggregate_policy('signals_5min',
 CREATE MATERIALIZED VIEW IF NOT EXISTS signals_hourly
 WITH (timescaledb.continuous) AS
 SELECT
-  time_bucket('1 hour', ts)    AS bucket,
+  time_bucket('1 hour', ts)                                           AS bucket,
   category,
-  COUNT(*)                     AS signal_count,
-  SUM(size * price)            AS total_volume,    -- USD value (size is shares)
-  AVG(size * price)            AS avg_size,        -- avg USD per trade
-  COUNT(DISTINCT whale_addr)   AS unique_whales,
-  SUM(CASE
-    WHEN side = 'BUY'  THEN size * (price - 0.5) * 2
-    WHEN side = 'SELL' THEN size * (0.5 - price) * 2
-    ELSE 0
-  END)                         AS directional_score
+  COUNT(*)                                                            AS signal_count,
+  COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)          AS buy_volume_usd,
+  COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS realized_pnl_sum,
+  COUNT(*) FILTER (WHERE realized_pnl > 0)                            AS win_count,
+  COUNT(*) FILTER (WHERE realized_pnl < 0)                            AS loss_count,
+  COUNT(DISTINCT whale_addr)                                          AS unique_whales
 FROM signals
 GROUP BY bucket, category
 WITH NO DATA;
 
 SELECT add_continuous_aggregate_policy('signals_hourly',
-  start_offset    => INTERVAL '14 days',
+  start_offset    => INTERVAL '90 days',
   end_offset      => INTERVAL '1 minute',
   schedule_interval => INTERVAL '1 minute',
   if_not_exists   => TRUE

@@ -4,21 +4,35 @@ import { CATEGORIES, type Category } from "./categorize";
 import { whaleAlias, whaleColor } from "./whale-display";
 
 // ─── Range definitions ───────────────────────────────────────────────────────
+//
+// Every range has exactly 12 buckets — same grid shape across the UI, just
+// different bucket sizes. Ranges that span >1 day query the signals_hourly
+// continuous aggregate (pre-computed); 1h queries raw signals.
 
-export type HeatmapRange = "1h" | "24h" | "7d" | "30d";
+export type HeatmapRange = "1h" | "24h" | "12d" | "12w";
 export type HeatmapMetric = "signals" | "volume" | "pnl" | "winrate";
 
 type RangeConfig = {
+  /** Width of each grid bucket */
   bucketMinutes: number;
+  /** Total visible window = bucketMinutes × 12 */
   windowMinutes: number;
+  /** Always 12 — kept for clarity at call sites */
   slots: number;
+  /** Which storage layer to query for this range */
+  source: "raw" | "hourly_agg";
 };
 
+const MIN = 1;
+const HOUR = 60 * MIN;
+const DAY = 24 * HOUR;
+const WEEK = 7 * DAY;
+
 export const RANGE_CONFIG: Readonly<Record<HeatmapRange, RangeConfig>> = Object.freeze({
-  "1h": { bucketMinutes: 5, windowMinutes: 60, slots: 12 },
-  "24h": { bucketMinutes: 60, windowMinutes: 24 * 60, slots: 24 },
-  "7d": { bucketMinutes: 24 * 60, windowMinutes: 7 * 24 * 60, slots: 7 },
-  "30d": { bucketMinutes: 24 * 60, windowMinutes: 30 * 24 * 60, slots: 30 },
+  "1h":  { bucketMinutes: 5 * MIN,  windowMinutes: 60 * MIN,    slots: 12, source: "raw"        },
+  "24h": { bucketMinutes: 2 * HOUR, windowMinutes: 24 * HOUR,   slots: 12, source: "hourly_agg" },
+  "12d": { bucketMinutes: 1 * DAY,  windowMinutes: 12 * DAY,    slots: 12, source: "hourly_agg" },
+  "12w": { bucketMinutes: 1 * WEEK, windowMinutes: 12 * WEEK,   slots: 12, source: "hourly_agg" },
 });
 
 // ─── Wire types ──────────────────────────────────────────────────────────────
@@ -255,11 +269,14 @@ export function assembleHeatmap(
 
 /**
  * Per (bucket, category): count, BUY USD volume, sum of realized PnL on exits,
- * exit count, win count, unique whales touching the cell.
+ * win/loss counts, unique whales touching the cell.
  *
  * Volume includes BUY only — entry-side money flow ("smart money entering").
  * PnL/winrate operate on rows where realized_pnl IS NOT NULL — i.e. SELLs and
  * SETTLEMENTS where we knew the entry price.
+ *
+ * For 1h we hit raw signals; for ≥24h we re-bucket the signals_hourly
+ * continuous aggregate so we don't scan millions of raw rows per query.
  */
 export async function queryHeatmapAggRows(
   sql: Sql,
@@ -268,32 +285,61 @@ export async function queryHeatmapAggRows(
   const cfg = RANGE_CONFIG[range];
   const bucketInterval = `${cfg.bucketMinutes} minutes`;
   const windowInterval = `${cfg.windowMinutes} minutes`;
+
+  if (cfg.source === "raw") {
+    const rows = await sql<AggRow[]>`
+      SELECT
+        to_char(time_bucket(${bucketInterval}::interval, ts) AT TIME ZONE 'UTC',
+                'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
+        category,
+        COUNT(*)::bigint                                              AS signal_count,
+        COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS buy_volume_usd,
+        COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS realized_pnl_sum,
+        COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS win_count,
+        COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS loss_count,
+        COUNT(DISTINCT whale_addr)::bigint                            AS unique_whales
+      FROM signals
+      WHERE ts >= NOW() - (${windowInterval}::interval)
+      GROUP BY bucket, category
+      ORDER BY bucket
+    `;
+    return rows;
+  }
+
+  // hourly_agg: re-bucket signals_hourly into the requested grid bucket.
+  // unique_whales here is approximate (sums across hourly buckets, may
+  // double-count cross-hour activity). Acceptable for MVP — flagged.
   const rows = await sql<AggRow[]>`
     SELECT
-      to_char(time_bucket(${bucketInterval}::interval, ts) AT TIME ZONE 'UTC',
+      to_char(time_bucket(${bucketInterval}::interval, bucket) AT TIME ZONE 'UTC',
               'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
       category,
-      COUNT(*)::bigint                                              AS signal_count,
-      COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS buy_volume_usd,
-      COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS realized_pnl_sum,
-      COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS win_count,
-      COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS loss_count,
-      COUNT(DISTINCT whale_addr)::bigint                            AS unique_whales
-    FROM signals
-    WHERE ts >= NOW() - (${windowInterval}::interval)
-    GROUP BY bucket, category
-    ORDER BY bucket
+      COALESCE(SUM(signal_count), 0)::bigint           AS signal_count,
+      COALESCE(SUM(buy_volume_usd), 0)                 AS buy_volume_usd,
+      COALESCE(SUM(realized_pnl_sum), 0)               AS realized_pnl_sum,
+      COALESCE(SUM(win_count), 0)::bigint              AS win_count,
+      COALESCE(SUM(loss_count), 0)::bigint             AS loss_count,
+      COALESCE(SUM(unique_whales), 0)::bigint          AS unique_whales
+    FROM signals_hourly
+    WHERE bucket >= NOW() - (${windowInterval}::interval)
+    GROUP BY 1, category
+    ORDER BY 1
   `;
   return rows;
 }
 
-/** Top-N trades per (category, bucket) by USD size. Used for cell tooltips. */
+/** Top-N trades per (category, bucket) by USD size. Used for cell tooltips.
+ *  Only computed for `raw` source ranges (1h) to avoid scanning days/weeks of
+ *  raw signals; longer ranges return [] and the tooltip just shows aggregate
+ *  metrics without the "Top signals" panel. */
 export async function queryTopTradesPerCell(
   sql: Sql,
   range: HeatmapRange,
   perCellLimit: number,
 ): Promise<ReadonlyArray<TradeRow>> {
   const cfg = RANGE_CONFIG[range];
+  if (cfg.source !== "raw") return [];
+
   const bucketInterval = `${cfg.bucketMinutes} minutes`;
   const windowInterval = `${cfg.windowMinutes} minutes`;
   const rows = await sql<TradeRow[]>`
