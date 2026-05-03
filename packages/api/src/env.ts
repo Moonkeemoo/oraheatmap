@@ -12,6 +12,7 @@ export type Env = {
   PORT: number;
   HOST: string;
   SIGNAL_BATCH_INTERVAL_MS: number;
+  RESOLUTION_POLL_INTERVAL_MS: number;
 };
 
 function required(name: string): string {
@@ -47,5 +48,6 @@ export function loadEnv(): Env {
     PORT: num("PORT", 3001),
     HOST: str("HOST", "0.0.0.0"),
     SIGNAL_BATCH_INTERVAL_MS: num("SIGNAL_BATCH_INTERVAL_MS", 5_000),
+    RESOLUTION_POLL_INTERVAL_MS: num("RESOLUTION_POLL_INTERVAL_MS", 5 * 60_000),
   };
 }

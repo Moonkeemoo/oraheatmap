@@ -5,6 +5,7 @@ import { createGammaCache } from "./gamma-cache";
 import { createIngestor } from "./ingestor";
 import { log } from "./log";
 import { createPositionTracker } from "./position-tracker";
+import { createResolutionWatcher } from "./resolution-watcher";
 import { createSignalHub } from "./signal-hub";
 import { loadWhaleCorpus } from "./whale-corpus";
 
@@ -47,6 +48,14 @@ async function main(): Promise<void> {
     dataSilenceThresholdMs: env.WS_DATA_SILENCE_THRESHOLD_MS,
   });
 
+  const resolutionWatcher = createResolutionWatcher({
+    db,
+    baseUrl: env.GAMMA_API_URL,
+    pollIntervalMs: env.RESOLUTION_POLL_INTERVAL_MS,
+    positions,
+    hub,
+  });
+
   const api = createApi({
     sql,
     hub,
@@ -68,16 +77,19 @@ async function main(): Promise<void> {
   statsTimer.unref?.();
 
   ingestor.start();
+  resolutionWatcher.start();
   const server = api.listen({ port: env.PORT, hostname: env.HOST });
   log.info("api listening", { port: env.PORT, host: env.HOST });
 
   const shutdown = async (signal: string): Promise<void> => {
     log.info("shutdown", { signal });
     clearInterval(statsTimer);
-    // Order: stop accepting new HTTP first, then stop ingestor (no more new
-    // signals), then drain the DB buffer + position state, then close pg pool.
+    // Order: stop accepting new HTTP first, then stop signal sources (ingestor
+    // + resolution watcher), then drain the DB buffer + position state, then
+    // close pg pool.
     server.stop?.();
     await ingestor.stop();
+    await resolutionWatcher.stop();
     await buffer.stop();
     await positions.stop();
     await sql.end({ timeout: 5 });
