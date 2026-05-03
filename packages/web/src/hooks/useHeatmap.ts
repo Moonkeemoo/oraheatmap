@@ -53,6 +53,10 @@ export function useHeatmap(args: {
 
   useEffect(() => {
     cancelledRef.current = false;
+    // Drop the previous mode's data so the Grid doesn't render a half-mixed
+    // state (e.g. live cells with pattern bucket count) until the new
+    // response arrives. UI shows the loading state for ~1 fetch tick.
+    setData(null);
     setLoading(true);
     void fetchOnce();
     const id = setInterval(() => void fetchOnce(), refreshMs);

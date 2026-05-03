@@ -105,7 +105,11 @@ export function Heatmap() {
 
   const isLive = mode === "live";
   const daysOfData = displayData?.dataSpan.daysOfData ?? 0;
-  const patternUnlocked = daysOfData >= 7;
+  // PATTERN is always clickable. Sample size shows up in the subtitle
+  // ("low sample" badge under 7d) so the user can interpret accordingly,
+  // rather than the tab being silently locked.
+  const patternUnlocked = true;
+  const lowSample = daysOfData < 7;
 
   return (
     <div
@@ -137,6 +141,7 @@ export function Heatmap() {
         lookbackDays={displayData?.lookbackDays ?? 30}
         patternUnlocked={patternUnlocked}
         daysOfData={daysOfData}
+        lowSample={lowSample}
       />
 
       <div

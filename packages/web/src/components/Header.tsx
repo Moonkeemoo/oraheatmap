@@ -95,17 +95,44 @@ function MetricTab({
 function ModeToggle({
   mode,
   setMode,
-  patternUnlocked,
   daysOfData,
 }: {
   mode: Mode;
   setMode: (m: Mode) => void;
-  patternUnlocked: boolean;
   daysOfData: number;
 }) {
-  const patternTitle = patternUnlocked
-    ? "Cyclical pattern view (avg over lookback)"
-    : `Unlocks at ≥7 days of data — currently ${daysOfData.toFixed(1)} days`;
+  // PATTERN is always clickable; we surface low-sample warning in the title
+  // attribute so a curious user gets the context on hover.
+  const patternTitle =
+    daysOfData < 7
+      ? `Cyclical pattern view (avg over lookback) — heads-up: only ${daysOfData.toFixed(1)} days of data so far, averages will stabilize after ≥7 days`
+      : "Cyclical pattern view (avg over lookback)";
+
+  const renderBtn = (m: Mode, label: string, activeColor: string, title?: string) => {
+    const active = mode === m;
+    return (
+      <button
+        onClick={() => setMode(m)}
+        title={title}
+        style={{
+          background: active ? activeColor : "transparent",
+          border: "none",
+          color: active ? "#0d1117" : TOKENS.textSec,
+          fontFamily: TOKENS.font,
+          fontSize: 11,
+          fontWeight: 800,
+          letterSpacing: 0.5,
+          textTransform: "uppercase",
+          padding: "7px 14px",
+          borderRadius: 6,
+          cursor: "pointer",
+          transition: "all .12s",
+        }}
+      >
+        {label}
+      </button>
+    );
+  };
   return (
     <div
       style={{
@@ -117,51 +144,8 @@ function ModeToggle({
         border: `1px solid ${TOKENS.border}`,
       }}
     >
-      <button
-        onClick={() => setMode("live")}
-        style={{
-          background: mode === "live" ? TOKENS.panel2 : "transparent",
-          border: "none",
-          color: mode === "live" ? TOKENS.pos : TOKENS.textSec,
-          fontFamily: TOKENS.font,
-          fontSize: 11,
-          fontWeight: 700,
-          letterSpacing: 0.5,
-          textTransform: "uppercase",
-          padding: "7px 14px",
-          borderRadius: 6,
-          cursor: "pointer",
-          boxShadow: mode === "live" ? `inset 0 0 0 1px ${TOKENS.borderHi}` : "none",
-        }}
-      >
-        LIVE
-      </button>
-      <button
-        onClick={() => patternUnlocked && setMode("pattern")}
-        disabled={!patternUnlocked}
-        title={patternTitle}
-        style={{
-          background: mode === "pattern" ? TOKENS.panel2 : "transparent",
-          border: "none",
-          color: !patternUnlocked
-            ? TOKENS.textMuted
-            : mode === "pattern"
-              ? TOKENS.accent
-              : TOKENS.textSec,
-          opacity: !patternUnlocked ? 0.45 : 1,
-          fontFamily: TOKENS.font,
-          fontSize: 11,
-          fontWeight: 700,
-          letterSpacing: 0.5,
-          textTransform: "uppercase",
-          padding: "7px 14px",
-          borderRadius: 6,
-          cursor: patternUnlocked ? "pointer" : "not-allowed",
-          boxShadow: mode === "pattern" ? `inset 0 0 0 1px ${TOKENS.borderHi}` : "none",
-        }}
-      >
-        PATTERN
-      </button>
+      {renderBtn("live", "LIVE", TOKENS.pos)}
+      {renderBtn("pattern", "PATTERN", TOKENS.accent, patternTitle)}
     </div>
   );
 }
@@ -185,8 +169,8 @@ export function Header({
   isLive,
   trackedCount,
   lookbackDays,
-  patternUnlocked,
   daysOfData,
+  lowSample,
 }: {
   mode: Mode;
   setMode: (m: Mode) => void;
@@ -199,12 +183,13 @@ export function Header({
   isLive: boolean;
   trackedCount: number;
   lookbackDays: number;
-  patternUnlocked: boolean;
+  patternUnlocked?: boolean; // accepted for compat; unused (PATTERN always on)
   daysOfData: number;
+  lowSample: boolean;
 }) {
   const subtitle = isLive
     ? liveRangeSubtitle(range)
-    : `cyclical avg · last ${lookbackDays} days`;
+    : `cyclical avg · last ${lookbackDays} days${lowSample ? ` · low sample (${daysOfData.toFixed(1)}d)` : ""}`;
 
   const tag = isLive ? (range === "1h" ? "LIVE" : "HISTORICAL") : "PATTERN";
   const tagColor = isLive
@@ -282,12 +267,7 @@ export function Header({
         <ScaleLegend metric={metric} />
         <div style={{ width: 1, height: 26, background: TOKENS.border }} />
 
-        <ModeToggle
-          mode={mode}
-          setMode={setMode}
-          patternUnlocked={patternUnlocked}
-          daysOfData={daysOfData}
-        />
+        <ModeToggle mode={mode} setMode={setMode} daysOfData={daysOfData} />
         <div style={{ width: 1, height: 26, background: TOKENS.border }} />
 
         {isLive ? (
