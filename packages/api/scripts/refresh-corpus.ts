@@ -48,7 +48,7 @@ const POLY_TO_BUCKET: ReadonlyArray<{ poly: string; bucket: Bucket }> = [
 
 const LEADERBOARD_BASE = "https://data-api.polymarket.com/v1/leaderboard";
 const PER_CALL = 50; // Polymarket max
-const TARGET_PER_CATEGORY = 200; // → 4 paginated calls per cat
+const TARGET_PER_CATEGORY = 500; // → 10 paginated calls per cat
 const POLITE_DELAY_MS = 200;
 const TIME_PERIOD = "ALL"; // proven all-time winners (most stable signal)
 const ORDER_BY = "PNL";
