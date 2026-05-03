@@ -301,21 +301,40 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
   const totalPnl = t?.pnl ?? derived.pnl;
   const totalWinRate = t?.winRate ?? derived.winRate;
 
-  // Per-row PnL ranking (top-level → category, drill → subcategory). Powers
-  // the PnL card hover popover. Sorted by abs PnL desc so the most "loud"
-  // rows surface first regardless of sign.
-  const pnlByRow = useMemo(() => {
-    const out: Array<{ key: string; pnl: number; signals: number }> = [];
+  // Per-row aggregates (top-level → categories, drill → subcategories).
+  // One pass; each popover sorts the result by its own metric. Win rate is
+  // approximated as a count-weighted average of per-cell rates because the
+  // wire doesn't carry win/loss counts directly.
+  type RowAgg = {
+    key: string;
+    signals: number;
+    volume: number;
+    pnl: number;
+    /** Weighted-sum numerator (sum of cell.winRate × cell.count over decided cells). */
+    wrNum: number;
+    /** Weighted-sum denominator (sum of cell.count over decided cells). */
+    wrDen: number;
+    /** Sum of per-cell uniqueWhales — over-counts whales active across multiple
+     *  buckets within the same category, so it's a "busyness" proxy, not a
+     *  true distinct count. */
+    uniqueSum: number;
+  };
+  const rankByRow = useMemo<RowAgg[]>(() => {
+    const out: RowAgg[] = [];
     for (const cat of data.categories) {
-      let pnl = 0;
-      let signals = 0;
+      const agg: RowAgg = { key: cat, signals: 0, volume: 0, pnl: 0, wrNum: 0, wrDen: 0, uniqueSum: 0 };
       for (const c of data.cells[cat] ?? []) {
-        pnl += c.pnl;
-        signals += c.count;
+        agg.signals += c.count;
+        agg.volume += c.volume;
+        agg.pnl += c.pnl;
+        if (c.winRate !== null) {
+          agg.wrNum += c.winRate * c.count;
+          agg.wrDen += c.count;
+        }
+        agg.uniqueSum += c.uniqueWhales;
       }
-      out.push({ key: cat, pnl, signals });
+      out.push(agg);
     }
-    out.sort((a, b) => Math.abs(b.pnl) - Math.abs(a.pnl));
     return out;
   }, [data]);
 
@@ -334,20 +353,32 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
   // Hover state — only one popover open at a time; index into the items array.
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
-  // Popover renderers — closed over the live data so labels/colors stay in
-  // sync with the current view (drill vs top-level, mode, range).
-  const renderPnlPopover = (): ReactNode => (
-    <>
-      <PopoverHeader
-        title={isDrill ? "PnL by subcategory" : "PnL by category"}
-        hint={`total ${fmtMoney(totalPnl)}`}
-      />
-      {pnlByRow.length === 0 ? (
-        <div style={{ fontSize: 11, color: TOKENS.textSec }}>no data</div>
-      ) : (
-        pnlByRow.map((r) => {
-          const color = r.pnl > 0 ? TOKENS.pos : r.pnl < 0 ? TOKENS.neg : TOKENS.textSec;
-          return (
+  // ─── Generic per-row ranking popover ──────────────────────────────────
+  // One renderer drives the breakdown for Signals, Volume, PnL, Win Rate.
+  // Each metric supplies: a sort key, a value formatter, a value color, and
+  // the popover title + hint to set context.
+  function renderRanking(args: {
+    title: string;
+    hint?: string;
+    valueOf: (r: RowAgg) => number;
+    valueText: (r: RowAgg) => string;
+    valueColor?: (r: RowAgg) => string;
+    sortBy?: "value" | "absValue";
+  }): ReactNode {
+    const sorted = rankByRow.slice().sort((a, b) => {
+      const av = args.valueOf(a);
+      const bv = args.valueOf(b);
+      return args.sortBy === "absValue"
+        ? Math.abs(bv) - Math.abs(av)
+        : bv - av;
+    });
+    return (
+      <>
+        <PopoverHeader title={args.title} hint={args.hint} />
+        {sorted.length === 0 ? (
+          <div style={{ fontSize: 11, color: TOKENS.textSec }}>no data</div>
+        ) : (
+          sorted.map((r) => (
             <div
               key={r.key}
               style={{
@@ -373,29 +404,86 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
                   · {r.signals.toLocaleString()} sig
                 </span>
               </span>
-              <span style={{ color, fontFamily: TOKENS.mono, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                {r.pnl >= 0 ? "+" : ""}{fmtMoney(r.pnl)}
+              <span
+                style={{
+                  color: args.valueColor ? args.valueColor(r) : TOKENS.text,
+                  fontFamily: TOKENS.mono,
+                  fontWeight: 700,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {args.valueText(r)}
               </span>
             </div>
-          );
-        })
-      )}
-    </>
-  );
+          ))
+        )}
+      </>
+    );
+  }
 
-  const renderTopWhalesPopover = (): ReactNode => {
-    const list = data.topWhales ?? [];
+  const breakdownLabel = isDrill ? "subcategory" : "category";
+
+  const renderSignalsPopover = (): ReactNode =>
+    renderRanking({
+      title: `Signals by ${breakdownLabel}`,
+      hint: `total ${totalSignals.toLocaleString()}`,
+      valueOf: (r) => r.signals,
+      valueText: (r) => r.signals.toLocaleString(),
+    });
+
+  const renderVolumePopover = (): ReactNode =>
+    renderRanking({
+      title: `Volume by ${breakdownLabel}`,
+      hint: `total ${fmtMoneyShort(totalVolume)}`,
+      valueOf: (r) => r.volume,
+      valueText: (r) => fmtMoneyShort(r.volume),
+    });
+
+  const renderPnlPopover = (): ReactNode =>
+    renderRanking({
+      title: `PnL by ${breakdownLabel}`,
+      hint: `total ${fmtMoney(totalPnl)}`,
+      valueOf: (r) => r.pnl,
+      valueText: (r) => (r.pnl >= 0 ? "+" : "") + fmtMoney(r.pnl),
+      valueColor: (r) => (r.pnl > 0 ? TOKENS.pos : r.pnl < 0 ? TOKENS.neg : TOKENS.textSec),
+      sortBy: "absValue",
+    });
+
+  const renderWinRatePopover = (): ReactNode =>
+    renderRanking({
+      title: `Win rate by ${breakdownLabel}`,
+      hint: totalWinRate === null ? "no exits yet" : `overall ${Math.round(totalWinRate * 100)}%`,
+      valueOf: (r) => (r.wrDen > 0 ? r.wrNum / r.wrDen : -1),
+      valueText: (r) =>
+        r.wrDen > 0 ? Math.round((r.wrNum / r.wrDen) * 100) + "%" : "—",
+      valueColor: (r) => {
+        if (r.wrDen === 0) return TOKENS.textSec;
+        const wr = r.wrNum / r.wrDen;
+        return wr >= 0.5 ? TOKENS.pos : TOKENS.neg;
+      },
+    });
+
+  // ─── Whale-list renderer (Top Whale + Active Whales share the format) ──
+  function renderWhaleList(args: {
+    title: string;
+    hint: string;
+    sortBy: "volume" | "signals";
+  }): ReactNode {
+    const list = (data.topWhales ?? []).slice().sort((a, b) =>
+      args.sortBy === "volume" ? b.volume - a.volume : b.signals - a.signals,
+    );
     return (
       <>
-        <PopoverHeader
-          title={isDrill ? `Top whales · ${categoryMeta(data.drillCategory as Category).label}` : "Top whales"}
-          hint="by USD entered"
-        />
+        <PopoverHeader title={args.title} hint={args.hint} />
         {list.length === 0 ? (
           <div style={{ fontSize: 11, color: TOKENS.textSec }}>no data</div>
         ) : (
           list.map((w, i) => {
             const pnlColor = w.pnl > 0 ? TOKENS.pos : w.pnl < 0 ? TOKENS.neg : TOKENS.textSec;
+            const primary = args.sortBy === "volume" ? fmtMoneyShort(w.volume) : w.signals.toLocaleString();
+            const secondary = args.sortBy === "volume"
+              ? `${w.signals.toLocaleString()} sig`
+              : fmtMoneyShort(w.volume);
             return (
               <div
                 key={w.addr}
@@ -432,6 +520,9 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
                   title={w.addr}
                 >
                   {w.alias}
+                  <span style={{ color: TOKENS.textMuted, marginLeft: 6, fontSize: 10 }}>
+                    · {secondary}
+                  </span>
                 </span>
                 <span
                   style={{
@@ -442,7 +533,7 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
-                  {fmtMoneyShort(w.volume)}
+                  {primary}
                 </span>
                 <span
                   style={{
@@ -463,7 +554,22 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
         )}
       </>
     );
-  };
+  }
+
+  const drillSuffix = isDrill ? ` · ${categoryMeta(data.drillCategory as Category).label}` : "";
+  const renderTopWhalesPopover = (): ReactNode =>
+    renderWhaleList({
+      title: `Top whales${drillSuffix}`,
+      hint: "by USD entered",
+      sortBy: "volume",
+    });
+
+  const renderActiveWhalesPopover = (): ReactNode =>
+    renderWhaleList({
+      title: `Most active whales${drillSuffix}`,
+      hint: "by signal count",
+      sortBy: "signals",
+    });
 
   const items: StatItem[] = [
     {
@@ -471,8 +577,9 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
       value: totalSignals.toLocaleString(),
       delta: isPattern ? undefined : { val: sigDelta, dir: sigDelta >= 0 ? "up" : "down" },
       spark: { values: trendSignals, color: TOKENS.link },
-      tooltip:
-        "Number of whale trades captured in this window. Per-bucket trend shown as the sparkline. Δ% compares the latter half of the window to the earlier half.",
+      tooltip: "Number of whale trades captured in this window.",
+      popover: renderSignalsPopover,
+      popoverWidth: 320,
     },
     {
       label: isPattern ? "Avg Volume / Day" : "Total Volume",
@@ -480,13 +587,15 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
       sub: "BUY entries (USD)",
       spark: { values: trendVolume, color: TOKENS.accent },
       tooltip:
-        "USD value of BUY-side trades only — money entering whale positions. Excludes SELLs and SETTLEMENTs to keep this as a one-directional 'inflow' metric.",
+        "USD value of BUY-side trades only — money entering whale positions.",
+      popover: renderVolumePopover,
+      popoverWidth: 320,
     },
     {
       label: isPattern ? "Avg PnL / Day" : "Total PnL",
       value: fmtMoneyShort(totalPnl),
       pnlDir: totalPnl > 0 ? "up" : totalPnl < 0 ? "down" : undefined,
-      sub: "realized on exits — hover for breakdown",
+      sub: "realized on exits",
       spark: { values: trendPnl, color: totalPnl >= 0 ? TOKENS.pos : TOKENS.neg },
       tooltip:
         "Realized profit/loss summed across all SELL and SETTLEMENT events in this window.",
@@ -499,7 +608,9 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
       pnlDir: totalWinRate === null ? undefined : totalWinRate >= 0.5 ? "up" : "down",
       sub: isPattern ? "avg over slots" : "by exits",
       tooltip:
-        "Share of exits (SELL or SETTLEMENT) that closed in profit. Denominator excludes break-even exits and entries (BUYs).",
+        "Share of exits (SELL or SETTLEMENT) that closed in profit.",
+      popover: renderWinRatePopover,
+      popoverWidth: 320,
     },
     isPattern
       ? {
@@ -514,7 +625,7 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
         ? {
             label: "Top Whale",
             whale: { color: t.topWhale.color, alias: t.topWhale.alias },
-            sub: "by USD entered — hover for top 10",
+            sub: "by USD entered",
             tooltip: `${t.topWhale.alias.startsWith("0x") ? "address (no leaderboard alias)" : "Polymarket username"}\n${t.topWhale.addr}`,
             popover: renderTopWhalesPopover,
             popoverWidth: 380,
@@ -534,7 +645,9 @@ export function StatsBar({ data, trackedCount }: { data: HeatmapResponse; tracke
           suffix: `/ ${trackedCount.toLocaleString()}`,
           bar: trackedCount > 0 ? Math.min(1, (t?.activeWhales ?? 0) / trackedCount) : 0,
           tooltip:
-            "Distinct whales from the corpus that traded at least once in this window. The bar shows the share of the full watchlist that's currently active.",
+            "Distinct whales from the corpus that traded at least once in this window.",
+          popover: renderActiveWhalesPopover,
+          popoverWidth: 380,
         },
   ];
 
