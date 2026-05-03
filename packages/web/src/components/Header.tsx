@@ -187,9 +187,12 @@ export function Header({
   daysOfData: number;
   lowSample: boolean;
 }) {
+  // Keep both subtitles roughly the same length so the right-side controls
+  // don't wrap to a new line when the user toggles modes (was: PATTERN
+  // subtitle was 4× longer than LIVE → header height jumped).
   const subtitle = isLive
     ? liveRangeSubtitle(range)
-    : `cyclical avg · last ${lookbackDays} days${lowSample ? ` · low sample (${daysOfData.toFixed(1)}d)` : ""}`;
+    : `last ${lookbackDays} days${lowSample ? " · low sample" : ""}`;
 
   const tag = isLive ? (range === "1h" ? "LIVE" : "HISTORICAL") : "PATTERN";
   const tagColor = isLive
@@ -211,6 +214,10 @@ export function Header({
         flexWrap: "wrap",
         flexShrink: 0,
         minWidth: 0,
+        // Reserve enough height for the worst case (controls wrap below the
+        // title on a narrow viewport). Without this the grid below "jumps"
+        // up and down by ~32px when toggling LIVE/PATTERN or resizing.
+        minHeight: 92,
         boxSizing: "border-box",
       }}
     >
