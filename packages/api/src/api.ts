@@ -46,12 +46,26 @@ const TOP_WHALES_LIMIT = 10;
  *  beyond this would make the grid unreadable. Sorted by total signals desc. */
 const MAX_MARKETS_IN_DRILL = 30;
 
-/** Drop a leading "{prefix} " (case-insensitive, single space) from `label`,
- *  e.g. stripPrefix("Bitcoin Up or Down - 3PM", "Bitcoin") → "Up or Down - 3PM".
- *  Returns the label unchanged if the prefix isn't an exact leading word match. */
-function stripPrefix(label: string, prefix: string): string {
-  const re = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+`, "i");
-  return label.replace(re, "");
+/** Trim a market question for the L3 row label so it fits a 2-line clamp:
+ *    1. drop the parent subcategory prefix ("Bitcoin Up or Down" → "Up or Down")
+ *    2. drop leading "Will the " / "Will " (every prediction-market label
+ *       starts with this — dead weight in the visible text)
+ *    3. drop the parent subcategory prefix again (to catch "Will Bitcoin
+ *       reach …" → "reach …")
+ *    4. drop trailing "?" (universal at the end of a question)
+ *  All steps are case-insensitive and idempotent. The full original label
+ *  is still surfaced via the `title` attribute on hover. */
+function shortenMarketLabel(label: string, subcategoryLabel: string | null): string {
+  let out = label.trim();
+  const stripPrefix = (s: string, pfx: string): string => {
+    const re = new RegExp(`^${pfx.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+`, "i");
+    return s.replace(re, "");
+  };
+  if (subcategoryLabel) out = stripPrefix(out, subcategoryLabel);
+  out = out.replace(/^Will\s+(the\s+)?/i, "");
+  if (subcategoryLabel) out = stripPrefix(out, subcategoryLabel);
+  out = out.replace(/\?\s*$/, "");
+  return out.length > 0 ? out : label;
 }
 
 function signalToWire(s: Signal): Record<string, unknown> {
@@ -222,19 +236,14 @@ export function createApi(deps: ApiDeps) {
             fetchMarketLabels(deps.sql, sortedConditionIds),
             fetchResolvedMarkets(deps.sql, sortedConditionIds),
           ]);
-          // Strip the parent subcategory prefix from each label — when the
-          // user is drilled into Bitcoin, "Bitcoin Up or Down - May 3 …"
-          // becomes "Up or Down - May 3 …". Only strips an exact leading
-          // word match (case-insensitive) so "Will Bitcoin reach …" stays
-          // intact (the parent name is mid-sentence there, not redundant).
+          // Trim each label so it fits a 2-line clamp without the layout
+          // bursting. See shortenMarketLabel for the rules.
           const subLabel = drillSubcategory
             ? SUBCATEGORY_LABELS[drillSubcategory] ?? drillSubcategory
             : null;
-          rowLabels = subLabel
-            ? Object.fromEntries(
-                Object.entries(labels).map(([k, v]) => [k, stripPrefix(v, subLabel)]),
-              )
-            : labels;
+          rowLabels = Object.fromEntries(
+            Object.entries(labels).map(([k, v]) => [k, shortenMarketLabel(v, subLabel)]),
+          );
           resolvedRows = sortedConditionIds.filter((cid) => resolvedSet.has(cid));
         } else if (isDrill) {
           rowKeys = drillRules.map((r) => r.slug);

@@ -260,19 +260,26 @@ export function Grid({
                   // L3 uses smaller text + 2-line wrap; L1/L2 stay loud single-line.
                   fontSize: isL3 ? 10 : 10,
                   fontWeight: isL3 ? 600 : 700,
-                  letterSpacing: isL3 ? 0.2 : 0.6,
+                  letterSpacing: isL3 ? 0.1 : 0.6,
                   padding: isL3 ? "4px 8px" : "5px 10px",
                   borderRadius: 3,
                   // L3 market labels look better mixed-case (long sentences)
                   // than ALL CAPS — only category/subcategory rows shout.
                   textTransform: isL3 ? "none" : "uppercase",
                   whiteSpace: isL3 ? "normal" : "nowrap",
-                  // Clamp to 2 lines, ellipsis on overflow (Webkit + standard).
+                  // Clamp to 2 lines, ellipsis on overflow. line-clamp alone
+                  // isn't enough — without an explicit max-height the button
+                  // still grows to its natural 3-line height in some flex
+                  // contexts, leaving the third line peeking below the badge
+                  // background. Pinning max-height = 2 × line-height forces
+                  // the clip to actually happen.
                   display: isL3 ? "-webkit-box" as const : undefined,
                   WebkitLineClamp: isL3 ? 2 : undefined,
                   WebkitBoxOrient: isL3 ? "vertical" as const : undefined,
                   overflow: isL3 ? "hidden" : "visible",
-                  lineHeight: isL3 ? 1.2 : undefined,
+                  lineHeight: isL3 ? "1.2" : undefined,
+                  maxHeight: isL3 ? "2.4em" : undefined,
+                  wordBreak: isL3 ? "break-word" as const : undefined,
                   textAlign: isL3 ? "left" as const : undefined,
                   width: isL3 ? "100%" : undefined,
                   cursor: clickableRow ? "pointer" : "default",
