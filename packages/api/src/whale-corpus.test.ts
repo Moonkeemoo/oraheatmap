@@ -78,10 +78,13 @@ describe("loadWhaleCorpus", () => {
     expect(loadWhaleCorpus(join(tmpDir, "nope.json"))).rejects.toThrow();
   });
 
-  test("loads the real watchlist (1504 wallets)", async () => {
+  test("loads the real watchlist (current Polymarket leaderboard corpus)", async () => {
     const corpusPath = join(import.meta.dir, "../../../data/whale_corpus.json");
     const set = await loadWhaleCorpus(corpusPath);
-    expect(set.size).toBe(1504);
+    // Size depends on the latest refresh-corpus.ts run — assert a reasonable
+    // band rather than a hard number so the test doesn't flake on every refresh.
+    expect(set.size).toBeGreaterThan(500);
+    expect(set.size).toBeLessThan(2500);
     for (const addr of set) {
       expect(addr).toMatch(/^0x[0-9a-f]{40}$/);
     }

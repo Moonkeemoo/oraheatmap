@@ -148,6 +148,7 @@ export function Heatmap() {
                 category={hover.category as Category}
                 slotLabel={hover.slotLabel}
                 range={range}
+                metric={metric}
               />
             )}
           </>

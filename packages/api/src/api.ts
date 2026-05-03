@@ -9,7 +9,7 @@ import {
   fetchUniqueWhalesInWindow,
   type HeatmapRange,
   queryHeatmapAggRows,
-  queryTopTradesPerCell,
+  queryTopMarketsPerCell,
   RANGE_CONFIG,
 } from "./heatmap-query";
 import type { Ingestor } from "./ingestor";
@@ -28,7 +28,10 @@ export type ApiDeps = {
 };
 
 const SSE_HEARTBEAT_MS = 25_000;
-const TOP_TRADES_PER_CELL = 3;
+/** Server returns top-N markets per cell (sorted by signal count); UI re-sorts
+ *  client-side by active metric and slices to top-5. Extras give the UI
+ *  freedom to switch metrics without a refetch. */
+const TOP_MARKETS_PER_CELL = 10;
 
 function signalToWire(s: Signal): Record<string, unknown> {
   return {
@@ -90,13 +93,13 @@ export function createApi(deps: ApiDeps) {
         const cfg = RANGE_CONFIG[range];
         const now = new Date();
         const buckets = buildBuckets(now, cfg.bucketMinutes, cfg.slots);
-        const [aggRows, tradeRows, topWhaleAddr, uniqueWhales] = await Promise.all([
+        const [aggRows, marketRows, topWhaleAddr, uniqueWhales] = await Promise.all([
           queryHeatmapAggRows(deps.sql, range),
-          queryTopTradesPerCell(deps.sql, range, TOP_TRADES_PER_CELL),
+          queryTopMarketsPerCell(deps.sql, range, TOP_MARKETS_PER_CELL),
           fetchTopWhale(deps.sql, range),
           fetchUniqueWhalesInWindow(deps.sql, range),
         ]);
-        const grid = assembleHeatmap(aggRows, tradeRows, buckets, range, now);
+        const grid = assembleHeatmap(aggRows, marketRows, buckets, range, now);
         const topWhale = topWhaleAddr
           ? { addr: topWhaleAddr, alias: whaleAlias(topWhaleAddr), color: whaleColor(topWhaleAddr) }
           : null;

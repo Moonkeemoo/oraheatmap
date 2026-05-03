@@ -1,7 +1,6 @@
 import type { Sql } from "postgres";
 
 import { CATEGORIES, type Category } from "./categorize";
-import { whaleAlias, whaleColor } from "./whale-display";
 
 // ─── Range definitions ───────────────────────────────────────────────────────
 //
@@ -37,14 +36,13 @@ export const RANGE_CONFIG: Readonly<Record<HeatmapRange, RangeConfig>> = Object.
 
 // ─── Wire types ──────────────────────────────────────────────────────────────
 
-export type TradeSummary = {
-  whaleAddr: string;
-  whaleAlias: string;
-  whaleColor: string;
-  side: "BUY" | "SELL" | "SETTLEMENT";
-  sizeUsd: number;
-  realizedPnl: number | null;
+export type MarketSummary = {
+  conditionId: string;
   marketQuestion: string | null;
+  count: number;
+  volume: number;
+  pnl: number;
+  winRate: number | null;
 };
 
 export type HeatmapCell = {
@@ -56,7 +54,10 @@ export type HeatmapCell = {
   /** Wins / total exits. null when there are no exits in this cell. */
   winRate: number | null;
   uniqueWhales: number;
-  trades: TradeSummary[];
+  /** Top markets in this cell sorted by signal count (server-side). UI re-sorts
+   *  client-side by the active metric and slices to top-5. Empty for ranges
+   *  whose source is not `raw` (24h/12d/12w) — too expensive to scan. */
+  markets: MarketSummary[];
 };
 
 export type HeatmapTotals = {
@@ -98,15 +99,16 @@ type AggRow = {
   unique_whales: string | number;
 };
 
-type TradeRow = {
+type MarketRow = {
   bucket: string;
   category: string;
-  whale_addr: string;
-  side: "BUY" | "SELL" | "SETTLEMENT";
-  size: string | number;
-  price: string | number;
-  realized_pnl: string | number | null;
+  condition_id: string;
   market_question: string | null;
+  signals: string | number;
+  volume_usd: string | number;
+  pnl_usd: string | number | null;
+  win_count: string | number;
+  loss_count: string | number;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -117,7 +119,7 @@ const ZERO_CELL: HeatmapCell = Object.freeze({
   pnl: 0,
   winRate: null,
   uniqueWhales: 0,
-  trades: [],
+  markets: [],
 });
 
 function num(v: string | number | null | undefined): number {
@@ -156,7 +158,7 @@ export function buildBuckets(
 
 export function assembleHeatmap(
   aggRows: ReadonlyArray<AggRow>,
-  tradeRows: ReadonlyArray<TradeRow>,
+  marketRows: ReadonlyArray<MarketRow>,
   buckets: ReadonlyArray<{ ts: string; index: number }>,
   range: HeatmapRange,
   now: Date,
@@ -168,7 +170,7 @@ export function assembleHeatmap(
   const cells = Object.fromEntries(
     CATEGORIES.map((c) => [
       c,
-      Array.from({ length: slotCount }, (): HeatmapCell => ({ ...ZERO_CELL, trades: [] })),
+      Array.from({ length: slotCount }, (): HeatmapCell => ({ ...ZERO_CELL, markets: [] })),
     ]),
   ) as Record<Category, HeatmapCell[]>;
 
@@ -214,21 +216,24 @@ export function assembleHeatmap(
     perCategoryCount.set(cat, (perCategoryCount.get(cat) ?? 0) + count);
   }
 
-  // Trades — already sliced to top-N per (cat, bucket) by SQL. Convert to wire shape.
-  for (const t of tradeRows) {
-    const cat = toCategory(t.category);
-    const idx = bucketIndex.get(t.bucket);
+  // Markets — already sliced to top-N per (cat, bucket) by SQL, ordered by
+  // signal count desc. UI re-sorts by active metric and slices to top-5.
+  for (const m of marketRows) {
+    const cat = toCategory(m.category);
+    const idx = bucketIndex.get(m.bucket);
     if (idx === undefined) continue;
     const cell = cells[cat][idx];
     if (!cell) continue;
-    cell.trades.push({
-      whaleAddr: t.whale_addr,
-      whaleAlias: whaleAlias(t.whale_addr),
-      whaleColor: whaleColor(t.whale_addr),
-      side: t.side,
-      sizeUsd: num(t.size) * num(t.price),
-      realizedPnl: t.realized_pnl === null ? null : num(t.realized_pnl),
-      marketQuestion: t.market_question,
+    const wins = num(m.win_count);
+    const losses = num(m.loss_count);
+    const decided = wins + losses;
+    cell.markets.push({
+      conditionId: m.condition_id,
+      marketQuestion: m.market_question,
+      count: num(m.signals),
+      volume: num(m.volume_usd),
+      pnl: num(m.pnl_usd),
+      winRate: decided > 0 ? wins / decided : null,
     });
   }
 
@@ -328,34 +333,52 @@ export async function queryHeatmapAggRows(
   return rows;
 }
 
-/** Top-N trades per (category, bucket) by USD size. Used for cell tooltips.
- *  Only computed for `raw` source ranges (1h) to avoid scanning days/weeks of
- *  raw signals; longer ranges return [] and the tooltip just shows aggregate
- *  metrics without the "Top signals" panel. */
-export async function queryTopTradesPerCell(
+/**
+ * Top-N markets per (category, bucket), grouped by condition_id, ordered by
+ * signal count. The UI re-sorts these client-side by the active metric and
+ * shows top-5 — so we send a few extras (default 10) to allow re-ranking
+ * without a refetch when the user switches tabs.
+ *
+ * Only computed for `raw` source ranges (1h). For 24h/12d/12w we'd have to
+ * scan millions of rows grouped by condition_id; not worth the latency for
+ * MVP. Tooltip just shows aggregate metrics without the markets section
+ * for those ranges.
+ */
+export async function queryTopMarketsPerCell(
   sql: Sql,
   range: HeatmapRange,
   perCellLimit: number,
-): Promise<ReadonlyArray<TradeRow>> {
+): Promise<ReadonlyArray<MarketRow>> {
   const cfg = RANGE_CONFIG[range];
   if (cfg.source !== "raw") return [];
 
   const bucketInterval = `${cfg.bucketMinutes} minutes`;
   const windowInterval = `${cfg.windowMinutes} minutes`;
-  const rows = await sql<TradeRow[]>`
-    WITH ranked AS (
+  const rows = await sql<MarketRow[]>`
+    WITH per_market AS (
       SELECT
-        to_char(time_bucket(${bucketInterval}::interval, ts) AT TIME ZONE 'UTC',
-                'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
-        category, whale_addr, side, size, price, realized_pnl, market_question,
-        ROW_NUMBER() OVER (
-          PARTITION BY category, time_bucket(${bucketInterval}::interval, ts)
-          ORDER BY size * price DESC NULLS LAST
-        ) AS rn
+        time_bucket(${bucketInterval}::interval, ts)                          AS bucket_ts,
+        category,
+        condition_id,
+        MAX(market_question)                                                  AS market_question,
+        COUNT(*)::bigint                                                      AS signals,
+        COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)            AS volume_usd,
+        COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd,
+        COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint                      AS win_count,
+        COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                      AS loss_count
       FROM signals
       WHERE ts >= NOW() - (${windowInterval}::interval)
+        AND condition_id IS NOT NULL
+      GROUP BY bucket_ts, category, condition_id
+    ),
+    ranked AS (
+      SELECT *,
+        ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY signals DESC) AS rn
+      FROM per_market
     )
-    SELECT bucket, category, whale_addr, side, size, price, realized_pnl, market_question
+    SELECT
+      to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
+      category, condition_id, market_question, signals, volume_usd, pnl_usd, win_count, loss_count
     FROM ranked
     WHERE rn <= ${perCellLimit}
   `;

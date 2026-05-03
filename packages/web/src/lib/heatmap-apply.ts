@@ -30,25 +30,17 @@ export function applySignal(d: HeatmapResponse, s: SignalEvent): HeatmapResponse
   const buyVolumeAdd = isBuy ? s.sizeUsd : 0;
   const pnlAdd = s.realizedPnl ?? 0;
 
+  // We don't optimistically merge into cell.markets — that would need
+  // re-aggregating into the existing top-N list (find-or-add by condition_id,
+  // bump per-market count/volume/pnl, re-sort) which is complex enough to
+  // get wrong. Top markets stay accurate via the next /api/heatmap refetch
+  // (within REFRESH_MS — 10s for 1h). Cell numbers + flash still update
+  // every signal so the visible metric stays in sync.
   const newCell = {
     ...oldCell,
     count: oldCell.count + 1,
     volume: oldCell.volume + buyVolumeAdd,
     pnl: oldCell.pnl + pnlAdd,
-    // Prepend the new trade; cap at 5 so tooltip stays focused. Server's
-    // top-3 will replace this on next refetch.
-    trades: [
-      {
-        whaleAddr: s.whaleAddr,
-        whaleAlias: s.whaleAlias,
-        whaleColor: s.whaleColor,
-        side: s.side,
-        sizeUsd: s.sizeUsd,
-        realizedPnl: s.realizedPnl,
-        marketQuestion: s.marketQuestion,
-      },
-      ...oldCell.trades,
-    ].slice(0, 5),
   };
 
   return {

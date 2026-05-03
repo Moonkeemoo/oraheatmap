@@ -76,7 +76,7 @@ describe("assembleHeatmap — metric aggregation", () => {
     expect(out.totals.winRate).toBeNull();
     expect(out.totals.topCategory).toBeNull();
     expect(out.cells.Sports.length).toBe(12);
-    expect(out.cells.Sports.every((c) => c.count === 0 && c.winRate === null && c.trades.length === 0)).toBe(true);
+    expect(out.cells.Sports.every((c) => c.count === 0 && c.winRate === null && c.markets.length === 0)).toBe(true);
   });
 
   test("places aggregate metrics in correct bucket index", () => {
@@ -177,73 +177,90 @@ describe("assembleHeatmap — metric aggregation", () => {
   });
 });
 
-describe("assembleHeatmap — trades", () => {
+describe("assembleHeatmap — markets", () => {
   const now = new Date("2026-05-03T11:32:00Z");
   const buckets = buildBuckets(now, 5, 12);
   const latestBucketTs = buckets[buckets.length - 1]!.ts;
 
-  test("trades land in the correct cell with whaleAlias + whaleColor + sizeUsd", () => {
+  test("market rows land in the correct cell with all metric fields populated", () => {
     const out = assembleHeatmap(
       [],
       [
         {
           bucket: latestBucketTs,
           category: "Sports",
-          whale_addr: "0xadc2efbf97ce7b25f7a638aabdba196c657cd1c9",
-          side: "BUY",
-          size: 100,
-          price: 0.45,
-          realized_pnl: null,
+          condition_id: "0xcond1",
           market_question: "Will Lakers win?",
+          signals: 12,
+          volume_usd: 4500,
+          pnl_usd: 150,
+          win_count: 3,
+          loss_count: 1,
         },
       ],
       buckets,
       "1h",
       now,
     );
-    const trades = out.cells.Sports[11]?.trades ?? [];
-    expect(trades.length).toBe(1);
-    expect(trades[0]?.whaleAlias).toBe("0xadc2…cd1c9");
-    expect(trades[0]?.whaleColor).toMatch(/^hsl\(\d+, 70%, 55%\)$/);
-    expect(trades[0]?.sizeUsd).toBeCloseTo(45);
-    expect(trades[0]?.realizedPnl).toBeNull();
-    expect(trades[0]?.side).toBe("BUY");
-    expect(trades[0]?.marketQuestion).toBe("Will Lakers win?");
+    const markets = out.cells.Sports[11]?.markets ?? [];
+    expect(markets.length).toBe(1);
+    expect(markets[0]?.conditionId).toBe("0xcond1");
+    expect(markets[0]?.marketQuestion).toBe("Will Lakers win?");
+    expect(markets[0]?.count).toBe(12);
+    expect(markets[0]?.volume).toBeCloseTo(4500);
+    expect(markets[0]?.pnl).toBeCloseTo(150);
+    expect(markets[0]?.winRate).toBeCloseTo(0.75); // 3/(3+1)
   });
 
-  test("multiple trades preserve the (already-sorted) input order", () => {
-    const trades = [
+  test("multiple markets preserve server-side ordering", () => {
+    const markets = [
       {
-        bucket: latestBucketTs, category: "Crypto", whale_addr: "0xa".padEnd(42, "0"),
-        side: "BUY" as const, size: 1000, price: 0.5, realized_pnl: null,
-        market_question: "BTC > 100k?",
+        bucket: latestBucketTs, category: "Crypto", condition_id: "0xa",
+        market_question: "BTC > 100k?", signals: 50, volume_usd: 1000, pnl_usd: 0,
+        win_count: 0, loss_count: 0,
       },
       {
-        bucket: latestBucketTs, category: "Crypto", whale_addr: "0xb".padEnd(42, "0"),
-        side: "SELL" as const, size: 200, price: 0.6, realized_pnl: 20,
-        market_question: "BTC > 100k?",
+        bucket: latestBucketTs, category: "Crypto", condition_id: "0xb",
+        market_question: "ETH > 5k?", signals: 30, volume_usd: 800, pnl_usd: 25,
+        win_count: 2, loss_count: 1,
       },
     ];
-    const out = assembleHeatmap([], trades, buckets, "1h", now);
-    const cellTrades = out.cells.Crypto[11]?.trades ?? [];
-    expect(cellTrades.length).toBe(2);
-    expect(cellTrades[0]?.sizeUsd).toBeCloseTo(500);
-    expect(cellTrades[1]?.realizedPnl).toBeCloseTo(20);
+    const out = assembleHeatmap([], markets, buckets, "1h", now);
+    const cellMarkets = out.cells.Crypto[11]?.markets ?? [];
+    expect(cellMarkets.length).toBe(2);
+    expect(cellMarkets[0]?.conditionId).toBe("0xa");
+    expect(cellMarkets[1]?.conditionId).toBe("0xb");
+    expect(cellMarkets[1]?.winRate).toBeCloseTo(2 / 3);
   });
 
-  test("trade rows outside window are dropped", () => {
+  test("market with no decided exits → winRate null", () => {
     const out = assembleHeatmap(
       [],
       [
         {
-          bucket: "1999-01-01T00:00:00.000Z", category: "Sports",
-          whale_addr: "0xa".padEnd(42, "0"), side: "BUY", size: 1, price: 1,
-          realized_pnl: null, market_question: null,
+          bucket: latestBucketTs, category: "Sports", condition_id: "0xc",
+          market_question: "Q?", signals: 5, volume_usd: 100, pnl_usd: 0,
+          win_count: 0, loss_count: 0,
         },
       ],
       buckets, "1h", now,
     );
-    expect(out.cells.Sports[11]?.trades.length).toBe(0);
+    expect(out.cells.Sports[11]?.markets[0]?.winRate).toBeNull();
+  });
+
+  test("market rows outside window are dropped", () => {
+    const out = assembleHeatmap(
+      [],
+      [
+        {
+          bucket: "1999-01-01T00:00:00.000Z", category: "Sports", condition_id: "0xz",
+          market_question: null, signals: 9, volume_usd: 0, pnl_usd: null,
+          win_count: 0, loss_count: 0,
+        },
+      ],
+      buckets, "1h", now,
+    );
+    expect(out.cells.Sports[11]?.markets.length).toBe(0);
   });
 });
 

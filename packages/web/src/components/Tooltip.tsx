@@ -1,9 +1,11 @@
+import { useLayoutEffect, useRef, useState } from "react";
 import { categoryMeta } from "@/lib/categories";
 import { fmtMoney, fmtMoneyShort } from "@/lib/format";
 import { TOKENS } from "@/lib/tokens";
-import type { Category, HeatmapCell, HeatmapRange } from "@/lib/types";
+import type { Category, HeatmapCell, HeatmapMetric, HeatmapRange, MarketSummary } from "@/lib/types";
 
 export type TooltipAnchor = {
+  /** anchor's left/top relative to the tooltip's positioning parent */
   x: number;
   y: number;
   w: number;
@@ -12,8 +14,63 @@ export type TooltipAnchor = {
   parentH: number;
 };
 
+const TOP_N = 5;
+
 function rangeUnit(r: HeatmapRange): string {
-  return r === "1h" ? "5m" : r === "24h" ? "1h" : "1d";
+  if (r === "1h") return "5m";
+  if (r === "24h") return "2h";
+  if (r === "12d") return "1d";
+  return "1w";
+}
+
+/** Compare for descending sort. nulls / undefined sort last. */
+function cmpDesc(a: number | null, b: number | null): number {
+  const av = a ?? -Infinity;
+  const bv = b ?? -Infinity;
+  return bv - av;
+}
+
+function sortMarkets(markets: ReadonlyArray<MarketSummary>, metric: HeatmapMetric): MarketSummary[] {
+  // Don't mutate the caller's array.
+  const copy = markets.slice();
+  switch (metric) {
+    case "signals":
+      copy.sort((a, b) => cmpDesc(a.count, b.count));
+      break;
+    case "volume":
+      copy.sort((a, b) => cmpDesc(a.volume, b.volume));
+      break;
+    case "pnl":
+      // Sort by absolute PnL so big losers also surface (they're informative).
+      copy.sort((a, b) => cmpDesc(Math.abs(a.pnl), Math.abs(b.pnl)));
+      break;
+    case "winrate":
+      // Top by win rate is fragile on small samples. Tiebreak by count to
+      // promote markets with more decided exits.
+      copy.sort((a, b) => {
+        const c = cmpDesc(a.winRate, b.winRate);
+        return c !== 0 ? c : cmpDesc(a.count, b.count);
+      });
+      break;
+  }
+  return copy;
+}
+
+/** Format the metric value as it appears in the tooltip's secondary column. */
+function fmtMetric(metric: HeatmapMetric, m: MarketSummary): string {
+  if (metric === "signals") return String(m.count);
+  if (metric === "volume") return fmtMoneyShort(m.volume);
+  if (metric === "pnl") return fmtMoney(m.pnl);
+  return m.winRate === null ? "—" : Math.round(m.winRate * 100) + "%";
+}
+
+function metricColor(metric: HeatmapMetric, m: MarketSummary): string {
+  if (metric === "pnl") return m.pnl >= 0 ? TOKENS.pos : TOKENS.neg;
+  if (metric === "winrate") {
+    if (m.winRate === null) return TOKENS.textSec;
+    return m.winRate >= 0.5 ? TOKENS.pos : TOKENS.neg;
+  }
+  return TOKENS.text;
 }
 
 function Stat({ label, value, color }: { label: string; value: React.ReactNode; color?: string }) {
@@ -51,30 +108,84 @@ export function Tooltip({
   category,
   slotLabel,
   range,
+  metric,
 }: {
   cell: HeatmapCell;
   anchor: TooltipAnchor;
   category: Category;
   slotLabel: string;
   range: HeatmapRange;
+  metric: HeatmapMetric;
 }) {
   const meta = categoryMeta(category);
+  const sortedMarkets = sortMarkets(cell.markets, metric).slice(0, TOP_N);
 
-  const tipW = 280;
-  const tipH = 180;
+  const ref = useRef<HTMLDivElement | null>(null);
+  // Initial position (computed in render): try above the anchor; if no room
+  // there, fall back below; clamp horizontally to the parent. Once mounted
+  // we measure actual rendered size and re-clamp to the viewport via
+  // useLayoutEffect — handles edge cases where the tooltip would clip the
+  // bottom or right of the screen.
   const margin = 10;
-  let left = anchor.x + anchor.w / 2 - tipW / 2;
-  let top = anchor.y - tipH - margin;
-  if (top < 8) top = anchor.y + anchor.h + margin;
-  left = Math.max(8, Math.min(left, (anchor.parentW || 1200) - tipW - 8));
+  const initialW = 340;
+  const initialH = sortedMarkets.length > 0 ? 240 + sortedMarkets.length * 26 : 140;
+
+  const initialPos = {
+    left: clamp(anchor.x + anchor.w / 2 - initialW / 2, 8, anchor.parentW - initialW - 8),
+    top: anchor.y - initialH - margin >= 8 ? anchor.y - initialH - margin : anchor.y + anchor.h + margin,
+  };
+
+  const [pos, setPos] = useState(initialPos);
+
+  useLayoutEffect(() => {
+    if (!ref.current) return;
+    const r = ref.current.getBoundingClientRect();
+    const parent = ref.current.offsetParent as HTMLElement | null;
+    const pr = parent?.getBoundingClientRect();
+    const pw = pr?.width ?? window.innerWidth;
+    const ph = pr?.height ?? window.innerHeight;
+    const W = r.width;
+    const H = r.height;
+
+    // Where can it fit? Try in this order: above, below, right, left, then
+    // wherever there's most room (clamped).
+    const fitsAbove = anchor.y - H - margin >= 8;
+    const fitsBelow = anchor.y + anchor.h + H + margin <= ph - 8;
+    const fitsRight = anchor.x + anchor.w + W + margin <= pw - 8;
+    const fitsLeft = anchor.x - W - margin >= 8;
+
+    let left: number;
+    let top: number;
+
+    if (fitsAbove) {
+      top = anchor.y - H - margin;
+      left = clamp(anchor.x + anchor.w / 2 - W / 2, 8, pw - W - 8);
+    } else if (fitsBelow) {
+      top = anchor.y + anchor.h + margin;
+      left = clamp(anchor.x + anchor.w / 2 - W / 2, 8, pw - W - 8);
+    } else if (fitsRight) {
+      left = anchor.x + anchor.w + margin;
+      top = clamp(anchor.y + anchor.h / 2 - H / 2, 8, ph - H - 8);
+    } else if (fitsLeft) {
+      left = anchor.x - W - margin;
+      top = clamp(anchor.y + anchor.h / 2 - H / 2, 8, ph - H - 8);
+    } else {
+      // Nothing fits — pin to the largest available area, clamped.
+      left = clamp(anchor.x + anchor.w / 2 - W / 2, 8, pw - W - 8);
+      top = clamp(anchor.y + anchor.h / 2 - H / 2, 8, ph - H - 8);
+    }
+
+    setPos({ left, top });
+  }, [anchor, sortedMarkets.length]);
 
   return (
     <div
+      ref={ref}
       style={{
         position: "absolute",
-        left,
-        top,
-        width: tipW,
+        left: pos.left,
+        top: pos.top,
+        width: initialW,
         background: TOKENS.panel,
         border: `1px solid ${TOKENS.borderHi}`,
         borderRadius: 8,
@@ -85,6 +196,7 @@ export function Tooltip({
         pointerEvents: "none",
         zIndex: 30,
         animation: "tipIn .12s ease-out",
+        boxSizing: "border-box",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
@@ -122,7 +234,7 @@ export function Tooltip({
         />
       </div>
 
-      {cell.trades.length > 0 && (
+      {sortedMarkets.length > 0 && (
         <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8 }}>
           <div
             style={{
@@ -132,44 +244,61 @@ export function Tooltip({
               textTransform: "uppercase",
               marginBottom: 6,
               fontWeight: 600,
+              display: "flex",
+              justifyContent: "space-between",
             }}
           >
-            Top signals
+            <span>Top markets</span>
+            <span style={{ color: TOKENS.textSec }}>by {metric}</span>
           </div>
-          {cell.trades.slice(0, 3).map((t, i) => (
+          {sortedMarkets.map((m, i) => (
             <div
-              key={i}
+              key={m.conditionId}
               style={{
                 display: "grid",
-                gridTemplateColumns: "8px 1fr auto auto",
-                alignItems: "center",
+                gridTemplateColumns: "16px 1fr auto",
+                alignItems: "baseline",
                 gap: 8,
                 fontSize: 11,
-                marginBottom: 3,
+                marginBottom: 6,
+                lineHeight: 1.3,
               }}
             >
-              <span style={{ width: 8, height: 8, borderRadius: 8, background: t.whaleColor }} />
+              <span
+                style={{
+                  color: TOKENS.textMuted,
+                  fontFamily: TOKENS.mono,
+                  fontSize: 10,
+                  fontWeight: 700,
+                }}
+              >
+                {i + 1}.
+              </span>
               <span
                 style={{
                   color: TOKENS.text,
+                  // Wrap long market questions so they're fully readable.
+                  // Cap at ~3 lines via -webkit-line-clamp; longer titles get an ellipsis.
+                  display: "-webkit-box",
+                  WebkitLineClamp: 3,
+                  WebkitBoxOrient: "vertical",
                   overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
                 }}
+                title={m.marketQuestion ?? "(unknown market)"}
               >
-                {t.whaleAlias}
+                {m.marketQuestion ?? "(unknown market)"}
               </span>
               <span
                 style={{
-                  color: t.side === "BUY" ? TOKENS.pos : t.side === "SELL" ? TOKENS.neg : TOKENS.textSec,
+                  color: metricColor(metric, m),
+                  fontFamily: TOKENS.mono,
+                  fontSize: 11,
                   fontWeight: 700,
-                  fontSize: 10,
+                  fontVariantNumeric: "tabular-nums",
+                  whiteSpace: "nowrap",
                 }}
               >
-                {t.side}
-              </span>
-              <span style={{ color: TOKENS.textSec, fontFamily: TOKENS.mono, fontSize: 10 }}>
-                {fmtMoneyShort(t.sizeUsd)}
+                {fmtMetric(metric, m)}
               </span>
             </div>
           ))}
@@ -177,4 +306,8 @@ export function Tooltip({
       )}
     </div>
   );
+}
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v));
 }

@@ -15,14 +15,13 @@ export type Category =
 export type HeatmapRange = "1h" | "24h" | "12d" | "12w";
 export type HeatmapMetric = "signals" | "volume" | "pnl" | "winrate";
 
-export type TradeSummary = {
-  whaleAddr: string;
-  whaleAlias: string;
-  whaleColor: string;
-  side: "BUY" | "SELL" | "SETTLEMENT";
-  sizeUsd: number;
-  realizedPnl: number | null;
+export type MarketSummary = {
+  conditionId: string;
   marketQuestion: string | null;
+  count: number;
+  volume: number;
+  pnl: number;
+  winRate: number | null;
 };
 
 export type HeatmapCell = {
@@ -31,7 +30,10 @@ export type HeatmapCell = {
   pnl: number;
   winRate: number | null;
   uniqueWhales: number;
-  trades: TradeSummary[];
+  /** Top-N markets in this cell, server-sorted by signal count. UI re-sorts
+   *  client-side by the active metric and shows top-5. Empty for ranges
+   *  whose source is not raw (24h/12d/12w). */
+  markets: MarketSummary[];
 };
 
 export type HeatmapTotals = {
