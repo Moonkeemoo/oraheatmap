@@ -81,10 +81,11 @@ export function getCellValue(metric: HeatmapMetric, cell: HeatmapCell): string {
   if (metric === "signals") return fmtCellValue(cell.count);
   if (metric === "winrate") return cell.winRate === null ? "" : Math.round(cell.winRate * 100) + "%";
   if (metric === "whales") {
-    // Empty when no aggregate (PATTERN doesn't compute uniqueWhales). Don't
-    // ever render the literal string "undefined".
+    // Empty when no aggregate. PATTERN serves AVG(unique-whales-per-day)
+    // which is fractional → run through fmtCellValue so cells display
+    // rounded integers ("122" not "122.33333333").
     if (cell.uniqueWhales == null) return "";
-    return String(cell.uniqueWhales);
+    return fmtCellValue(cell.uniqueWhales);
   }
   return "";
 }
