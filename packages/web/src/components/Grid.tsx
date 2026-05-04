@@ -49,7 +49,10 @@ function tint(hex: string, amount: number): string {
   return `#${hex2(mix(r))}${hex2(mix(g))}${hex2(mix(b))}`;
 }
 
-const LABEL_W = 100;
+// 130 (was 100) — the trailing › chevron + drag-handle column ate into the
+// text area enough to clip "POLITICS" → "POLI…". 30 extra px restores room
+// for the 8-char L1 labels without making the heatmap noticeably narrower.
+const LABEL_W = 130;
 const LABEL_W_L3 = 170;
 const TIME_ROW_H = 26;
 const MIN_ROW_H = 38;
@@ -206,9 +209,9 @@ function ClickAffordance({ kind }: { kind: "drill" | "external" }) {
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        marginLeft: 6,
+        marginLeft: 4,
         opacity: 0.7,
-        fontSize: kind === "external" ? 11 : 13,
+        fontSize: kind === "external" ? 10 : 12,
         lineHeight: 1,
         transition: "transform .15s, opacity .15s",
         flexShrink: 0,
@@ -253,7 +256,7 @@ function RowLabelBadge({
     fontSize: 10,
     fontWeight: isL3 ? 600 : 700,
     letterSpacing: isL3 ? 0.2 : 0.6,
-    padding: isL3 ? "5px 8px" : "5px 10px",
+    padding: isL3 ? "5px 8px" : "5px 8px",
     borderRadius: 4,
     textTransform: isL3 ? "none" : "uppercase",
     textAlign: isL3 ? ("left" as const) : ("center" as const),
