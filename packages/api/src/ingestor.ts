@@ -93,9 +93,18 @@ function normalizeSide(raw: string | undefined): "BUY" | "SELL" | null {
 
 function pickTimestamp(p: RtdsTradePayload): Date {
   const raw = Number(p.timestamp ?? p.ts ?? 0);
-  if (!Number.isFinite(raw) || raw <= 0) return new Date();
+  const now = Date.now();
+  if (!Number.isFinite(raw) || raw <= 0) return new Date(now);
   // Heuristic: > 1e12 → already ms, otherwise seconds.
-  return new Date(raw > 1_000_000_000_000 ? raw : raw * 1000);
+  const ms = raw > 1_000_000_000_000 ? raw : raw * 1000;
+  // Clamp future-dated timestamps to NOW. Polymarket occasionally emits trades
+  // whose payload `timestamp` is minutes-to-days ahead of wall-clock — left
+  // unfixed it poisons time-bucket aggregations (signals fall into a future
+  // bucket nobody queries, or get rendered as the "most recent" cycle in
+  // PATTERN even though they're 12h ahead of real time). Allow a 60s grace
+  // for clock skew before clamping.
+  if (ms > now + 60_000) return new Date(now);
+  return new Date(ms);
 }
 
 export function createIngestor(deps: IngestorDeps): Ingestor {
