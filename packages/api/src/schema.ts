@@ -68,6 +68,10 @@ export type ProcessedResolutionRow = typeof processedResolutions.$inferSelect;
  * example "L1:LIVE", "L2:LIVE:Sports", "L3:PATTERN-HOUR:Sports:NBA". Range
  * (1h/24h/7d/30d) intentionally NOT in the scope so a user's ordering for
  * "Sports" subcategories carries across all ranges within LIVE.
+ *
+ * `userId` is the opaque session identifier from Auth.js JWT `sub`. NOT a
+ * FK to auth_users — SIWE and Telegram are JWT-only providers that don't
+ * populate that table, and a FK silently 500'd their INSERTs.
  */
 export const userRowOrders = pgTable(
   "user_row_orders",

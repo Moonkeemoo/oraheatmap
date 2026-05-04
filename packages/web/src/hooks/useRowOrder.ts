@@ -75,10 +75,13 @@ export function useRowOrder(): UseRowOrder {
       if (existing) clearTimeout(existing);
       const handle = setTimeout(() => {
         timers.current.delete(scope);
-        void saveRowOrder(scope, orderedKeys).catch(() => {
-          // Network failure — local state stays optimistic. Next page load
-          // will re-fetch and reconcile (and the server still has the
-          // previous saved order until we successfully POST).
+        void saveRowOrder(scope, orderedKeys).catch((err) => {
+          // Network/server failure — local state stays optimistic so the
+          // current session keeps the new order. But warn to console so
+          // silent persistence failures (FK violations, 500s, etc.) are
+          // visible in DevTools when the user notices things didn't save.
+          // eslint-disable-next-line no-console
+          console.warn("[row-order] save failed for scope", scope, err);
         });
       }, SAVE_DEBOUNCE_MS);
       timers.current.set(scope, handle);

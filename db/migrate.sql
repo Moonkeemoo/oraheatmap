@@ -229,10 +229,16 @@ CREATE TABLE IF NOT EXISTS auth_authenticators (
 -- Per-user heatmap row order. Scope encodes (level, mode, parents) so that
 -- L1, L2, L3 and PATTERN-vs-LIVE each carry an independent ordering. Range
 -- is intentionally not part of the scope — the same order applies across
--- 1h/24h/7d/30d for the same mode+level. Range is intentionally not part of
--- the scope — order persists across ranges within the same mode+level.
+-- 1h/24h/7d/30d for the same mode+level.
+--
+-- user_id is the OPAQUE session identifier from Auth.js JWT `sub`. For
+-- email/OAuth users it matches auth_users.id (a UUID); for SIWE it's the
+-- lowercase wallet address; for Telegram it's the numeric tg user id. NO
+-- foreign key to auth_users — SIWE and Telegram are JWT-only and don't
+-- populate that table, so a FK would silently block their INSERTs (500 →
+-- frontend swallows → row order doesn't persist for half of all providers).
 CREATE TABLE IF NOT EXISTS user_row_orders (
-  user_id      TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  user_id      TEXT NOT NULL,
   scope        TEXT NOT NULL,
   ordered_keys JSONB NOT NULL,
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
