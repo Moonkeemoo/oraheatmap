@@ -27,7 +27,12 @@ function deltaForMetric(metric: HeatmapMetric, cell: HeatmapCell): number | null
   }
 }
 
-function fmtDelta(metric: HeatmapMetric, delta: number): string {
+function fmtDelta(metric: HeatmapMetric, delta: number | null): string {
+  // Sparse-cycle case (e.g. winrate with no decided trades in older half).
+  // Render an explicit "no comparison" glyph so the parens don't disappear
+  // — empty parens read as a bug, "(—)" reads as "we have nothing yet".
+  if (delta === null) return "—";
+  if (delta === 0) return "0";
   if (metric === "winrate") {
     const pct = Math.round(delta * 100);
     return (pct >= 0 ? "+" : "") + pct + "%";
@@ -172,7 +177,7 @@ export function Cell({
           }}
         >
           <span style={{ fontSize: 12, fontWeight: 700, color: valColor }}>{value}</span>
-          {delta !== null && delta !== 0 && (
+          {showDelta && (
             <span style={{ fontSize: 9, fontWeight: 700, color: deltaColor }}>
               ({fmtDelta(metric, delta)})
             </span>
