@@ -156,7 +156,7 @@ export function createApi(deps: ApiDeps) {
     .use(
       cors({
         origin: true,
-        methods: ["GET", "OPTIONS"],
+        methods: ["GET", "POST", "OPTIONS"],
         // Credentials = true so the Auth.js session cookie set by the web
         // app on the same apex is sent on cross-origin /api/* requests.
         // Browsers refuse `*` Access-Control-Allow-Origin alongside
@@ -173,6 +173,62 @@ export function createApi(deps: ApiDeps) {
       const user = await readAuthFromHeaders(request.headers);
       return { user };
     })
+    // ── Per-user heatmap row order ──────────────────────────────────────
+    // Read all scopes for the current user in a single round-trip — payload
+    // is small (a few short string arrays per heatmap level the user touched)
+    // and saves N follow-up requests as the user drills down.
+    .get("/api/me/row-order", async ({ request, set }) => {
+      const user = await readAuthFromHeaders(request.headers);
+      if (!user || !user.id) {
+        set.status = 401;
+        return { error: "unauthenticated" };
+      }
+      const rows = await deps.sql<{ scope: string; ordered_keys: string[] }[]>`
+        SELECT scope, ordered_keys
+        FROM user_row_orders
+        WHERE user_id = ${user.id}
+      `;
+      const orders: Record<string, string[]> = {};
+      for (const r of rows) orders[r.scope] = r.ordered_keys;
+      return { orders };
+    })
+    // Upsert one scope. Frontend debounces dragEnd → POST so we don't write
+    // a row per intermediate reorder.
+    .post(
+      "/api/me/row-order",
+      async ({ body, request, set }) => {
+        const user = await readAuthFromHeaders(request.headers);
+        if (!user || !user.id) {
+          set.status = 401;
+          return { error: "unauthenticated" };
+        }
+        const scope = body.scope.trim();
+        const orderedKeys = body.orderedKeys;
+        if (!scope || scope.length > 200) {
+          set.status = 400;
+          return { error: "scope must be 1..200 chars" };
+        }
+        if (orderedKeys.length > 500) {
+          set.status = 400;
+          return { error: "orderedKeys too long (max 500)" };
+        }
+        await deps.sql`
+          INSERT INTO user_row_orders (user_id, scope, ordered_keys, updated_at)
+          VALUES (${user.id}, ${scope}, ${deps.sql.json(orderedKeys)}, NOW())
+          ON CONFLICT (user_id, scope)
+          DO UPDATE SET ordered_keys = EXCLUDED.ordered_keys, updated_at = NOW()
+        `;
+        return { ok: true };
+      },
+      {
+        body: t.Object({
+          scope: t.String({ minLength: 1, maxLength: 200 }),
+          orderedKeys: t.Array(t.String({ minLength: 1, maxLength: 200 }), {
+            maxItems: 500,
+          }),
+        }),
+      },
+    )
     .get("/api/health", async () => {
       let dbOk = false;
       try {

@@ -1,4 +1,4 @@
-import { bigserial, index, pgTable, primaryKey, real, text, timestamp } from "drizzle-orm/pg-core";
+import { bigserial, index, jsonb, pgTable, primaryKey, real, text, timestamp } from "drizzle-orm/pg-core";
 
 /**
  * Mirrors db/migrate.sql:signals. We rely on the SQL migration to convert this
@@ -62,3 +62,25 @@ export const processedResolutions = pgTable("processed_resolutions", {
 });
 
 export type ProcessedResolutionRow = typeof processedResolutions.$inferSelect;
+
+/**
+ * Per-user heatmap row ordering. `scope` encodes (level, mode, parents) — for
+ * example "L1:LIVE", "L2:LIVE:Sports", "L3:PATTERN-HOUR:Sports:NBA". Range
+ * (1h/24h/7d/30d) intentionally NOT in the scope so a user's ordering for
+ * "Sports" subcategories carries across all ranges within LIVE.
+ */
+export const userRowOrders = pgTable(
+  "user_row_orders",
+  {
+    userId: text("user_id").notNull(),
+    scope: text("scope").notNull(),
+    orderedKeys: jsonb("ordered_keys").$type<string[]>().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.scope] }),
+    userIdx: index("user_row_orders_user_idx").on(t.userId),
+  }),
+);
+
+export type UserRowOrderRow = typeof userRowOrders.$inferSelect;

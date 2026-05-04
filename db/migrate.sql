@@ -225,3 +225,19 @@ CREATE TABLE IF NOT EXISTS auth_authenticators (
   transports             TEXT,
   PRIMARY KEY (user_id, credential_id)
 );
+
+-- Per-user heatmap row order. Scope encodes (level, mode, parents) so that
+-- L1, L2, L3 and PATTERN-vs-LIVE each carry an independent ordering. Range
+-- is intentionally not part of the scope — the same order applies across
+-- 1h/24h/7d/30d for the same mode+level. Range is intentionally not part of
+-- the scope — order persists across ranges within the same mode+level.
+CREATE TABLE IF NOT EXISTS user_row_orders (
+  user_id      TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  scope        TEXT NOT NULL,
+  ordered_keys JSONB NOT NULL,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, scope)
+);
+
+CREATE INDEX IF NOT EXISTS user_row_orders_user_idx
+  ON user_row_orders (user_id);
