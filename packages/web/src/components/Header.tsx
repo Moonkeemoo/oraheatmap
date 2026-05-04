@@ -224,7 +224,9 @@ export function Header({
   return (
     <div
       style={{
-        padding: "16px 24px 12px",
+        // Right padding reserves room for the fixed sign-in chip in the
+        // top-right corner so metric tabs and the chip don't overlap.
+        padding: "16px 150px 12px 24px",
         borderBottom: `1px solid ${TOKENS.border}`,
         display: "flex",
         alignItems: "flex-end",
