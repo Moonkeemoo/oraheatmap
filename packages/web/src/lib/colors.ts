@@ -60,7 +60,13 @@ export function getCellFill(
   if (metric === "volume") return volumeColor(intensityFn(cell));
   if (metric === "signals") return signalsColor(intensityFn(cell));
   if (metric === "winrate") return winRateColor(cell.winRate);
-  if (metric === "whales") return whalesColor(intensityFn(cell));
+  if (metric === "whales") {
+    // PATTERN cells don't carry uniqueWhales — bail out to transparent so we
+    // don't paint with NaN-tainted alpha (or, worse, leak the previous
+    // metric's color when the React diff doesn't replace `style.background`).
+    if (cell.uniqueWhales == null || cell.uniqueWhales <= 0) return "transparent";
+    return whalesColor(intensityFn(cell));
+  }
   return "transparent";
 }
 
@@ -70,9 +76,16 @@ export function getCellValue(metric: HeatmapMetric, cell: HeatmapCell): string {
   if (cell.count === 0) return "";
   if (metric === "pnl") return fmtCellValue(cell.pnl);
   if (metric === "volume") return fmtCellValue(cell.volume);
-  if (metric === "signals") return String(cell.count);
-  if (metric === "winrate") return cell.winRate === null ? "—" : Math.round(cell.winRate * 100) + "%";
-  if (metric === "whales") return String(cell.uniqueWhales);
+  // PATTERN serves AVG count per cycle (fractional) — abbreviate the same
+  // way as pnl/volume so we don't render "5850.333333333333".
+  if (metric === "signals") return fmtCellValue(cell.count);
+  if (metric === "winrate") return cell.winRate === null ? "" : Math.round(cell.winRate * 100) + "%";
+  if (metric === "whales") {
+    // Empty when no aggregate (PATTERN doesn't compute uniqueWhales). Don't
+    // ever render the literal string "undefined".
+    if (cell.uniqueWhales == null) return "";
+    return String(cell.uniqueWhales);
+  }
   return "";
 }
 

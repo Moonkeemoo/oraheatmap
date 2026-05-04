@@ -36,9 +36,9 @@ function fmtDelta(metric: HeatmapMetric, delta: number): string {
     const sign = delta > 0 ? "+" : "";
     return sign + fmtCellValue(delta);
   }
-  // signals
+  // signals — fractional avg in PATTERN; abbreviate via fmtCellValue.
   const sign = delta > 0 ? "+" : "";
-  return sign + Math.round(delta);
+  return sign + fmtCellValue(delta);
 }
 
 export function Cell({
