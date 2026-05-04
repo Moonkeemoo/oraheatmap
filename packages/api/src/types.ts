@@ -62,6 +62,12 @@ export type GammaMarket = {
   /** Polymarket event slug — used to build the public market URL. NULL when
    *  Gamma's response doesn't include one (legacy / unusual markets). */
   slug: string | null;
+  /** Polymarket-hosted thumbnail (~80×80 rounded square). NULL when the
+   *  market or its parent event don't carry one. */
+  icon: string | null;
+  /** All CLOB token IDs in outcome order — one per outcome. Same length
+   *  as `outcomes`. Empty when Gamma omitted the field (some legacy markets). */
+  clobTokenIds: string[];
 };
 
 /** Row inserted into the `signals` hypertable. */
@@ -86,6 +92,8 @@ export type Signal = {
   /** Polymarket market/event slug — frontend builds the link from this.
    *  NULL when Gamma omitted it or for old rows from before this column existed. */
   marketSlug: string | null;
+  /** Polymarket-hosted icon URL. NULL on legacy rows / when Gamma omits it. */
+  marketIcon: string | null;
 };
 
 /** Discriminated union for ingestor lifecycle (used by /api/health later). */

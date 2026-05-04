@@ -29,7 +29,9 @@ type ClosedMarket = {
   closed?: boolean;
   /** Per-market slug; events[].slug preferred for the public URL builder. */
   slug?: string;
-  events?: Array<{ slug?: string }>;
+  events?: Array<{ slug?: string; icon?: string; image?: string }>;
+  icon?: string;
+  image?: string;
 };
 
 export type ResolutionWatcher = {
@@ -103,6 +105,7 @@ export function buildSettlementSignals(args: {
   category: string;
   tags: ReadonlyArray<GammaTag>;
   marketSlug: string | null;
+  marketIcon: string | null;
   settlements: ReadonlyArray<{
     ts: Date;
     whaleAddr: string;
@@ -128,6 +131,7 @@ export function buildSettlementSignals(args: {
     exitKind: "RESOLUTION",
     subcategory,
     marketSlug: args.marketSlug,
+    marketIcon: args.marketIcon,
   }));
 }
 
@@ -209,6 +213,12 @@ export function createResolutionWatcher(opts: ResolutionWatcherOptions): Resolut
       (Array.isArray(m.events) && m.events[0]?.slug) ? m.events[0]!.slug! :
       (typeof m.slug === "string" && m.slug.length > 0) ? m.slug :
       null;
+    const marketIcon =
+      (Array.isArray(m.events) && m.events[0]?.icon) ? (m.events[0]!.icon ?? null) :
+      (Array.isArray(m.events) && m.events[0]?.image) ? (m.events[0]!.image ?? null) :
+      (typeof m.icon === "string" && m.icon.length > 0) ? m.icon :
+      (typeof m.image === "string" && m.image.length > 0) ? m.image :
+      null;
 
     let settlementCount = 0;
     let totalPnl = 0;
@@ -230,6 +240,7 @@ export function createResolutionWatcher(opts: ResolutionWatcherOptions): Resolut
         category,
         tags: m.tags ?? [],
         marketSlug,
+        marketIcon,
         settlements,
       });
 

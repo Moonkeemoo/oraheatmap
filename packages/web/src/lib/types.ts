@@ -27,6 +27,8 @@ export type MarketSummary = {
   /** Polymarket event slug — frontend builds the public URL from this.
    *  NULL for legacy rows that predate slug capture. */
   marketSlug: string | null;
+  /** Polymarket-hosted thumbnail (~80×80). NULL on legacy rows. */
+  marketIcon: string | null;
   count: number;
   volume: number;
   pnl: number;
@@ -111,6 +113,7 @@ export type HeatmapResponse = {
    *  on the row label. NULL at L1/L2; individual entries may also be null
    *  when the slug wasn't captured at ingest time. */
   marketSlugs: Record<string, string | null> | null;
+  marketIcons: Record<string, string | null> | null;
   /** L3 only: subset of row keys whose markets have already resolved.
    *  Frontend fades these rows. Empty at L1/L2. */
   resolvedRows: ReadonlyArray<string>;

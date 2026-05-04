@@ -28,6 +28,8 @@ import type { Signal } from "./types";
 import { whaleAlias, whaleAliasInfo, whaleColor } from "./whale-display";
 import { fetchWhaleProfile } from "./whale-profile";
 
+import type { MarketHistoryFetcher } from "./market-history";
+
 export type ApiDeps = {
   sql: Sql;
   hub: SignalHub;
@@ -35,6 +37,7 @@ export type ApiDeps = {
   bufferSize: () => number;
   gammaCacheSize: () => number;
   whaleCount: () => number;
+  fetchMarketHistory: MarketHistoryFetcher;
 };
 
 const SSE_HEARTBEAT_MS = 25_000;
@@ -319,6 +322,7 @@ export function createApi(deps: ApiDeps) {
             categories: pattern.categories,
             subcategoryLabels: patternSubcategoryLabels,
             marketSlugs: null,
+            marketIcons: null,
             resolvedRows: [],
             topWhales: null,
             buckets: pattern.buckets,
@@ -364,6 +368,7 @@ export function createApi(deps: ApiDeps) {
               range,
               TOP_WHALES_PER_CELL,
               isDrill ? drillCategory : null,
+              drillSubcategory,
             ),
           ]);
 
@@ -374,6 +379,7 @@ export function createApi(deps: ApiDeps) {
         let rowKeys: ReadonlyArray<string> | undefined;
         let rowLabels: Record<string, string> | null = null;
         let marketSlugs: Record<string, string | null> | null = null;
+        let marketIcons: Record<string, string | null> | null = null;
         let resolvedRows: ReadonlyArray<string> = [];
         if (isDrillL3) {
           const totals = new Map<string, number>();
@@ -402,6 +408,9 @@ export function createApi(deps: ApiDeps) {
           );
           marketSlugs = Object.fromEntries(
             sortedConditionIds.map((cid) => [cid, meta[cid]?.slug ?? null]),
+          );
+          marketIcons = Object.fromEntries(
+            sortedConditionIds.map((cid) => [cid, meta[cid]?.icon ?? null]),
           );
           resolvedRows = sortedConditionIds.filter((cid) => resolvedSet.has(cid));
         } else if (isDrill) {
@@ -476,6 +485,7 @@ export function createApi(deps: ApiDeps) {
           // L3 only: conditionId → polymarket event slug for building the
           // public URL on the row label. NULL at L1/L2.
           marketSlugs,
+          marketIcons,
           resolvedRows,
           topWhales,
           totals: {
@@ -542,6 +552,39 @@ export function createApi(deps: ApiDeps) {
           addr: t.String({ minLength: 42, maxLength: 42 }),
           range: t.Optional(
             t.Union([t.Literal("1h"), t.Literal("24h"), t.Literal("12d"), t.Literal("12w")]),
+          ),
+        }),
+      },
+    )
+    .get(
+      "/api/market-history",
+      async ({ query, set }) => {
+        const cid = query.conditionId.trim();
+        if (!/^0x[0-9a-f]{64}$/i.test(cid)) {
+          set.status = 400;
+          return { error: "conditionId must be 0x-prefixed 32-byte hex" };
+        }
+        const data = await deps.fetchMarketHistory(cid, {
+          interval: query.interval ?? "max",
+        });
+        if (!data) {
+          set.status = 404;
+          return { error: "no history available", conditionId: cid };
+        }
+        return data;
+      },
+      {
+        query: t.Object({
+          conditionId: t.String({ minLength: 66, maxLength: 66 }),
+          interval: t.Optional(
+            t.Union([
+              t.Literal("1h"),
+              t.Literal("6h"),
+              t.Literal("1d"),
+              t.Literal("1w"),
+              t.Literal("1m"),
+              t.Literal("max"),
+            ]),
           ),
         }),
       },

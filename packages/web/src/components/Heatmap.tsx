@@ -20,6 +20,7 @@ import type {
 import { Breadcrumb } from "./Breadcrumb";
 import { Grid } from "./Grid";
 import { Header } from "./Header";
+import { HeatmapSkeleton } from "./HeatmapSkeleton";
 import { LoginModal } from "./LoginModal";
 import { StatsBar } from "./StatsBar";
 import { Tooltip, type TooltipAnchor, type TooltipRect } from "./Tooltip";
@@ -239,9 +240,7 @@ export function Heatmap() {
             api error: {error}
           </div>
         )}
-        {loading && !displayData && (
-          <div style={{ color: TOKENS.textSec, fontSize: 13 }}>loading…</div>
-        )}
+        {loading && !displayData && <HeatmapSkeleton />}
         {displayData && (
           <>
             {displayData.drillCategory && (

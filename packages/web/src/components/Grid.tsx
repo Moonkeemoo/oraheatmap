@@ -53,7 +53,11 @@ function tint(hex: string, amount: number): string {
 // text area enough to clip "POLITICS" → "POLI…". 30 extra px restores room
 // for the 8-char L1 labels without making the heatmap noticeably narrower.
 const LABEL_W = 130;
-const LABEL_W_L3 = 170;
+// L3 column has the same 4 sub-elements as L1/L2 (drag-handle + label badge),
+// PLUS the polymarket market icon (20px + 4px gap = 24px). Bumping the column
+// width by ~24px keeps the badge text-area roughly the same as before icons.
+const LABEL_W_L3 = 200;
+const ROW_ICON_SIZE = 20;
 const TIME_ROW_H = 26;
 const MIN_ROW_H = 38;
 const MIN_ROW_H_L3 = 44;
@@ -193,6 +197,35 @@ function DragHandle({
         <circle cx="7" cy="11" r="1.1" fill="currentColor" />
       </svg>
     </button>
+  );
+}
+
+/** Polymarket market icon for L3 row labels. Falls back to a neutral
+ *  rounded square when URL is null or fails to load. Sits left of the
+ *  colored badge so the badge stays a clean colored chip. */
+function RowMarketIcon({ url }: { url: string | null }) {
+  const [errored, setErrored] = useState(false);
+  const common: React.CSSProperties = {
+    width: ROW_ICON_SIZE,
+    height: ROW_ICON_SIZE,
+    borderRadius: 4,
+    background: TOKENS.panel2,
+    border: `1px solid ${TOKENS.border}`,
+    flexShrink: 0,
+    display: "inline-block",
+  };
+  if (!url || errored) {
+    return <span aria-hidden="true" style={common} />;
+  }
+  return (
+    <img
+      src={url}
+      width={ROW_ICON_SIZE}
+      height={ROW_ICON_SIZE}
+      alt=""
+      onError={() => setErrored(true)}
+      style={{ ...common, objectFit: "cover" }}
+    />
   );
 }
 
@@ -558,6 +591,9 @@ export function Grid({
             listeners={options.listeners}
             attributes={options.attributes}
           />
+          {meta.isL3 && data.marketIcons?.[cat] ? (
+            <RowMarketIcon url={data.marketIcons[cat] ?? null} />
+          ) : null}
           <div style={{ flex: 1, minWidth: 0 }}>
             <RowLabelBadge
               meta={meta}

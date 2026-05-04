@@ -2,6 +2,7 @@ import { createApi } from "./api";
 import { createDb, createSignalBuffer } from "./db";
 import { loadEnv } from "./env";
 import { createGammaCache } from "./gamma-cache";
+import { createMarketHistoryFetcher } from "./market-history";
 import { createIngestor } from "./ingestor";
 import { log } from "./log";
 import { createPositionTracker } from "./position-tracker";
@@ -70,6 +71,11 @@ async function main(): Promise<void> {
     hub,
   });
 
+  const fetchMarketHistory = createMarketHistoryFetcher({
+    sql,
+    gammaCache: gamma,
+  });
+
   const api = createApi({
     sql,
     hub,
@@ -77,6 +83,7 @@ async function main(): Promise<void> {
     bufferSize: () => buffer.size(),
     gammaCacheSize: () => gamma.size(),
     whaleCount: () => whales.size,
+    fetchMarketHistory,
   });
 
   // Periodic stats line so logs show liveness even when no whale matches happen.

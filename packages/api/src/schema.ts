@@ -21,6 +21,7 @@ export const signals = pgTable("signals", {
   exitKind: text("exit_kind"),
   subcategory: text("subcategory"),
   marketSlug: text("market_slug"),
+  marketIcon: text("market_icon"),
 });
 
 export type SignalInsert = typeof signals.$inferInsert;

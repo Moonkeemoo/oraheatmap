@@ -2,7 +2,9 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { categoryMeta } from "@/lib/categories";
 import { fmtMoney, fmtMoneyShort } from "@/lib/format";
 import { useCellCycles } from "@/hooks/useCellCycles";
+import { useMarketHistory } from "@/hooks/useMarketHistory";
 import { TOKENS } from "@/lib/tokens";
+import { ProbabilityChart } from "./ProbabilityChart";
 import type {
   Category,
   HeatmapCell,
@@ -150,6 +152,47 @@ function fmtDeltaInline(metric: HeatmapMetric, d: HeatmapCell["delta"]): { text:
     : sign + (Math.abs(v) >= 1e3 ? "$" + (v / 1e3).toFixed(1) + "k" : "$" + Math.round(v));
   const color = v > 0 ? TOKENS.pos : v < 0 ? TOKENS.neg : TOKENS.textSec;
   return { text: display, color };
+}
+
+/** Polymarket market thumbnail — small rounded square. Falls back to a
+ *  neutral placeholder when the URL is null or fails to load. */
+function MarketIcon({ url, size = 22 }: { url: string | null; size?: number }) {
+  const [errored, setErrored] = useState(false);
+  if (!url || errored) {
+    return (
+      <span
+        aria-hidden="true"
+        style={{
+          width: size,
+          height: size,
+          borderRadius: 4,
+          background: TOKENS.panel2,
+          border: `1px solid ${TOKENS.border}`,
+          flexShrink: 0,
+          display: "inline-block",
+        }}
+      />
+    );
+  }
+  return (
+    <img
+      src={url}
+      width={size}
+      height={size}
+      alt=""
+      onError={() => setErrored(true)}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 4,
+        objectFit: "cover",
+        background: TOKENS.panel2,
+        border: `1px solid ${TOKENS.border}`,
+        flexShrink: 0,
+        display: "inline-block",
+      }}
+    />
+  );
 }
 
 /** Translate the heatmap's display slot index back to the UTC-encoded slot
@@ -398,6 +441,11 @@ export function Tooltip({
 }) {
   const meta = categoryMeta(category);
   const isPattern = mode === "pattern";
+  // At L3, the `category` prop holds the condition_id (rowKey) — the heatmap
+  // already drilled past category/subcategory, so each row IS a market.
+  const isL3 = !isPattern && drillSubcategory != null;
+  const conditionId = isL3 ? category : null;
+  const marketHistory = useMarketHistory(conditionId, "max", isL3 && locked);
   const sortedMarkets = isPattern ? [] : sortMarkets(cell.markets, metric).slice(0, TOP_N);
   // Per-cell historical cycles for PATTERN locked tooltip — fires only when
   // we lock so we don't spam the API on every mouse move.
@@ -429,13 +477,15 @@ export function Tooltip({
   const ref = useRef<HTMLDivElement | null>(null);
   const margin = 10;
   const initialW = 340;
-  // Pattern locked tooltip gets +60px for the cycle histogram.
+  // Pattern locked tooltip gets +60px for the cycle histogram. L3 locked
+  // tooltip gets +200px for the probability chart + legend.
   const patternBase = 230 + (locked ? 60 : 0);
+  const probabilityChartHeight = isL3 && locked ? 200 : 0;
   const initialH = isPattern
     ? patternBase
     : sortedMarkets.length > 0
-      ? 240 + sortedMarkets.length * 26 + (showSparkline ? 50 : 0) + (cellWhales.length > 0 ? 30 + cellWhales.length * 24 : 0)
-      : 140 + (showSparkline ? 50 : 0) + (cellWhales.length > 0 ? 30 + cellWhales.length * 24 : 0);
+      ? 240 + sortedMarkets.length * 26 + (showSparkline ? 50 : 0) + (cellWhales.length > 0 ? 30 + cellWhales.length * 24 : 0) + probabilityChartHeight
+      : 140 + (showSparkline ? 50 : 0) + (cellWhales.length > 0 ? 30 + cellWhales.length * 24 : 0) + probabilityChartHeight;
 
   const initialPos = {
     left: clamp(anchor.x + anchor.w / 2 - initialW / 2, 8, anchor.parentW - initialW - 8),
@@ -598,6 +648,39 @@ export function Tooltip({
           color={cell.winRate === null ? TOKENS.textSec : cell.winRate >= 0.5 ? TOKENS.pos : TOKENS.neg}
         />
       </div>
+
+      {isL3 && locked && (
+        <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
+          <div
+            style={{
+              fontSize: 9,
+              letterSpacing: 0.5,
+              color: TOKENS.textMuted,
+              textTransform: "uppercase",
+              marginBottom: 6,
+              fontWeight: 600,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <span>Market probability</span>
+            <span style={{ color: TOKENS.textSec }}>ALL</span>
+          </div>
+          {marketHistory.loading && (
+            <div style={{ fontSize: 11, color: TOKENS.textSec, padding: "8px 0" }}>
+              loading…
+            </div>
+          )}
+          {marketHistory.error && (
+            <div style={{ fontSize: 11, color: TOKENS.neg, padding: "8px 0" }}>
+              {marketHistory.error}
+            </div>
+          )}
+          {marketHistory.data && (
+            <ProbabilityChart outcomes={marketHistory.data.outcomes} />
+          )}
+        </div>
+      )}
 
       {showSparkline && (
         <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
@@ -913,8 +996,8 @@ export function Tooltip({
               key={m.conditionId}
               style={{
                 display: "grid",
-                gridTemplateColumns: "16px 1fr auto",
-                alignItems: "baseline",
+                gridTemplateColumns: "14px 22px 1fr auto",
+                alignItems: "center",
                 gap: 8,
                 fontSize: 11,
                 marginBottom: 6,
@@ -924,13 +1007,14 @@ export function Tooltip({
               <span style={{ color: TOKENS.textMuted, fontFamily: TOKENS.mono, fontSize: 10, fontWeight: 700 }}>
                 {i + 1}.
               </span>
+              <MarketIcon url={m.marketIcon} size={22} />
               {(() => {
                 const label = m.marketQuestion ?? "(unknown market)";
                 const url = marketUrl(m.marketSlug);
                 const baseStyle: React.CSSProperties = {
                   color: TOKENS.text,
                   display: "-webkit-box",
-                  WebkitLineClamp: 3,
+                  WebkitLineClamp: 2,
                   WebkitBoxOrient: "vertical",
                   overflow: "hidden",
                   textDecoration: "none",

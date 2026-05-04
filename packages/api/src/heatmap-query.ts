@@ -43,6 +43,8 @@ export type MarketSummary = {
   /** Polymarket event slug for the public URL. NULL for legacy rows that
    *  predate slug capture. */
   marketSlug: string | null;
+  /** Polymarket-hosted thumbnail. NULL on legacy rows. */
+  marketIcon: string | null;
   count: number;
   volume: number;
   pnl: number;
@@ -125,6 +127,7 @@ type MarketRow = {
   condition_id: string;
   market_question: string | null;
   market_slug: string | null;
+  market_icon: string | null;
   signals: string | number;
   volume_usd: string | number;
   pnl_usd: string | number | null;
@@ -279,6 +282,7 @@ export function assembleHeatmap(
       conditionId: m.condition_id,
       marketQuestion: m.market_question,
       marketSlug: m.market_slug,
+      marketIcon: m.market_icon,
       count: num(m.signals),
       volume: num(m.volume_usd),
       pnl: num(m.pnl_usd),
@@ -495,6 +499,7 @@ export async function queryTopMarketsPerCell(
           condition_id,
           MAX(market_question)                                                  AS market_question,
           MAX(market_slug)                                                      AS market_slug,
+          MAX(market_icon)                                                      AS market_icon,
           COUNT(*)::bigint                                                      AS signals,
           COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)            AS volume_usd,
           COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd,
@@ -515,7 +520,7 @@ export async function queryTopMarketsPerCell(
       )
       SELECT
         to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
-        category, condition_id, market_question, market_slug, signals, volume_usd, pnl_usd, win_count, loss_count, unique_whales
+        category, condition_id, market_question, market_slug, market_icon, signals, volume_usd, pnl_usd, win_count, loss_count, unique_whales
       FROM ranked
       WHERE rn <= ${perCellLimit}
     `;
@@ -548,7 +553,7 @@ export async function queryTopMarketsPerCell(
     )
     SELECT
       to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
-      category, condition_id, market_question, market_slug, signals, volume_usd, pnl_usd, win_count, loss_count, unique_whales
+      category, condition_id, market_question, market_slug, market_icon, signals, volume_usd, pnl_usd, win_count, loss_count, unique_whales
     FROM ranked
     WHERE rn <= ${perCellLimit}
   `;
@@ -574,6 +579,7 @@ export async function queryTopWhalesPerCell(
   range: HeatmapRange,
   perCellLimit: number,
   drillCategory: Category | null = null,
+  drillSubcategory: string | null = null,
 ): Promise<ReadonlyArray<WhaleCellRow>> {
   const cfg = RANGE_CONFIG[range];
   const heavy = range === "12d" || range === "12w";
@@ -581,6 +587,40 @@ export async function queryTopWhalesPerCell(
 
   const bucketInterval = `${cfg.bucketMinutes} minutes`;
   const windowInterval = `${cfg.windowMinutes} minutes`;
+
+  // L3 drill: rows are individual markets (condition_id), group by that
+  // instead of subcategory so the resulting WhaleCellRow.category lines up
+  // with the L3 rowKeys (which are condition_ids).
+  if (drillCategory !== null && drillSubcategory !== null) {
+    const rows = await sql<WhaleCellRow[]>`
+      WITH per_whale AS (
+        SELECT
+          time_bucket(${bucketInterval}::interval, ts)                          AS bucket_ts,
+          condition_id                                                          AS category,
+          whale_addr,
+          COUNT(*)::bigint                                                      AS signals,
+          COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)            AS volume_usd,
+          COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd
+        FROM signals
+        WHERE ts >= NOW() - (${windowInterval}::interval)
+          AND category = ${drillCategory}
+          AND subcategory = ${drillSubcategory}
+          AND condition_id IS NOT NULL
+        GROUP BY bucket_ts, condition_id, whale_addr
+      ),
+      ranked AS (
+        SELECT *,
+          ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY volume_usd DESC, signals DESC) AS rn
+        FROM per_whale
+      )
+      SELECT
+        to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
+        category, whale_addr, signals, volume_usd, pnl_usd
+      FROM ranked
+      WHERE rn <= ${perCellLimit}
+    `;
+    return rows;
+  }
 
   if (drillCategory !== null) {
     const rows = await sql<WhaleCellRow[]>`
@@ -639,10 +679,11 @@ export async function queryTopWhalesPerCell(
   return rows;
 }
 
-/** Per-market metadata at L3: freshest known market_question + market_slug.
+/** Per-market metadata at L3: freshest known market_question + market_slug + icon.
  *  Frontend uses the question to label the row, the slug to build the
- *  polymarket.com/event/{slug} link with referral. */
-export type MarketMeta = { question: string | null; slug: string | null };
+ *  polymarket.com/event/{slug} link with referral, and the icon to render
+ *  the small thumbnail next to the row label. */
+export type MarketMeta = { question: string | null; slug: string | null; icon: string | null };
 
 export async function fetchMarketMeta(
   sql: Sql,
@@ -650,16 +691,25 @@ export async function fetchMarketMeta(
 ): Promise<Record<string, MarketMeta>> {
   if (conditionIds.length === 0) return {};
   const rows = await sql<
-    { condition_id: string; market_question: string | null; market_slug: string | null }[]
+    {
+      condition_id: string;
+      market_question: string | null;
+      market_slug: string | null;
+      market_icon: string | null;
+    }[]
   >`
-    SELECT DISTINCT ON (condition_id) condition_id, market_question, market_slug
+    SELECT DISTINCT ON (condition_id) condition_id, market_question, market_slug, market_icon
     FROM signals
     WHERE condition_id IN ${sql(conditionIds)}
     ORDER BY condition_id, ts DESC
   `;
   const out: Record<string, MarketMeta> = {};
   for (const r of rows) {
-    out[r.condition_id] = { question: r.market_question, slug: r.market_slug };
+    out[r.condition_id] = {
+      question: r.market_question,
+      slug: r.market_slug,
+      icon: r.market_icon,
+    };
   }
   return out;
 }

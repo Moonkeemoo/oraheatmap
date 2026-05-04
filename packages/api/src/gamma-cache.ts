@@ -17,6 +17,13 @@ type RawGammaMarket = {
   slug?: unknown;
   /** Parent event(s); the modern public URL format is /event/{event.slug}. */
   events?: unknown;
+  /** Per-market thumbnail. */
+  icon?: unknown;
+  /** Larger image; sometimes the only image on event-grouped markets. */
+  image?: unknown;
+  /** JSON-encoded array of CLOB token IDs (one per outcome) — same SIG-3
+   *  string-encoding as outcomes / outcomePrices. */
+  clobTokenIds?: unknown;
 };
 
 export type GammaCache = {
@@ -59,6 +66,19 @@ function parseNumberArray(field: unknown): number[] {
   }
 }
 
+function pickIcon(raw: RawGammaMarket): string | null {
+  // Prefer parent event icon — it's usually the curated team / org logo for
+  // sports / politics / esports. Falls back to per-market icon, then image.
+  if (Array.isArray(raw.events) && raw.events.length > 0) {
+    const ev = raw.events[0] as { icon?: unknown; image?: unknown };
+    if (typeof ev?.icon === "string" && ev.icon.length > 0) return ev.icon;
+    if (typeof ev?.image === "string" && ev.image.length > 0) return ev.image;
+  }
+  if (typeof raw.icon === "string" && raw.icon.length > 0) return raw.icon;
+  if (typeof raw.image === "string" && raw.image.length > 0) return raw.image;
+  return null;
+}
+
 function pickSlug(raw: RawGammaMarket): string | null {
   // Prefer the parent event's slug — that's the canonical /event/{slug} URL
   // on polymarket.com and lands on a real page even for grouped events.
@@ -82,6 +102,8 @@ function asGammaMarket(raw: RawGammaMarket): GammaMarket {
     outcomes: parseStringArray(raw.outcomes),
     outcomePrices: parseNumberArray(raw.outcomePrices),
     slug: pickSlug(raw),
+    icon: pickIcon(raw),
+    clobTokenIds: parseStringArray(raw.clobTokenIds),
   };
 }
 

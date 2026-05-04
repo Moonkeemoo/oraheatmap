@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS signals (
                                              -- USD for SELL/SETTLEMENT where prior position is known
   exit_kind       TEXT,                      -- NULL for entry; 'SELL' for sell-back; 'RESOLUTION' for settlement
   subcategory     TEXT,                      -- NULL when no canonical sub-tag matched (or pre-deploy rows)
-  market_slug     TEXT                       -- Polymarket event slug for building the public URL; NULL if Gamma omitted it
+  market_slug     TEXT,                      -- Polymarket event slug for building the public URL; NULL if Gamma omitted it
+  market_icon     TEXT                       -- Polymarket-hosted thumbnail URL; NULL if Gamma omitted it
 );
 
 -- Idempotent backfill of new columns for already-existing tables (PG ≥ 9.6)
@@ -32,6 +33,7 @@ ALTER TABLE signals ADD COLUMN IF NOT EXISTS realized_pnl REAL;
 ALTER TABLE signals ADD COLUMN IF NOT EXISTS exit_kind    TEXT;
 ALTER TABLE signals ADD COLUMN IF NOT EXISTS subcategory  TEXT;
 ALTER TABLE signals ADD COLUMN IF NOT EXISTS market_slug  TEXT;
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS market_icon  TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_signals_cat_sub_ts
   ON signals (category, subcategory, ts DESC) WHERE subcategory IS NOT NULL;
