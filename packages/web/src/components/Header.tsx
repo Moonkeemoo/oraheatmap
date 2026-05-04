@@ -182,8 +182,6 @@ export function Header({
   lookbackDays,
   daysOfData,
   lowSample,
-  whaleThreshold,
-  setWhaleThreshold,
   onRequestLogin,
 }: {
   mode: Mode;
@@ -200,10 +198,6 @@ export function Header({
   patternUnlocked?: boolean; // accepted for compat; unused (PATTERN always on)
   daysOfData: number;
   lowSample: boolean;
-  /** Convergence threshold for the WHALES metric. Pill row appears only
-   *  when metric === "whales". */
-  whaleThreshold: number;
-  setWhaleThreshold: (n: number) => void;
   /** Open the login modal — used to gate range/mode/kind toggles. */
   onRequestLogin: () => void;
 }) {
@@ -401,35 +395,6 @@ export function Header({
             );
           })}
         </div>
-        {metric === "whales" && (
-          <>
-            <div style={{ width: 1, height: 26, background: TOKENS.border }} />
-            <span
-              style={{
-                fontSize: 9,
-                color: TOKENS.textMuted,
-                letterSpacing: 0.6,
-                textTransform: "uppercase",
-                fontWeight: 600,
-              }}
-            >
-              ≥
-            </span>
-            <div style={{ display: "flex", gap: 4 }}>
-              {[1, 3, 5, 10].map((n) => (
-                <Pill
-                  key={n}
-                  active={whaleThreshold === n}
-                  onClick={() => setWhaleThreshold(n)}
-                  title={`Show only cells with at least ${n} unique whale${n > 1 ? "s" : ""}`}
-                >
-                  {n}
-                </Pill>
-              ))}
-            </div>
-          </>
-        )}
-
         <div style={{ width: 1, height: 26, background: TOKENS.border }} />
 
         <ScaleLegend metric={metric} />

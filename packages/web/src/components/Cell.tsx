@@ -49,7 +49,6 @@ export function Cell({
   flashSeq,
   showDelta,
   isLocked,
-  dim,
   onHover,
   onClick,
 }: {
@@ -62,10 +61,6 @@ export function Cell({
   showDelta: boolean;
   /** This cell currently has the locked tooltip — render a persistent ring. */
   isLocked: boolean;
-  /** Convergence-threshold dim (WHALES metric below threshold). Cell still
-   *  hover/click-able so user can see the underlying number — just visually
-   *  pushed to background to make above-threshold cells pop. */
-  dim?: boolean;
   onHover: (h: { cell: HeatmapCell; anchor: TooltipAnchor } | null) => void;
   onClick: (h: { cell: HeatmapCell; anchor: TooltipAnchor }) => void;
 }) {
@@ -137,17 +132,13 @@ export function Cell({
         justifyContent: "center",
         cursor: isEmpty ? "default" : "pointer",
         transform: hovered && !isEmpty ? "scale(1.1)" : "scale(1)",
-        transition: "transform .14s cubic-bezier(.2,.7,.3,1), box-shadow .14s, background .3s, opacity .15s",
+        transition: "transform .14s cubic-bezier(.2,.7,.3,1), box-shadow .14s, background .3s",
         boxShadow:
           isLocked && !isEmpty
             ? `0 8px 22px rgba(0,0,0,0.55), 0 0 0 2px ${TOKENS.accent}`
             : hovered && !isEmpty
               ? `0 8px 22px rgba(0,0,0,0.55), 0 0 0 1px ${TOKENS.borderHi}`
               : "none",
-        // Convergence-threshold dim: push below-threshold cells into the
-        // background. Hover restores full opacity so the user can still
-        // inspect them.
-        opacity: dim && !hovered ? 0.18 : 1,
         position: "relative",
         zIndex: isLocked ? 6 : hovered ? 5 : 1,
         animation: "cellLand .35s cubic-bezier(.2,.7,.3,1) both",
