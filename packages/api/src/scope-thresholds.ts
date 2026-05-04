@@ -34,14 +34,16 @@ type ThresholdRow = {
   sample_volume_n: string | number | null;
   p95_volume: string | number | null;
   p99_volume: string | number | null;
+  p999_volume: string | number | null;
   sample_pnl_n: string | number | null;
   p95_pnl: string | number | null;
   p99_pnl: string | number | null;
+  p999_pnl: string | number | null;
 };
 
 type Threshold = {
-  volume: { p95: number; p99: number; sampleN: number } | null;
-  pnl:    { p95: number; p99: number; sampleN: number } | null;
+  volume: { p95: number; p99: number; p999: number; sampleN: number } | null;
+  pnl:    { p95: number; p99: number; p999: number; sampleN: number } | null;
 };
 
 export type Magnitude = "huge" | "big" | null;
@@ -75,8 +77,11 @@ function keyOf(category: string, subcategory: string | null, conditionId: string
 
 function magnitudeFromThreshold(value: number, t: Threshold["volume"]): Magnitude {
   if (!t || t.sampleN < MIN_SAMPLE_N) return null;
-  if (value >= t.p99) return "huge";
-  if (value >= t.p95) return "big";
+  // "huge" = top 0.1% in scope (P99.9). At P99.9 the long-tail breakdown
+  // gives intuitive thresholds (Crypto $1.5k vs P99 $164) so the plaque
+  // never needs an arbitrary absolute floor on the frontend.
+  if (value >= t.p999) return "huge";
+  if (value >= t.p99) return "big";
   return null;
 }
 
@@ -90,8 +95,8 @@ export async function createScopeThresholds(
     try {
       const rows = await sql<ThresholdRow[]>`
         SELECT category, subcategory, condition_id,
-               sample_volume_n, p95_volume, p99_volume,
-               sample_pnl_n,    p95_pnl,    p99_pnl
+               sample_volume_n, p95_volume, p99_volume, p999_volume,
+               sample_pnl_n,    p95_pnl,    p99_pnl,    p999_pnl
         FROM signal_thresholds
       `;
       const next = new Map<string, Threshold>();
@@ -100,10 +105,10 @@ export async function createScopeThresholds(
         const pnlSampleN = num(r.sample_pnl_n);
         next.set(keyOf(r.category, r.subcategory, r.condition_id), {
           volume: volSampleN > 0 && r.p95_volume !== null ? {
-            p95: num(r.p95_volume), p99: num(r.p99_volume), sampleN: volSampleN,
+            p95: num(r.p95_volume), p99: num(r.p99_volume), p999: num(r.p999_volume), sampleN: volSampleN,
           } : null,
           pnl: pnlSampleN > 0 && r.p95_pnl !== null ? {
-            p95: num(r.p95_pnl), p99: num(r.p99_pnl), sampleN: pnlSampleN,
+            p95: num(r.p95_pnl), p99: num(r.p99_pnl), p999: num(r.p999_pnl), sampleN: pnlSampleN,
           } : null,
         });
       }

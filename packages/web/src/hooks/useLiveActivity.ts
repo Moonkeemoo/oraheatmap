@@ -31,15 +31,9 @@ const PLAQUE_GLOBAL_RATE_PER_MIN = 8;
 const QUEUE_MAX = 3;
 const CONVERGE_WINDOW_MS = 60_000;
 const CONVERGE_MIN_WHALES = 5;
-/** Absolute floors below which a "huge" magnitude tag isn't really
- *  interesting to a trader's eye. Polymarket Crypto has L1 P99 ≈ $164
- *  because micro-bet markets (Bitcoin Up/Down 5-min) dominate volume.
- *  Even after dropping L3 scope, "huge" in Crypto still means $200+.
- *  A $300 BUY against that backdrop IS in fact a 99th-percentile move
- *  for the category — copy is the issue, not the threshold. Floor stays
- *  modest so user actually sees plaques during quiet hours. */
-const PLAQUE_MIN_USD_VOLUME = 300;
-const PLAQUE_MIN_USD_PNL = 50;
+// Absolute floor was removed in favour of P99.9 — the long-tail tag now
+// correlates 1:1 with "intuitively big" amounts (Crypto: $1.5k+, Sports:
+// $13k+, Politics: $43k+). No magic numbers in the frontend.
 
 export type Plaque = {
   id: number;
@@ -142,14 +136,11 @@ export function useLiveActivity({
     list.push({ addr: s.whaleAddr, ts: now });
     convergeMapRef.current.set(s.category, list);
 
-    // Plaque — only "huge" pops the floating plaque, and even then only
-    // under the global rate cap + absolute floor (the percentile tag in
-    // L3 scope can mark a $200 Bitcoin Up/Down trade as "huge", which
-    // reads as garbage copy).
+    // Plaque — "huge" tag (P99.9, top 0.1% in scope) under the global
+    // rate cap. P99.9 thresholds derived from the 7-day rolling
+    // distribution land at intuitive amounts ($1.5k+ Crypto, $13k+ Sports,
+    // $43k+ Politics) so no absolute USD floor is needed.
     if (tag.mag !== "huge") return;
-    const absUsd = tag.kind === "pnl" ? Math.abs(s.realizedPnl ?? 0) : s.sizeUsd;
-    const floor = tag.kind === "pnl" ? PLAQUE_MIN_USD_PNL : PLAQUE_MIN_USD_VOLUME;
-    if (absUsd < floor) return;
     if (recentTimestampsRef.current.length >= PLAQUE_GLOBAL_RATE_PER_MIN) return;
 
     // Side type narrowing — magnitudes.pnl can fire on SELL/SETTLEMENT,
