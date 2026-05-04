@@ -2,7 +2,6 @@ import { signOut, useSession } from "next-auth/react";
 import { TOKENS } from "@/lib/tokens";
 import type { HeatmapMetric, LiveRange, Mode, PatternKind } from "@/lib/types";
 import { BrandLogo } from "./BrandLogo";
-import { LiveDot } from "./LiveDot";
 import { ScaleLegend } from "./ScaleLegend";
 
 const LIVE_RANGES: ReadonlyArray<LiveRange> = ["1h", "24h", "12d", "12w"];
@@ -162,13 +161,6 @@ function ModeToggle({
   );
 }
 
-function liveRangeSubtitle(range: LiveRange): string {
-  if (range === "1h") return "last 60 min";
-  if (range === "24h") return "last 24 hours";
-  if (range === "12d") return "last 12 days";
-  return "last 12 weeks";
-}
-
 export function Header({
   mode,
   setMode,
@@ -179,10 +171,7 @@ export function Header({
   patternKind,
   setPatternKind,
   isLive,
-  trackedCount,
-  lookbackDays,
   daysOfData,
-  lowSample,
   onRequestLogin,
 }: {
   mode: Mode;
@@ -194,11 +183,15 @@ export function Header({
   patternKind: PatternKind;
   setPatternKind: (k: PatternKind) => void;
   isLive: boolean;
-  trackedCount: number;
-  lookbackDays: number;
-  patternUnlocked?: boolean; // accepted for compat; unused (PATTERN always on)
+  // The following props are accepted for backwards compat with the
+  // existing call site but no longer rendered — meta strip
+  // (HISTORICAL/range/whales-tracked) was redundant with the controls
+  // and the StatsBar at the bottom.
+  trackedCount?: number;
+  lookbackDays?: number;
+  patternUnlocked?: boolean;
   daysOfData: number;
-  lowSample: boolean;
+  lowSample?: boolean;
   /** Open the login modal — used to gate range/mode/kind toggles. */
   onRequestLogin: () => void;
 }) {
@@ -211,19 +204,6 @@ export function Header({
       else fn(...args);
     };
   };
-  // Keep both subtitles roughly the same length so the right-side controls
-  // don't wrap to a new line when the user toggles modes (was: PATTERN
-  // subtitle was 4× longer than LIVE → header height jumped).
-  const subtitle = isLive
-    ? liveRangeSubtitle(range)
-    : `last ${lookbackDays} days${lowSample ? " · low sample" : ""}`;
-
-  const tag = isLive ? (range === "1h" ? "LIVE" : "HISTORICAL") : "PATTERN";
-  const tagColor = isLive
-    ? range === "1h"
-      ? TOKENS.pos
-      : TOKENS.textSec
-    : TOKENS.accent;
 
   return (
     <div
@@ -258,39 +238,13 @@ export function Header({
           onLogin={onRequestLogin}
           onLogout={() => signOut()}
         />
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "flex-end",
-            gap: 4,
-            minWidth: 0,
-            color: TOKENS.text,
-          }}
-        >
-          {/* Hero brand mark — currentColor inherits the column's `color`,
-              so on dark bg it reads white; descriptor at fill-opacity 0.5
-              picks up the muted shade automatically. */}
+        {/* Hero brand mark — currentColor inherits color, so on dark bg
+            ORALAB reads white and the descriptor (opacity 0.5) the muted
+            shade automatically. The redundant HISTORICAL/range/whales-
+            tracked strip is gone — same info already lives in the range
+            pills (LIVE/24H/etc.) and the StatsBar at the bottom. */}
+        <div style={{ color: TOKENS.text }}>
           <BrandLogo size="hero" />
-          <div
-            style={{
-              fontSize: 10,
-              color: TOKENS.textSec,
-              letterSpacing: 0.7,
-              textTransform: "uppercase",
-              fontWeight: 600,
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
-            {isLive && range === "1h" && <LiveDot />}
-            <span style={{ color: tagColor }}>{tag}</span>
-            <span style={{ color: TOKENS.borderHi }}>·</span>
-            <span>{subtitle}</span>
-            <span style={{ color: TOKENS.borderHi }}>·</span>
-            <span>{trackedCount.toLocaleString()} whales tracked</span>
-          </div>
         </div>
       </div>
 

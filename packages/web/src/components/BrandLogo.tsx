@@ -1,14 +1,14 @@
 /**
  * ORALAB · Polymarket Heatmap brand mark.
  *
- * Inline SVG so `currentColor` carries through — white on dark surface, near-
- * black on light. 3×3-style colored grid icon to the left, ORALAB wordmark
- * + POLYMARKET HEATMAP descriptor stacked to the right. One concept, no
- * separator dot.
+ * HTML container with flex-vertical-center so the colored icon and the
+ * stacked text block share the same vertical axis precisely — earlier
+ * SVG-only version could only baseline-align text, leaving the icon
+ * slightly off in any real-world cap-height ratio.
  *
- * Two sizes share the same artwork via the `size` prop:
- *   "hero"    — header / landing hero (icon 60px, ORALAB 42px, descriptor 14px)
- *   "compact" — places where space is tight (icon 24px, ORALAB 18px, descriptor 8px)
+ * Uses `currentColor` for both wordmark and descriptor so the brand
+ * inherits the surrounding `color` (white on dark, near-black on light).
+ * Descriptor sits at opacity 0.5 — one concept, no separator dot.
  */
 
 import "@fontsource/space-grotesk/700.css";
@@ -25,41 +25,32 @@ const ICON_RECTS: ReadonlyArray<{ x: number; y: number; fill: string }> = [
 
 type Size = "hero" | "compact";
 
-type Spec = {
-  width: number;
-  height: number;
-  iconScale: number;
-  iconY: number;
-  textX: number;
+const SIZES: Record<Size, {
+  icon: number;
+  gap: number;
   oralabSize: number;
-  oralabY: number;
   descriptorSize: number;
-  descriptorY: number;
+  rowGap: number;
+}> = {
+  hero:    { icon: 60, gap: 16, oralabSize: 36, descriptorSize: 12, rowGap: 2 },
+  compact: { icon: 24, gap: 8,  oralabSize: 16, descriptorSize: 8,  rowGap: 1 },
 };
 
-const HERO: Spec = {
-  width: 360,
-  height: 80,
-  iconScale: 0.6,           // 100×100 viewbox → 60px
-  iconY: 10,
-  textX: 76,
-  oralabSize: 42,
-  oralabY: 46,
-  descriptorSize: 14,
-  descriptorY: 68,
-};
-
-const COMPACT: Spec = {
-  width: 168,
-  height: 32,
-  iconScale: 0.24,          // 24px
-  iconY: 4,
-  textX: 32,
-  oralabSize: 18,
-  oralabY: 18,
-  descriptorSize: 8,
-  descriptorY: 28,
-};
+function GridIcon({ size }: { size: number }) {
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      width={size}
+      height={size}
+      style={{ display: "block", flexShrink: 0 }}
+      aria-hidden="true"
+    >
+      {ICON_RECTS.map((r, i) => (
+        <rect key={i} x={r.x} y={r.y} width={30} height={30} rx={2} fill={r.fill} />
+      ))}
+    </svg>
+  );
+}
 
 export function BrandLogo({
   size = "hero",
@@ -70,51 +61,47 @@ export function BrandLogo({
   showDescriptor?: boolean;
   ariaLabel?: string;
 }) {
-  const s = size === "hero" ? HERO : COMPACT;
+  const s = SIZES[size];
   return (
-    <svg
-      viewBox={`0 0 ${s.width} ${s.height}`}
-      width={s.width}
-      height={s.height}
+    <div
       role="img"
       aria-label={ariaLabel}
-      style={{ display: "block" }}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: s.gap,
+        color: "currentColor",
+        lineHeight: 1,
+      }}
     >
-      <title>{ariaLabel}</title>
-      <g transform={`translate(0,${s.iconY}) scale(${s.iconScale})`}>
-        {ICON_RECTS.map((r, i) => (
-          <rect key={i} x={r.x} y={r.y} width={30} height={30} rx={2} fill={r.fill} />
-        ))}
-      </g>
-      <text
-        x={s.textX}
-        y={s.oralabY}
+      <GridIcon size={s.icon} />
+      <div
         style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: s.rowGap,
           fontFamily: "'Space Grotesk', system-ui, sans-serif",
-          fontSize: s.oralabSize,
           fontWeight: 700,
           letterSpacing: "-0.02em",
+          textTransform: "uppercase",
         }}
-        fill="currentColor"
       >
-        ORALAB
-      </text>
-      {showDescriptor && (
-        <text
-          x={s.textX}
-          y={s.descriptorY}
-          style={{
-            fontFamily: "'Space Grotesk', system-ui, sans-serif",
-            fontSize: s.descriptorSize,
-            fontWeight: 700,
-            letterSpacing: "-0.02em",
-          }}
-          fill="currentColor"
-          fillOpacity={0.5}
-        >
-          POLYMARKET HEATMAP
-        </text>
-      )}
-    </svg>
+        <span style={{ fontSize: s.oralabSize, lineHeight: 1, color: "currentColor" }}>
+          ORALAB
+        </span>
+        {showDescriptor && (
+          <span
+            style={{
+              fontSize: s.descriptorSize,
+              lineHeight: 1,
+              color: "currentColor",
+              opacity: 0.5,
+            }}
+          >
+            POLYMARKET HEATMAP
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
