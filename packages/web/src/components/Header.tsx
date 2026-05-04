@@ -233,6 +233,10 @@ export function Header({
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
+          // Without this, default align-items:stretch makes flex-column
+          // children fill the full cross-axis width — both the chip and
+          // the controls-row visually stretched into "horse-sized" pills.
+          alignItems: "flex-start",
           gap: 8,
         }}
       >
@@ -247,6 +251,11 @@ export function Header({
             (range OR patternKind) → metric → scale. */}
         <div
           style={{
+            // Take full column width so flex-wrap actually has a boundary
+            // to break at on narrow viewports. Without this, align-items:
+            // flex-start on the parent column would shrink this row to its
+            // content width and the row would never wrap.
+            width: "100%",
             display: "flex",
             alignItems: "center",
             gap: 10,

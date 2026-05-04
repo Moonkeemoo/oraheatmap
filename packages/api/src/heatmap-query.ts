@@ -529,14 +529,20 @@ export async function queryTopMarketsPerCell(
       ),
       ranked AS (
         SELECT *,
-          ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY signals DESC) AS rn
+          ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY signals DESC) AS rn_signals,
+          ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY volume_usd DESC) AS rn_volume,
+          ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY pnl_usd DESC NULLS LAST) AS rn_pnl_winner,
+          ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY pnl_usd ASC NULLS LAST) AS rn_pnl_loser
         FROM per_market
       )
       SELECT
         to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
         category, condition_id, market_question, market_slug, market_icon, signals, volume_usd, pnl_usd, win_count, loss_count, unique_whales
       FROM ranked
-      WHERE rn <= ${perCellLimit}
+      WHERE rn_signals <= ${perCellLimit}
+         OR rn_volume <= 5
+         OR rn_pnl_winner <= 5
+         OR rn_pnl_loser <= 5
     `;
     return rows;
   }
@@ -563,14 +569,20 @@ export async function queryTopMarketsPerCell(
     ),
     ranked AS (
       SELECT *,
-        ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY signals DESC) AS rn
+        ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY signals DESC) AS rn_signals,
+        ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY volume_usd DESC) AS rn_volume,
+        ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY pnl_usd DESC NULLS LAST) AS rn_pnl_winner,
+        ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY pnl_usd ASC NULLS LAST) AS rn_pnl_loser
       FROM per_market
     )
     SELECT
       to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
       category, condition_id, market_question, market_slug, market_icon, signals, volume_usd, pnl_usd, win_count, loss_count, unique_whales
     FROM ranked
-    WHERE rn <= ${perCellLimit}
+    WHERE rn_signals <= ${perCellLimit}
+       OR rn_volume <= 5
+       OR rn_pnl_winner <= 5
+       OR rn_pnl_loser <= 5
   `;
   return rows;
 }
@@ -629,14 +641,20 @@ export async function queryTopWhalesPerCell(
       ),
       ranked AS (
         SELECT *,
-          ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY volume_usd DESC, signals DESC) AS rn
+          ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY volume_usd DESC, signals DESC) AS rn_volume,
+          ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY pnl_usd DESC NULLS LAST) AS rn_pnl_winner,
+          ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY pnl_usd ASC NULLS LAST) AS rn_pnl_loser,
+          ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY signals DESC) AS rn_signals
         FROM per_whale
       )
       SELECT
         to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
         category, whale_addr, signals, volume_usd, pnl_usd, wins, losses
       FROM ranked
-      WHERE rn <= ${perCellLimit}
+      WHERE rn_volume <= ${perCellLimit}
+         OR rn_pnl_winner <= 5
+         OR rn_pnl_loser <= 5
+         OR rn_signals <= 5
     `;
     return rows;
   }
@@ -661,14 +679,20 @@ export async function queryTopWhalesPerCell(
       ),
       ranked AS (
         SELECT *,
-          ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY volume_usd DESC, signals DESC) AS rn
+          ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY volume_usd DESC, signals DESC) AS rn_volume,
+          ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY pnl_usd DESC NULLS LAST) AS rn_pnl_winner,
+          ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY pnl_usd ASC NULLS LAST) AS rn_pnl_loser,
+          ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY signals DESC) AS rn_signals
         FROM per_whale
       )
       SELECT
         to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
         category, whale_addr, signals, volume_usd, pnl_usd, wins, losses
       FROM ranked
-      WHERE rn <= ${perCellLimit}
+      WHERE rn_volume <= ${perCellLimit}
+         OR rn_pnl_winner <= 5
+         OR rn_pnl_loser <= 5
+         OR rn_signals <= 5
     `;
     return rows;
   }
@@ -690,14 +714,20 @@ export async function queryTopWhalesPerCell(
     ),
     ranked AS (
       SELECT *,
-        ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY volume_usd DESC, signals DESC) AS rn
+        ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY volume_usd DESC, signals DESC) AS rn_volume,
+        ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY pnl_usd DESC NULLS LAST) AS rn_pnl_winner,
+        ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY pnl_usd ASC NULLS LAST) AS rn_pnl_loser,
+        ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY signals DESC) AS rn_signals
       FROM per_whale
     )
     SELECT
       to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
       category, whale_addr, signals, volume_usd, pnl_usd, wins, losses
     FROM ranked
-    WHERE rn <= ${perCellLimit}
+    WHERE rn_volume <= ${perCellLimit}
+       OR rn_pnl_winner <= 5
+       OR rn_pnl_loser <= 5
+       OR rn_signals <= 5
   `;
   return rows;
 }
