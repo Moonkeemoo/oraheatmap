@@ -16,6 +16,11 @@ export type IngestorDeps = {
   pingIntervalMs: number;
   /** Warn (not reconnect) if no `activity/trades` message arrives in this window. */
   dataSilenceThresholdMs: number;
+  /** Force-recreate the SDK client if silence persists beyond this threshold.
+   *  CLAUDE.md SIG-7: "on application-level resubscribe failure, restart the
+   *  SDK client rather than reusing it" — autoReconnect:true sometimes
+   *  zombies (TCP up, no frames, no error). 0 disables. */
+  fatalSilenceThresholdMs: number;
 };
 
 export type IngestorStats = {
@@ -23,6 +28,7 @@ export type IngestorStats = {
   tradesSeen: number;
   whaleHits: number;
   signalsEmitted: number;
+  forceReconnects: number;
 };
 
 export type Ingestor = {
@@ -112,22 +118,74 @@ export function createIngestor(deps: IngestorDeps): Ingestor {
   let stopped = false;
   let lastDataAt = 0;
   let dataSilenceTimer: ReturnType<typeof setInterval> | null = null;
+  /** Set when we've already forced a reconnect for the current silence
+   *  episode — prevents spamming reconnects every tick if the new client
+   *  also stays silent. Cleared as soon as a real frame arrives. */
+  let forcedReconnectThisSilence = false;
   let currentStatus: IngestorStatus = { kind: "connecting" };
-  const stats: IngestorStats = { framesSeen: 0, tradesSeen: 0, whaleHits: 0, signalsEmitted: 0 };
+  const stats: IngestorStats = {
+    framesSeen: 0,
+    tradesSeen: 0,
+    whaleHits: 0,
+    signalsEmitted: 0,
+    forceReconnects: 0,
+  };
 
   function startDataSilenceWatch(): void {
     if (dataSilenceTimer) clearInterval(dataSilenceTimer);
     const tick = Math.max(deps.dataSilenceThresholdMs / 3, 5_000);
     dataSilenceTimer = setInterval(() => {
-      if (lastDataAt === 0) return; // never had a trade yet — don't false-alarm at boot
+      if (stopped || lastDataAt === 0) return; // never had a trade yet — don't false-alarm at boot
       const sinceMs = Date.now() - lastDataAt;
-      if (sinceMs > deps.dataSilenceThresholdMs) {
-        // SDK keeps the WS itself alive; this is a soft signal that the firehose
-        // may be dry — could be legit (no trades right now), or could be the
-        // server muting our subscription. Surface so we can spot it in logs.
-        log.warn("rtds data silence", { sinceMs });
+      if (sinceMs <= deps.dataSilenceThresholdMs) return;
+
+      log.warn("rtds data silence", { sinceMs });
+
+      // Beyond fatal threshold — SDK is zombied. Tear down and recreate.
+      const fatal = deps.fatalSilenceThresholdMs;
+      if (fatal > 0 && sinceMs > fatal && !forcedReconnectThisSilence) {
+        forcedReconnectThisSilence = true;
+        stats.forceReconnects += 1;
+        log.warn("rtds force reconnect (fatal silence)", { sinceMs, attempt: stats.forceReconnects });
+        try {
+          client?.disconnect();
+        } catch (err) {
+          log.warn("disconnect during force-reconnect threw", { err: (err as Error).message });
+        }
+        client = null;
+        // Reset lastDataAt to a "fresh boot" sentinel so the watchdog won't
+        // trigger again until the new client has had a chance to receive
+        // at least one frame.
+        lastDataAt = 0;
+        connectClient();
       }
     }, tick);
+  }
+
+  function connectClient(): void {
+    log.info("rtds connecting", { url: deps.url });
+    client = new RealTimeDataClient({
+      host: deps.url,
+      autoReconnect: true,
+      pingInterval: deps.pingIntervalMs,
+      onConnect: (c) => {
+        log.info("rtds connected, subscribing");
+        currentStatus = { kind: "open", openedAt: Date.now() };
+        c.subscribe({
+          subscriptions: [{ topic: "activity", type: "trades" }],
+        });
+      },
+      onMessage: (_c, msg) => handleMessage(msg),
+      onStatusChange: (status) => {
+        if (status === ConnectionStatus.CONNECTING) {
+          currentStatus = { kind: "connecting" };
+        } else if (status === ConnectionStatus.DISCONNECTED) {
+          currentStatus = { kind: "disconnected", lastSeenAt: lastDataAt };
+        }
+        log.info("rtds status", { status });
+      },
+    });
+    client.connect();
   }
 
   function handleMessage(msg: Message): void {
@@ -138,6 +196,9 @@ export function createIngestor(deps: IngestorDeps): Ingestor {
       const payload = msg.payload as RtdsTradePayload;
       stats.tradesSeen += 1;
       lastDataAt = Date.now();
+      // Real frames arriving — clear the "silence episode" guard so a
+      // future zombie can be force-reconnected again.
+      forcedReconnectThisSilence = false;
 
       const wallet = pickWallet(payload);
       if (!wallet) return;
@@ -224,29 +285,7 @@ export function createIngestor(deps: IngestorDeps): Ingestor {
   return {
     start() {
       stopped = false;
-      log.info("rtds connecting", { url: deps.url });
-      client = new RealTimeDataClient({
-        host: deps.url,
-        autoReconnect: true,
-        pingInterval: deps.pingIntervalMs,
-        onConnect: (c) => {
-          log.info("rtds connected, subscribing");
-          currentStatus = { kind: "open", openedAt: Date.now() };
-          c.subscribe({
-            subscriptions: [{ topic: "activity", type: "trades" }],
-          });
-        },
-        onMessage: (_c, msg) => handleMessage(msg),
-        onStatusChange: (status) => {
-          if (status === ConnectionStatus.CONNECTING) {
-            currentStatus = { kind: "connecting" };
-          } else if (status === ConnectionStatus.DISCONNECTED) {
-            currentStatus = { kind: "disconnected", lastSeenAt: lastDataAt };
-          }
-          log.info("rtds status", { status });
-        },
-      });
-      client.connect();
+      connectClient();
       startDataSilenceWatch();
     },
     async stop() {
@@ -255,7 +294,11 @@ export function createIngestor(deps: IngestorDeps): Ingestor {
         clearInterval(dataSilenceTimer);
         dataSilenceTimer = null;
       }
-      client?.disconnect();
+      try {
+        client?.disconnect();
+      } catch {
+        // ignore — process is shutting down
+      }
       client = null;
     },
     status: () => currentStatus,

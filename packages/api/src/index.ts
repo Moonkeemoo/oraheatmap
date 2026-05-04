@@ -62,6 +62,7 @@ async function main(): Promise<void> {
     onSignal: (s) => hub.broadcast(s),
     pingIntervalMs: env.WS_PING_INTERVAL_MS,
     dataSilenceThresholdMs: env.WS_DATA_SILENCE_THRESHOLD_MS,
+    fatalSilenceThresholdMs: env.WS_FATAL_SILENCE_THRESHOLD_MS,
   });
 
   const resolutionWatcher = createResolutionWatcher({
