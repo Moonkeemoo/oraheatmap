@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { BrandLogo } from "@/components/BrandLogo";
+import { Footer } from "@/components/Footer";
 import { TOKENS } from "@/lib/tokens";
 
 /**
@@ -21,13 +22,10 @@ export default function LandingPage() {
         fontFamily: TOKENS.font,
         display: "flex",
         flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 24,
         boxSizing: "border-box",
       }}
     >
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 28, maxWidth: 720, textAlign: "center" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 28, maxWidth: 720, padding: 24, margin: "0 auto", textAlign: "center" }}>
         <BrandLogo size="hero" />
         <p
           style={{
@@ -70,6 +68,7 @@ export default function LandingPage() {
           Open heatmap →
         </Link>
       </div>
+      <Footer />
     </main>
   );
 }

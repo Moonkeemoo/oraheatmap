@@ -284,6 +284,38 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
             {error}
           </div>
         )}
+
+        <div
+          style={{
+            marginTop: 16,
+            paddingTop: 12,
+            borderTop: `1px solid ${TOKENS.border}`,
+            fontSize: 10,
+            lineHeight: 1.5,
+            color: TOKENS.textMuted,
+            textAlign: "center",
+          }}
+        >
+          By signing in you agree to our{" "}
+          <a
+            href="/terms"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: TOKENS.link, textDecoration: "none" }}
+          >
+            Terms
+          </a>{" "}
+          and{" "}
+          <a
+            href="/privacy"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: TOKENS.link, textDecoration: "none" }}
+          >
+            Privacy Policy
+          </a>
+          .
+        </div>
       </div>
     </>
   );
