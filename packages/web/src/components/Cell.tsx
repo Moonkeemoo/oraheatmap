@@ -7,43 +7,43 @@ import { TOKENS } from "@/lib/tokens";
 import type { HeatmapCell, HeatmapMetric } from "@/lib/types";
 import type { TooltipAnchor } from "./Tooltip";
 
+function recentForMetric(metric: HeatmapMetric, cell: HeatmapCell): number | null {
+  switch (metric) {
+    case "signals": return cell.count;
+    case "volume":  return cell.volume;
+    case "pnl":     return cell.pnl;
+    case "winrate": return cell.winRate;
+    case "whales":  return cell.uniqueWhales ?? null;
+  }
+}
+
 function deltaForMetric(metric: HeatmapMetric, cell: HeatmapCell): number | null {
   const d = cell.delta;
   if (!d) return null;
   switch (metric) {
-    case "signals":
-      return d.count;
-    case "volume":
-      return d.volume;
-    case "pnl":
-      return d.pnl;
-    case "winrate":
-      return d.winRate; // already a delta of 0..1 fractions
-    case "whales":
-      // PATTERN delta doesn't carry a uniqueWhales delta yet — skip the
-      // arrow indicator. The cell still shows the current count via the
-      // main label; we just don't compare to historical baseline.
-      return null;
+    case "signals": return d.count;
+    case "volume":  return d.volume;
+    case "pnl":     return d.pnl;
+    case "winrate": return d.winRate; // 0..1 fraction
+    case "whales":  return null;       // not aggregated in PATTERN
   }
 }
 
-function fmtDelta(metric: HeatmapMetric, delta: number | null): string {
-  // Sparse-cycle case (e.g. winrate with no decided trades in older half).
-  // Render an explicit "no comparison" glyph so the parens don't disappear
-  // — empty parens read as a bug, "(—)" reads as "we have nothing yet".
-  if (delta === null) return "—";
-  if (delta === 0) return "0";
-  if (metric === "winrate") {
-    const pct = Math.round(delta * 100);
-    return (pct >= 0 ? "+" : "") + pct + "%";
-  }
-  if (metric === "pnl" || metric === "volume") {
-    const sign = delta > 0 ? "+" : "";
-    return sign + fmtCellValue(delta);
-  }
-  // signals — fractional avg in PATTERN; abbreviate via fmtCellValue.
-  const sign = delta > 0 ? "+" : "";
-  return sign + fmtCellValue(delta);
+/** Full-lookback average for the active metric. Cell carries the
+ *  *recent half* value and a delta = recent − older, so the full average
+ *  reduces to recent − delta/2. NULL when delta is missing (e.g. winrate
+ *  with no decided trades in the older half). */
+function avgForMetric(metric: HeatmapMetric, cell: HeatmapCell): number | null {
+  const recent = recentForMetric(metric, cell);
+  const delta = deltaForMetric(metric, cell);
+  if (recent === null || delta === null) return null;
+  return recent - delta / 2;
+}
+
+function fmtAvg(metric: HeatmapMetric, avg: number | null): string {
+  if (avg === null) return "—";
+  if (metric === "winrate") return Math.round(avg * 100) + "%";
+  return fmtCellValue(avg);
 }
 
 export function Cell({
@@ -76,14 +76,10 @@ export function Cell({
   const bg = getCellFill(metric, cell, intensityFn);
   const value = isEmpty ? "" : getCellValue(metric, cell);
   const valColor = isEmpty ? TOKENS.text : getValueColor(metric, cell);
-  const delta = showDelta && !isEmpty ? deltaForMetric(metric, cell) : null;
-  const deltaColor = delta === null
-    ? TOKENS.textMuted
-    : delta > 0
-      ? TOKENS.pos
-      : delta < 0
-        ? TOKENS.neg
-        : TOKENS.textSec;
+  // PATTERN parens now show full-lookback AVG (not Δ vs older half) — gives
+  // the user a baseline to compare the current cell against. Color stays
+  // muted because it's a reference value, not a positive/negative trend.
+  const avg = showDelta && !isEmpty ? avgForMetric(metric, cell) : null;
 
   function captureAnchor(): TooltipAnchor | null {
     if (!ref.current) return null;
@@ -177,9 +173,9 @@ export function Cell({
           }}
         >
           <span style={{ fontSize: 12, fontWeight: 700, color: valColor }}>{value}</span>
-          {showDelta && (
-            <span style={{ fontSize: 9, fontWeight: 700, color: deltaColor }}>
-              ({fmtDelta(metric, delta)})
+          {showDelta && !isEmpty && (
+            <span style={{ fontSize: 9, fontWeight: 700, color: TOKENS.textMuted }}>
+              ({fmtAvg(metric, avg)})
             </span>
           )}
         </span>

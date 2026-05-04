@@ -1,0 +1,10 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="oralab heatmap mark">
+  <title>oralab</title>
+  <rect x="0" y="0" width="30" height="30" rx="2" fill="#3fb950"/>
+  <rect x="35" y="0" width="30" height="30" rx="2" fill="#238636"/>
+  <rect x="0" y="35" width="30" height="30" rx="2" fill="#f0b429"/>
+  <rect x="35" y="35" width="30" height="30" rx="2" fill="#3fb950"/>
+  <rect x="70" y="35" width="30" height="30" rx="2" fill="#238636"/>
+  <rect x="35" y="70" width="30" height="30" rx="2" fill="#f85149"/>
+  <rect x="70" y="70" width="30" height="30" rx="2" fill="#f0b429"/>
+</svg>
