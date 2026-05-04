@@ -208,28 +208,32 @@ export function Header({
   return (
     <div
       style={{
-        // Tight padding so the header height is driven by the brand logo
-        // (60px) and the controls row, not by stale defaults from when
-        // the meta strip lived above the controls.
-        padding: "8px 24px 8px",
+        // Two-column layout: chip+controls stacked on the left, brand logo
+        // on the right occupying the full column height (align-self stretch).
+        // No row-of-rows + per-row padding stuff — the chip's vertical
+        // padding is just the header padding.
+        padding: "8px 24px",
         borderBottom: `1px solid ${TOKENS.border}`,
         display: "flex",
-        flexDirection: "column",
-        gap: 8,
+        alignItems: "stretch",
+        gap: 16,
         flexShrink: 0,
         minWidth: 0,
         boxSizing: "border-box",
       }}
     >
-      {/* Row 1: sign-in chip (left) + brand logo (right). Both vertical-
-          centered so the chip doesn't "float" above the logo. No minHeight
-          — let the logo's natural 60px set the row height. */}
+      {/* Left column — chip pinned to the top of the header, controls
+          pinned to the bottom. justify-content:space-between gives both
+          rows their natural height without an artificial gap pushing the
+          chip down (was the "floating" feeling). */}
       <div
         style={{
+          flex: 1,
+          minWidth: 0,
           display: "flex",
-          alignItems: "center",
+          flexDirection: "column",
           justifyContent: "space-between",
-          gap: 12,
+          gap: 8,
         }}
       >
         <UserChip
@@ -239,31 +243,19 @@ export function Header({
           onLogin={onRequestLogin}
           onLogout={() => signOut()}
         />
-        {/* Hero brand mark — currentColor inherits color, so on dark bg
-            ORALAB reads white and the descriptor (opacity 0.5) the muted
-            shade automatically. The redundant HISTORICAL/range/whales-
-            tracked strip is gone — same info already lives in the range
-            pills (LIVE/24H/etc.) and the StatsBar at the bottom. */}
-        <div style={{ color: TOKENS.text }}>
-          <BrandLogo size="hero" />
-        </div>
-      </div>
-
-      {/* Row 2: filter controls, left-aligned. Order: mode → mode-block
-          (range OR patternKind) → metric → scale. Reads left-to-right as a
-          progressive choice: pick mode, narrow the timing within it, pick
-          what to measure, then see the colour legend for that metric. */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          rowGap: 10,
-          flexWrap: "wrap",
-          justifyContent: "flex-start",
-          minWidth: 0,
-        }}
-      >
+        {/* Filter controls row — read left-to-right: mode → mode-block
+            (range OR patternKind) → metric → scale. */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            rowGap: 10,
+            flexWrap: "wrap",
+            justifyContent: "flex-start",
+            minWidth: 0,
+          }}
+        >
         <ModeToggle
           mode={mode}
           setMode={gate(setMode)}
@@ -333,6 +325,21 @@ export function Header({
         <div style={{ width: 1, height: 26, background: TOKENS.border }} />
 
         <ScaleLegend metric={metric} />
+        </div>
+      </div>
+
+      {/* Right column — brand logo fills the full header height while
+          preserving its proportions (icon : ORALAB : descriptor = 1 : 0.6 : 0.2).
+          align-self:stretch is implicit via the parent's align-items:stretch. */}
+      <div
+        style={{
+          color: TOKENS.text,
+          display: "flex",
+          alignItems: "center",
+          flexShrink: 0,
+        }}
+      >
+        <BrandLogo size="fill" />
       </div>
     </div>
   );
