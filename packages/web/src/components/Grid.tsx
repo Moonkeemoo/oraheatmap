@@ -193,6 +193,34 @@ function DragHandle({
   );
 }
 
+/** Trailing indicator that signals "this badge is clickable":
+ *    L1/L2 (drill into deeper level)  → ›  (chevron-right)
+ *    L3 with polymarket link          → ↗  (external link arrow)
+ *  Renders semi-transparent so it doesn't fight with the label text, then
+ *  pops to full opacity + slides on hover via the parent's :hover state. */
+function ClickAffordance({ kind }: { kind: "drill" | "external" }) {
+  return (
+    <span
+      data-affordance
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        marginLeft: 6,
+        opacity: 0.7,
+        fontSize: kind === "external" ? 11 : 13,
+        lineHeight: 1,
+        transition: "transform .15s, opacity .15s",
+        flexShrink: 0,
+        color: "rgba(255,255,255,0.95)",
+      }}
+      aria-hidden="true"
+    >
+      {kind === "drill" ? "›" : "↗"}
+    </span>
+  );
+}
+
 /** Render the label badge for a row — pure UI, used by both the live row
  *  and the DragOverlay clone. */
 function RowLabelBadge({
@@ -211,6 +239,12 @@ function RowLabelBadge({
     : clickableRow
       ? `Drill into ${meta.isDrillRow ? "markets" : "subcategories"}`
       : undefined;
+  // Subtle "raised" feel for clickable rows — a 1px inner highlight on the
+  // top edge + a 1px outer border on the bottom edge reads as a button.
+  // Combined with the trailing ›/↗ icon it's hard to mistake for static text.
+  const interactiveBoxShadow = isInteractive
+    ? "inset 0 1px 0 rgba(255,255,255,0.18), 0 1px 0 rgba(0,0,0,0.18)"
+    : "none";
   const badgeStyle: React.CSSProperties = {
     background: rowColor,
     color: "#fff",
@@ -220,26 +254,68 @@ function RowLabelBadge({
     fontWeight: isL3 ? 600 : 700,
     letterSpacing: isL3 ? 0.2 : 0.6,
     padding: isL3 ? "5px 8px" : "5px 10px",
-    borderRadius: 3,
+    borderRadius: 4,
     textTransform: isL3 ? "none" : "uppercase",
-    textAlign: isL3 ? ("left" as const) : undefined,
+    textAlign: isL3 ? ("left" as const) : ("center" as const),
     width: "100%",
     cursor: isInteractive ? "pointer" : "default",
-    transition: "filter .12s",
+    transition: "filter .15s, transform .15s, box-shadow .15s",
     opacity: isResolved ? 0.55 : 1,
     textDecoration: isResolved ? "line-through" : "none",
     boxSizing: "border-box",
-    display: "block",
+    display: isL3 ? "block" : "flex",
+    alignItems: isL3 ? undefined : ("center" as const),
+    justifyContent: isL3 ? undefined : ("center" as const),
+    gap: 0,
     whiteSpace: isL3 ? "normal" : "nowrap",
     lineHeight: isL3 ? "1.25" : undefined,
     wordBreak: isL3 ? ("break-word" as const) : undefined,
+    boxShadow: interactiveBoxShadow,
+    textDecorationLine: isResolved ? "line-through" : undefined,
   };
   const onEnter = (e: React.MouseEvent<HTMLElement>): void => {
-    if (isInteractive) e.currentTarget.style.filter = "brightness(1.15)";
+    if (!isInteractive) return;
+    const el = e.currentTarget;
+    el.style.filter = "brightness(1.18)";
+    el.style.boxShadow =
+      "inset 0 1px 0 rgba(255,255,255,0.28), 0 2px 0 rgba(0,0,0,0.22), 0 0 0 1px rgba(255,255,255,0.22)";
+    // Slide the trailing chevron a couple px to hint "this goes deeper".
+    const aff = el.querySelector<HTMLSpanElement>("[data-affordance]");
+    if (aff) {
+      aff.style.opacity = "1";
+      aff.style.transform = "translateX(2px)";
+    }
   };
   const onLeave = (e: React.MouseEvent<HTMLElement>): void => {
-    if (isInteractive) e.currentTarget.style.filter = "none";
+    if (!isInteractive) return;
+    const el = e.currentTarget;
+    el.style.filter = "none";
+    el.style.boxShadow = interactiveBoxShadow;
+    const aff = el.querySelector<HTMLSpanElement>("[data-affordance]");
+    if (aff) {
+      aff.style.opacity = "0.7";
+      aff.style.transform = "translateX(0)";
+    }
   };
+  // Wrap the text so the trailing chevron sits flush at the right edge of
+  // the badge (text-and-icon row, label takes the rest, icon hugs the right).
+  const labelInner = (
+    <>
+      <span
+        style={{
+          flex: isL3 ? undefined : 1,
+          minWidth: 0,
+          overflow: isL3 ? undefined : "hidden",
+          textOverflow: isL3 ? undefined : "ellipsis",
+          textAlign: isL3 ? ("left" as const) : ("center" as const),
+        }}
+      >
+        {rowLabel}
+      </span>
+      {clickableRow && <ClickAffordance kind="drill" />}
+      {l3Url && <ClickAffordance kind="external" />}
+    </>
+  );
   if (l3Url) {
     return (
       <a
@@ -247,11 +323,19 @@ function RowLabelBadge({
         target="_blank"
         rel="noopener noreferrer"
         title={titleText}
-        style={badgeStyle}
+        style={{
+          ...badgeStyle,
+          // L3 with link is full-width left-aligned multi-line — keep the
+          // chevron inline with the last word rather than floating to the
+          // far right edge of a possibly-tall badge.
+          display: "inline",
+        }}
         onMouseEnter={onEnter}
         onMouseLeave={onLeave}
       >
-        {rowLabel}
+        <span style={{ display: "inline" }}>{rowLabel}</span>
+        {" "}
+        <ClickAffordance kind="external" />
       </a>
     );
   }
@@ -265,7 +349,7 @@ function RowLabelBadge({
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
     >
-      {rowLabel}
+      {labelInner}
     </button>
   );
 }
