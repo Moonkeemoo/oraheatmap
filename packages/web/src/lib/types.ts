@@ -50,10 +50,10 @@ export type HeatmapCell = {
   /** Top whales (by USD volume desc) who traded in this cell. Empty in
    *  PATTERN mode and on heavy ranges (12d/12w at top level). */
   topWhales: WhaleCellSummary[];
-  delta?: { count: number; volume: number; pnl: number; winRate: number | null };
+  delta?: { count: number; volume: number; pnl: number; winRate: number | null; uniqueWhales?: number };
   /** Full-window AVG across both halves of the lookback (PATTERN only).
    *  Null-tolerant — falls back to whichever half has data. */
-  full?: { count: number; volume: number; pnl: number; winRate: number | null };
+  full?: { count: number; volume: number; pnl: number; winRate: number | null; uniqueWhales?: number };
   sampleCount?: number;
   min?: { count: number; volume: number; pnl: number };
   max?: { count: number; volume: number; pnl: number };

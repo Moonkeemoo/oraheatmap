@@ -22,6 +22,10 @@ export type PatternCellValues = {
   volume: number;
   pnl: number;
   winRate: number | null;
+  /** Approximate unique-whale count for this slot — sum of per-hour
+   *  COUNT(DISTINCT whale_addr) (over-counts whales active in multiple
+   *  buckets). Acceptable for the convergence lens. */
+  uniqueWhales: number;
 };
 
 export type PatternCell = PatternCellValues & {
@@ -53,7 +57,7 @@ export type PatternResponse = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const ZERO_VALUES: PatternCellValues = { count: 0, volume: 0, pnl: 0, winRate: null };
+const ZERO_VALUES: PatternCellValues = { count: 0, volume: 0, pnl: 0, winRate: null, uniqueWhales: 0 };
 
 function emptyCell(): PatternCell {
   return {
@@ -129,6 +133,8 @@ type AggRow = {
   recent_losses: string | number | null;
   older_wins: string | number | null;
   older_losses: string | number | null;
+  recent_unique_whales: string | number | null;
+  older_unique_whales: string | number | null;
   recent_sample_count: string | number;
   min_count: string | number | null;
   max_count: string | number | null;
@@ -161,7 +167,8 @@ async function queryHourOfDayRows(
           COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)         AS slot_volume,
           COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS slot_pnl,
           COUNT(*) FILTER (WHERE realized_pnl > 0)                           AS slot_wins,
-          COUNT(*) FILTER (WHERE realized_pnl < 0)                           AS slot_losses
+          COUNT(*) FILTER (WHERE realized_pnl < 0)                           AS slot_losses,
+          COUNT(DISTINCT whale_addr)                                         AS slot_uw
         FROM signals
         WHERE ts >= NOW() - (${`${lookbackDays} days`}::interval)
           AND category = ${drillCategory}
@@ -176,6 +183,7 @@ async function queryHourOfDayRows(
           slot_pnl     AS realized_pnl_sum,
           slot_wins    AS win_count,
           slot_losses  AS loss_count,
+          slot_uw      AS unique_whales,
           CASE
             WHEN day >= NOW() - (${`${half} days`}::interval) THEN 'recent'
             ELSE 'older'
@@ -194,6 +202,8 @@ async function queryHourOfDayRows(
         SUM(loss_count) FILTER (WHERE period='recent') AS recent_losses,
         SUM(win_count)  FILTER (WHERE period='older')  AS older_wins,
         SUM(loss_count) FILTER (WHERE period='older')  AS older_losses,
+        AVG(unique_whales) FILTER (WHERE period='recent') AS recent_unique_whales,
+        AVG(unique_whales) FILTER (WHERE period='older')  AS older_unique_whales,
         COUNT(*) FILTER (WHERE period='recent')::bigint AS recent_sample_count,
         MIN(signal_count)    AS min_count,
         MAX(signal_count)    AS max_count,
@@ -216,7 +226,8 @@ async function queryHourOfDayRows(
         SUM(buy_volume_usd)   AS slot_volume,
         SUM(realized_pnl_sum) AS slot_pnl,
         SUM(win_count)        AS slot_wins,
-        SUM(loss_count)       AS slot_losses
+        SUM(loss_count)       AS slot_losses,
+        SUM(unique_whales)    AS slot_uw
       FROM signals_hourly
       WHERE bucket >= NOW() - (${`${lookbackDays} days`}::interval)
       GROUP BY day, slot, category
@@ -229,6 +240,7 @@ async function queryHourOfDayRows(
         slot_pnl     AS realized_pnl_sum,
         slot_wins    AS win_count,
         slot_losses  AS loss_count,
+        slot_uw      AS unique_whales,
         CASE
           WHEN day >= NOW() - (${`${half} days`}::interval) THEN 'recent'
           ELSE 'older'
@@ -247,6 +259,8 @@ async function queryHourOfDayRows(
       SUM(loss_count) FILTER (WHERE period='recent') AS recent_losses,
       SUM(win_count)  FILTER (WHERE period='older')  AS older_wins,
       SUM(loss_count) FILTER (WHERE period='older')  AS older_losses,
+      AVG(unique_whales) FILTER (WHERE period='recent') AS recent_unique_whales,
+      AVG(unique_whales) FILTER (WHERE period='older')  AS older_unique_whales,
       COUNT(*) FILTER (WHERE period='recent')::bigint AS recent_sample_count,
       MIN(signal_count)    AS min_count,
       MAX(signal_count)    AS max_count,
@@ -279,7 +293,8 @@ async function queryDayOfWeekRows(
           COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)         AS day_volume,
           COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS day_pnl,
           COUNT(*) FILTER (WHERE realized_pnl > 0)                           AS day_wins,
-          COUNT(*) FILTER (WHERE realized_pnl < 0)                           AS day_losses
+          COUNT(*) FILTER (WHERE realized_pnl < 0)                           AS day_losses,
+          COUNT(DISTINCT whale_addr)                                         AS day_uw
         FROM signals
         WHERE ts >= NOW() - (${`${lookbackDays} days`}::interval)
           AND category = ${drillCategory}
@@ -306,6 +321,8 @@ async function queryDayOfWeekRows(
         SUM(day_losses)  FILTER (WHERE period='recent') AS recent_losses,
         SUM(day_wins)    FILTER (WHERE period='older')  AS older_wins,
         SUM(day_losses)  FILTER (WHERE period='older')  AS older_losses,
+        AVG(day_uw)      FILTER (WHERE period='recent') AS recent_unique_whales,
+        AVG(day_uw)      FILTER (WHERE period='older')  AS older_unique_whales,
         COUNT(*) FILTER (WHERE period='recent')::bigint AS recent_sample_count,
         MIN(day_signals) AS min_count,
         MAX(day_signals) AS max_count,
@@ -329,7 +346,8 @@ async function queryDayOfWeekRows(
         SUM(buy_volume_usd)   AS day_volume,
         SUM(realized_pnl_sum) AS day_pnl,
         SUM(win_count)        AS day_wins,
-        SUM(loss_count)       AS day_losses
+        SUM(loss_count)       AS day_losses,
+        SUM(unique_whales)    AS day_uw
       FROM signals_hourly
       WHERE bucket >= NOW() - (${`${lookbackDays} days`}::interval)
       GROUP BY day, slot, category
@@ -354,6 +372,8 @@ async function queryDayOfWeekRows(
       SUM(day_losses)  FILTER (WHERE period='recent') AS recent_losses,
       SUM(day_wins)    FILTER (WHERE period='older')  AS older_wins,
       SUM(day_losses)  FILTER (WHERE period='older')  AS older_losses,
+      AVG(day_uw)      FILTER (WHERE period='recent') AS recent_unique_whales,
+      AVG(day_uw)      FILTER (WHERE period='older')  AS older_unique_whales,
       COUNT(*) FILTER (WHERE period='recent')::bigint AS recent_sample_count,
       MIN(day_signals) AS min_count,
       MAX(day_signals) AS max_count,
@@ -427,15 +447,19 @@ export function assemblePattern(
 
     const cell = cells[key]?.[idx];
     if (!cell) continue;
+    const recentUW = num(r.recent_unique_whales);
+    const olderUW  = num(r.older_unique_whales);
     cell.count = recentCount;
     cell.volume = recentVolume;
     cell.pnl = recentPnl;
     cell.winRate = recentWR;
+    cell.uniqueWhales = recentUW;
     cell.delta = {
       count: recentCount - olderCount,
       volume: recentVolume - olderVolume,
       pnl: recentPnl - olderPnl,
       winRate: recentWR !== null && olderWR !== null ? recentWR - olderWR : null,
+      uniqueWhales: recentUW - olderUW,
     };
     // Full-window averages — null-tolerant so a single-half cell still gets
     // a sensible baseline (the half that has data).
@@ -445,11 +469,14 @@ export function assemblePattern(
     const olderVolN    = numOrNull(r.older_volume);
     const recentPnlN   = numOrNull(r.recent_pnl);
     const olderPnlN    = numOrNull(r.older_pnl);
+    const recentUWN    = numOrNull(r.recent_unique_whales);
+    const olderUWN     = numOrNull(r.older_unique_whales);
     cell.full = {
       count: avgOf(recentCountN, olderCountN),
       volume: avgOf(recentVolN, olderVolN),
       pnl: avgOf(recentPnlN, olderPnlN),
       winRate: avgWinRate(recentWR, olderWR),
+      uniqueWhales: avgOf(recentUWN, olderUWN),
     };
     cell.sampleCount = num(r.recent_sample_count);
     cell.min = {

@@ -41,7 +41,7 @@ function avgForMetric(metric: HeatmapMetric, cell: HeatmapCell): number | null {
       case "volume":  return f.volume;
       case "pnl":     return f.pnl;
       case "winrate": return f.winRate;
-      case "whales":  return null; // not aggregated in PATTERN
+      case "whales":  return f.uniqueWhales ?? null;
     }
   }
   return recentForMetric(metric, cell);
