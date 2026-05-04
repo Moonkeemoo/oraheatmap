@@ -32,13 +32,14 @@ const QUEUE_MAX = 3;
 const CONVERGE_WINDOW_MS = 60_000;
 const CONVERGE_MIN_WHALES = 5;
 /** Absolute floors below which a "huge" magnitude tag isn't really
- *  interesting to a trader's eye. Polymarket has many micro-markets
- *  (Bitcoin Up/Down 5-min, etc.) where the L3 P99 is ~$200; a $291 BUY
- *  there is technically top 1% but reads as "BIG BUY $291" which is
- *  laughable copy. The floor is applied AFTER the percentile tag, not
- *  instead of it — both must clear. */
-const PLAQUE_MIN_USD_VOLUME = 1000;
-const PLAQUE_MIN_USD_PNL = 100;
+ *  interesting to a trader's eye. Polymarket Crypto has L1 P99 ≈ $164
+ *  because micro-bet markets (Bitcoin Up/Down 5-min) dominate volume.
+ *  Even after dropping L3 scope, "huge" in Crypto still means $200+.
+ *  A $300 BUY against that backdrop IS in fact a 99th-percentile move
+ *  for the category — copy is the issue, not the threshold. Floor stays
+ *  modest so user actually sees plaques during quiet hours. */
+const PLAQUE_MIN_USD_VOLUME = 300;
+const PLAQUE_MIN_USD_PNL = 50;
 
 export type Plaque = {
   id: number;

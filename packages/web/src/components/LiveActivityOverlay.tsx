@@ -107,9 +107,15 @@ function PlaqueView({ plaque }: { plaque: Plaque }) {
   const amountText = isPnl
     ? `${(plaque.pnlUsd ?? 0) >= 0 ? "+" : ""}${fmtMoneyShort(plaque.pnlUsd ?? 0)}`
     : `${plaque.side === "BUY" ? "+" : "-"}${fmtMoneyShort(plaque.sizeUsd)}`;
+  // "BIG" only on $10k+ — at smaller sizes it reads as inflated copy even
+  // when the trade IS top-1% in scope. "WHALE BUY/SELL" is neutral and
+  // honest for $300–$10k volume tags.
+  const isBig = !isPnl && plaque.sizeUsd >= 10_000;
   const labelText = isPnl
     ? isLoss ? "REALISED LOSS" : "REALISED WIN"
-    : plaque.side === "BUY" ? "BIG BUY" : "BIG SELL";
+    : plaque.side === "BUY"
+      ? isBig ? "BIG BUY" : "WHALE BUY"
+      : isBig ? "BIG SELL" : "WHALE SELL";
 
   const url = marketUrl(plaque.marketSlug);
   const market = plaque.marketQuestion ?? "(unknown market)";
