@@ -4,17 +4,36 @@ import Link from "next/link";
 import { TOKENS } from "@/lib/tokens";
 
 /**
- * Footer for landing + legal pages. Skipped on /app because the heatmap
- * is a fullscreen tool — legal docs are still indexable from the public
- * routes and that's what OAuth providers / regulators check.
+ * Footer for landing, legal pages, and the app shell. Two visual modes:
+ *
+ *  - default: two-row, padded, used on landing + /privacy + /terms.
+ *  - compact: single thin strip — used on /app where every pixel of grid
+ *    real estate matters but legal links still need to be reachable from
+ *    a bookmarked /app entry point.
  */
-export function Footer() {
-  const linkStyle: React.CSSProperties = {
-    color: TOKENS.textSec,
-    textDecoration: "none",
-    fontSize: 12,
-    transition: "color .12s",
-  };
+export function Footer({ compact = false }: { compact?: boolean }) {
+  if (compact) {
+    return (
+      <footer
+        style={{
+          width: "100%",
+          padding: "6px 16px",
+          borderTop: `1px solid ${TOKENS.border}`,
+          background: TOKENS.bg,
+          color: TOKENS.textMuted,
+          fontFamily: TOKENS.font,
+          fontSize: 10,
+          textAlign: "center",
+          boxSizing: "border-box",
+          flexShrink: 0,
+        }}
+      >
+        © {new Date().getFullYear()} oralab ·{" "}
+        <Link href="/privacy" style={compactLink}>Privacy</Link> ·{" "}
+        <Link href="/terms" style={compactLink}>Terms</Link> · Not affiliated with Polymarket
+      </footer>
+    );
+  }
   return (
     <footer
       style={{
@@ -43,12 +62,24 @@ export function Footer() {
           © {new Date().getFullYear()} oralab · Not affiliated with Polymarket.
         </span>
         <nav style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
-          <Link href="/" style={linkStyle}>Home</Link>
-          <Link href="/app" style={linkStyle}>App</Link>
-          <Link href="/privacy" style={linkStyle}>Privacy</Link>
-          <Link href="/terms" style={linkStyle}>Terms</Link>
+          <Link href="/" style={fullLink}>Home</Link>
+          <Link href="/app" style={fullLink}>App</Link>
+          <Link href="/privacy" style={fullLink}>Privacy</Link>
+          <Link href="/terms" style={fullLink}>Terms</Link>
         </nav>
       </div>
     </footer>
   );
 }
+
+const fullLink: React.CSSProperties = {
+  color: TOKENS.textSec,
+  textDecoration: "none",
+  fontSize: 12,
+  transition: "color .12s",
+};
+
+const compactLink: React.CSSProperties = {
+  color: TOKENS.textSec,
+  textDecoration: "none",
+};

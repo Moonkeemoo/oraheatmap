@@ -18,6 +18,7 @@ import type {
   SignalEvent,
 } from "@/lib/types";
 import { Breadcrumb } from "./Breadcrumb";
+import { Footer } from "./Footer";
 import { Grid } from "./Grid";
 import { Header } from "./Header";
 import { HeatmapSkeleton } from "./HeatmapSkeleton";
@@ -405,6 +406,7 @@ export function Heatmap() {
           onWhaleClick={(addr) => setWhaleProfileAddr(addr)}
         />
       )}
+      <Footer compact />
       <WhaleDrawer
         addr={whaleProfileAddr}
         range={range}
