@@ -403,6 +403,7 @@ export function Tooltip({
   onPlaced,
   onWhaleClick,
   drillSubcategory,
+  onUnlock,
 }: {
   cell: HeatmapCell;
   /** All cells of the same row (category) in display order. Used to draw
@@ -438,6 +439,10 @@ export function Tooltip({
   /** Drill subcategory at L2 in PATTERN — when set, the cycle histogram
    *  filters by subcategory column instead of category. NULL at L1. */
   drillSubcategory?: string | null;
+  /** Called when the user clicks anywhere on the locked tooltip's empty
+   *  area (not on an interactive child). Lets users dismiss the lock
+   *  without having to find the cell underneath the tooltip. */
+  onUnlock?: () => void;
 }) {
   const meta = categoryMeta(category);
   const isPattern = mode === "pattern";
@@ -604,11 +609,23 @@ export function Tooltip({
         // Hover tooltip stays pointer-transparent so it doesn't hijack the
         // mouse during cell-to-cell comparison.
         pointerEvents: locked ? "auto" : "none",
+        cursor: locked ? "pointer" : "default",
         zIndex: locked ? 31 : 30,
         animation: "tipIn .12s ease-out",
         boxSizing: "border-box",
       }}
-    >
+      onClick={
+        locked && onUnlock
+          ? (e) => {
+              // Don't unlock when the user clicked an interactive descendant
+              // (whale row, market link, sign-in CTA, etc.) — those have
+              // their own behaviours and shouldn't dismiss the tooltip.
+              const target = e.target as HTMLElement | null;
+              if (target?.closest("button, a, input, textarea, select")) return;
+              onUnlock();
+            }
+          : undefined
+      }>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
         <span
           style={{
