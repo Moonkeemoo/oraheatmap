@@ -102,12 +102,18 @@ function shortenMarketLabel(label: string, subcategoryLabel: string | null): str
       `${city} ${hl.toLowerCase() === "highest" ? "max" : "min"} ${val} · ${date}`,
   );
 
-  // 7b — tennis match-ups: "{Tournament}, {Round}: {P1} vs {P2}" → "{P1} vs {P2}"
-  // ATP/WTA event titles are very long and almost always repeat the same
-  // tournament prefix across every row in a drill view. The breadcrumb
-  // already shows what tournament we're in.
+  // 7b — generic event prefix strip: "{long-preamble}: {actual-content}"
+  // → "{actual-content}". Matches any "Tournament, Round: P1 vs P2",
+  // "MLB World Series 2026: Yankees in 7 games", "ECB Decision Sept: 25bp
+  // hike", etc. — the part before ": " is almost always tournament/event
+  // context already shown by the breadcrumb at L3.
+  //
+  // Safety: requires literal ": " (colon + whitespace), so it won't touch
+  // time formats like "3:15PM" (rule 6's output) or fractional-odds
+  // notation. Runs AFTER all the targeted shortenings (rules 5/6/7) so
+  // those still get their bespoke treatment first.
   out = out.replace(
-    /^[^:]+:\s*(.+\s+vs\s+.+)$/i,
+    /^[^:]{4,}:\s+(.+)$/,
     "$1",
   );
 
