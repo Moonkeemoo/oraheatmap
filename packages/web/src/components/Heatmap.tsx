@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
 import { useHeatmap } from "@/hooks/useHeatmap";
 import { useSse } from "@/hooks/useSse";
 import { applySignal } from "@/lib/heatmap-apply";
@@ -17,6 +18,7 @@ import type {
 import { Breadcrumb } from "./Breadcrumb";
 import { Grid } from "./Grid";
 import { Header } from "./Header";
+import { LoginModal } from "./LoginModal";
 import { StatsBar } from "./StatsBar";
 import { Tooltip, type TooltipAnchor, type TooltipRect } from "./Tooltip";
 import { WhaleDrawer } from "./WhaleDrawer";
@@ -76,6 +78,9 @@ export function Heatmap() {
   const [metric, setMetric] = useState<HeatmapMetric>("signals");
   const [drillCategory, setDrillCategory] = useState<Category | null>(null);
   const [drillSubcategory, setDrillSubcategory] = useState<string | null>(null);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const { status: authStatus } = useSession();
+  const isAuthed = authStatus === "authenticated";
   const [hover, setHover] = useState<HoverState | null>(null);
   const [locked, setLocked] = useState<HoverState | null>(null);
   const [lockedRect, setLockedRect] = useState<TooltipRect | null>(null);
@@ -206,6 +211,7 @@ export function Heatmap() {
         patternUnlocked={patternUnlocked}
         daysOfData={daysOfData}
         lowSample={lowSample}
+        onRequestLogin={() => setLoginOpen(true)}
       />
 
       <div
@@ -265,11 +271,12 @@ export function Heatmap() {
               }}
               onRowClick={
                 !displayData.drillCategory
-                  ? // L1 → click category, drill into it
-                    (key) => setDrillCategory(key as Category)
+                  ? // L1 → click category, drill into it (gated)
+                    (key) =>
+                      isAuthed ? setDrillCategory(key as Category) : setLoginOpen(true)
                   : !displayData.drillSubcategory
-                    ? // L2 → click subcategory slug, drill into it
-                      (key) => setDrillSubcategory(key)
+                    ? // L2 → click subcategory slug, drill into it (gated)
+                      (key) => (isAuthed ? setDrillSubcategory(key) : setLoginOpen(true))
                     : // L3 → no further drill
                       undefined
               }
@@ -325,6 +332,7 @@ export function Heatmap() {
         range={range}
         onClose={() => setWhaleProfileAddr(null)}
       />
+      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
     </div>
   );
 }

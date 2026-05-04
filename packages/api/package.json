@@ -15,6 +15,7 @@
     "@polymarket/real-time-data-client": "^1.4.0",
     "drizzle-orm": "^0.36.0",
     "elysia": "^1.2.0",
+    "jose": "^6.2.3",
     "postgres": "^3.4.0",
     "ws": "^8.18.0"
   },

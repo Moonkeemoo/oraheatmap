@@ -21,6 +21,7 @@ import type { Ingestor } from "./ingestor";
 import { log } from "./log";
 import { type PatternKind, queryPattern } from "./pattern-query";
 import type { SignalHub } from "./signal-hub";
+import { readAuthFromHeaders } from "./auth-jwt";
 import { SUBCATEGORY_LABELS, subcategoriesOf } from "./subcategorize";
 import type { Signal } from "./types";
 import { whaleAlias, whaleAliasInfo, whaleColor } from "./whale-display";
@@ -156,10 +157,17 @@ export function createApi(deps: ApiDeps) {
       cors({
         origin: true,
         methods: ["GET", "OPTIONS"],
-        // SSE clients sometimes need credentials, but we keep this loose for MVP
-        credentials: false,
+        // Credentials = true so the Auth.js session cookie set by the web
+        // app on the same apex is sent on cross-origin /api/* requests.
+        // Browsers refuse `*` Access-Control-Allow-Origin alongside
+        // credentials, so `origin: true` reflects the request origin.
+        credentials: true,
       }),
     )
+    .get("/api/me", async ({ request }) => {
+      const user = await readAuthFromHeaders(request.headers);
+      return { user };
+    })
     .get("/api/health", async () => {
       let dbOk = false;
       try {

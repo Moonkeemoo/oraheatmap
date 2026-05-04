@@ -37,7 +37,7 @@ export async function fetchHeatmap(args: {
   }
   const res = await fetch(`${apiBase()}/api/heatmap?${params.toString()}`, {
     cache: "no-store",
-    credentials: "omit",
+    credentials: "include",
   });
   if (!res.ok) {
     throw new Error(`heatmap fetch failed: ${res.status}`);
@@ -56,7 +56,7 @@ export async function fetchWhaleProfile(args: {
   const params = new URLSearchParams({ addr: args.addr, range: args.range });
   const res = await fetch(`${apiBase()}/api/whale?${params.toString()}`, {
     cache: "no-store",
-    credentials: "omit",
+    credentials: "include",
   });
   if (!res.ok) {
     throw new Error(`whale profile fetch failed: ${res.status}`);

@@ -1,3 +1,4 @@
+import { useSession, signOut } from "next-auth/react";
 import { TOKENS } from "@/lib/tokens";
 import type { HeatmapMetric, LiveRange, Mode, PatternKind } from "@/lib/types";
 import { LiveDot } from "./LiveDot";
@@ -96,15 +97,18 @@ function ModeToggle({
   mode,
   setMode,
   daysOfData,
+  locked,
 }: {
   mode: Mode;
   setMode: (m: Mode) => void;
   daysOfData: number;
+  locked?: boolean;
 }) {
   // PATTERN is always clickable; we surface low-sample warning in the title
   // attribute so a curious user gets the context on hover.
-  const patternTitle =
-    daysOfData < 7
+  const patternTitle = locked
+    ? "Sign in to switch modes"
+    : daysOfData < 7
       ? `Cyclical pattern view (avg over lookback) — heads-up: only ${daysOfData.toFixed(1)} days of data so far, averages will stabilize after ≥7 days`
       : "Cyclical pattern view (avg over lookback)";
 
@@ -130,6 +134,7 @@ function ModeToggle({
         }}
       >
         {label}
+        {locked && !active && <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>}
       </button>
     );
   };
@@ -171,6 +176,7 @@ export function Header({
   lookbackDays,
   daysOfData,
   lowSample,
+  onRequestLogin,
 }: {
   mode: Mode;
   setMode: (m: Mode) => void;
@@ -186,7 +192,18 @@ export function Header({
   patternUnlocked?: boolean; // accepted for compat; unused (PATTERN always on)
   daysOfData: number;
   lowSample: boolean;
+  /** Open the login modal — used to gate range/mode/kind toggles. */
+  onRequestLogin: () => void;
 }) {
+  const { data: session, status } = useSession();
+  const isAuthed = status === "authenticated" && !!session?.user;
+  // Wrap a control's onClick — when not authed, intercept and open login instead.
+  const gate = <T extends unknown[]>(fn: (...args: T) => void): ((...args: T) => void) => {
+    return (...args: T) => {
+      if (!isAuthed) onRequestLogin();
+      else fn(...args);
+    };
+  };
   // Keep both subtitles roughly the same length so the right-side controls
   // don't wrap to a new line when the user toggles modes (was: PATTERN
   // subtitle was 4× longer than LIVE → header height jumped).
@@ -274,22 +291,39 @@ export function Header({
         <ScaleLegend metric={metric} />
         <div style={{ width: 1, height: 26, background: TOKENS.border }} />
 
-        <ModeToggle mode={mode} setMode={setMode} daysOfData={daysOfData} />
+        <ModeToggle
+          mode={mode}
+          setMode={gate(setMode)}
+          daysOfData={daysOfData}
+          locked={!isAuthed}
+        />
         <div style={{ width: 1, height: 26, background: TOKENS.border }} />
 
         {isLive ? (
           <div style={{ display: "flex", gap: 5 }}>
             {LIVE_RANGES.map((r) => (
-              <Pill key={r} active={range === r} onClick={() => setRange(r)}>
+              <Pill
+                key={r}
+                active={range === r}
+                onClick={() => (isAuthed ? setRange(r) : onRequestLogin())}
+                title={isAuthed ? undefined : "Sign in to switch ranges"}
+              >
                 {r}
+                {!isAuthed && range !== r && <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>}
               </Pill>
             ))}
           </div>
         ) : (
           <div style={{ display: "flex", gap: 5 }}>
             {PATTERN_KINDS.map((p) => (
-              <Pill key={p.kind} active={patternKind === p.kind} onClick={() => setPatternKind(p.kind)}>
+              <Pill
+                key={p.kind}
+                active={patternKind === p.kind}
+                onClick={() => (isAuthed ? setPatternKind(p.kind) : onRequestLogin())}
+                title={isAuthed ? undefined : "Sign in to switch pattern"}
+              >
                 {p.label}
+                {!isAuthed && patternKind !== p.kind && <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>}
               </Pill>
             ))}
           </div>
@@ -313,7 +347,79 @@ export function Header({
             </MetricTab>
           ))}
         </div>
+
+        <div style={{ width: 1, height: 26, background: TOKENS.border }} />
+        <UserChip
+          name={(session?.user?.name as string) || null}
+          authed={isAuthed}
+          onLogin={onRequestLogin}
+          onLogout={() => signOut()}
+        />
       </div>
     </div>
+  );
+}
+
+function UserChip({
+  name,
+  authed,
+  onLogin,
+  onLogout,
+}: {
+  name: string | null;
+  authed: boolean;
+  onLogin: () => void;
+  onLogout: () => void;
+}) {
+  if (!authed) {
+    return (
+      <button
+        onClick={onLogin}
+        style={{
+          background: TOKENS.accent,
+          border: "none",
+          color: "#1a1410",
+          fontFamily: TOKENS.font,
+          fontSize: 11,
+          fontWeight: 800,
+          letterSpacing: 0.5,
+          textTransform: "uppercase",
+          padding: "7px 14px",
+          borderRadius: 6,
+          cursor: "pointer",
+          transition: "filter .12s",
+        }}
+        onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.filter = "brightness(1.15)")}
+        onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.filter = "none")}
+      >
+        Sign in
+      </button>
+    );
+  }
+  // Authed: show short label + click → log out (one click — KISS for now;
+  // will become a full menu when we add profile pages).
+  const display = name && name.startsWith("0x") ? `${name.slice(0, 6)}…${name.slice(-4)}` : (name ?? "user");
+  return (
+    <button
+      onClick={onLogout}
+      title={`Signed in as ${name ?? "user"} — click to sign out`}
+      style={{
+        background: TOKENS.panel,
+        border: `1px solid ${TOKENS.borderHi}`,
+        color: TOKENS.text,
+        fontFamily: TOKENS.font,
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: 0.4,
+        padding: "6px 12px",
+        borderRadius: 6,
+        cursor: "pointer",
+        transition: "filter .12s",
+      }}
+      onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.filter = "brightness(1.2)")}
+      onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.filter = "none")}
+    >
+      {display} ✕
+    </button>
   );
 }
