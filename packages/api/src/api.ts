@@ -299,7 +299,9 @@ export function createApi(deps: ApiDeps) {
 
         if (mode === "pattern") {
           const kind: PatternKind = query.kind ?? "hour-of-day";
-          const lookbackDays = query.lookbackDays ?? 30;
+          // HOUR cycle = 1 day → 30 cycles by default (~30 days).
+          // DOW  cycle = 1 week → 12 cycles by default (~12 weeks = 84 days).
+          const lookbackDays = query.lookbackDays ?? (kind === "day-of-week" ? 84 : 30);
           const rowKeys = isDrill ? drillRules.map((r) => r.slug) : undefined;
           const pattern = await queryPattern(deps.sql, kind, lookbackDays, {
             drillCategory: isDrill ? drillCategory : null,
@@ -528,7 +530,7 @@ export function createApi(deps: ApiDeps) {
           kind: t.Optional(
             t.Union([t.Literal("hour-of-day"), t.Literal("day-of-week")]),
           ),
-          lookbackDays: t.Optional(t.Numeric({ minimum: 1, maximum: 90 })),
+          lookbackDays: t.Optional(t.Numeric({ minimum: 1, maximum: 365 })),
           metric: t.Optional(
             t.Union([
               t.Literal("signals"),

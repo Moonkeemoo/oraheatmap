@@ -928,7 +928,7 @@ export function Tooltip({
               justifyContent: "space-between",
             }}
           >
-            <span>Past cycles · {patternKind === "hour-of-day" ? "30 days" : "26 weeks"}</span>
+            <span>Past cycles · {patternKind === "hour-of-day" ? "30 days" : "12 weeks"}</span>
             <span style={{ color: TOKENS.textSec }}>{metric === "signals" ? "trades" : metric}</span>
           </div>
           {cycles.loading && (

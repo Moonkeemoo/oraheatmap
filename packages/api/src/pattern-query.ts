@@ -123,19 +123,25 @@ const DOW_DISPLAY_ORDER: ReadonlyArray<number> = [1, 2, 3, 4, 5, 6, 0];
 type AggRow = {
   slot: string | number;          // hour 0-23 OR dow 0-6
   category: string;
-  recent_count: string | number | null;
-  older_count: string | number | null;
-  recent_volume: string | number | null;
-  older_volume: string | number | null;
-  recent_pnl: string | number | null;
-  older_pnl: string | number | null;
-  recent_wins: string | number | null;
-  recent_losses: string | number | null;
-  older_wins: string | number | null;
-  older_losses: string | number | null;
-  recent_unique_whales: string | number | null;
-  older_unique_whales: string | number | null;
-  recent_sample_count: string | number;
+  // "Current" = most recent cycle's value at this slot. For HOUR pattern
+  // a cycle = 1 day, so this is "today's" 2-hour bucket. For DOW a cycle
+  // = 1 week, so this is "this week's" weekday total. Updates the static
+  // table cell with the freshest observation.
+  current_count: string | number | null;
+  current_volume: string | number | null;
+  current_pnl: string | number | null;
+  current_wins: string | number | null;
+  current_losses: string | number | null;
+  current_unique_whales: string | number | null;
+  // Average across ALL cycles in the lookback window (30 cycles for HOUR
+  // = 30 days, 12 cycles for DOW = 12 weeks).
+  avg_count: string | number | null;
+  avg_volume: string | number | null;
+  avg_pnl: string | number | null;
+  avg_unique_whales: string | number | null;
+  total_wins: string | number | null;
+  total_losses: string | number | null;
+  sample_count: string | number;
   min_count: string | number | null;
   max_count: string | number | null;
   min_volume: string | number | null;
@@ -151,11 +157,8 @@ async function queryHourOfDayRows(
   lookbackDays: number,
   drillCategory: Category | null,
 ): Promise<ReadonlyArray<AggRow>> {
-  const half = lookbackDays / 2;
   // Top level reads from the hourly continuous aggregate (cheap). Drill mode
-  // can't — the agg doesn't carry subcategory — so we scan raw signals
-  // directly. For 30-day default that's heavier (~1-2s for busy categories)
-  // but acceptable for a click action.
+  // can't — the agg doesn't carry subcategory — so we scan raw signals.
   if (drillCategory !== null) {
     return sql<AggRow[]>`
       WITH per_day_slot AS (
@@ -175,43 +178,33 @@ async function queryHourOfDayRows(
           AND subcategory IS NOT NULL
         GROUP BY day, slot, subcategory
       ),
-      split AS (
-        SELECT
-          slot, category,
-          slot_signals AS signal_count,
-          slot_volume  AS buy_volume_usd,
-          slot_pnl     AS realized_pnl_sum,
-          slot_wins    AS win_count,
-          slot_losses  AS loss_count,
-          slot_uw      AS unique_whales,
-          CASE
-            WHEN day >= NOW() - (${`${half} days`}::interval) THEN 'recent'
-            ELSE 'older'
-          END AS period
+      ranked AS (
+        SELECT *,
+          ROW_NUMBER() OVER (PARTITION BY slot, category ORDER BY day DESC) AS rn
         FROM per_day_slot
       )
       SELECT
         slot, category,
-        AVG(signal_count)    FILTER (WHERE period='recent') AS recent_count,
-        AVG(signal_count)    FILTER (WHERE period='older')  AS older_count,
-        AVG(buy_volume_usd)  FILTER (WHERE period='recent') AS recent_volume,
-        AVG(buy_volume_usd)  FILTER (WHERE period='older')  AS older_volume,
-        AVG(realized_pnl_sum) FILTER (WHERE period='recent') AS recent_pnl,
-        AVG(realized_pnl_sum) FILTER (WHERE period='older')  AS older_pnl,
-        SUM(win_count)  FILTER (WHERE period='recent') AS recent_wins,
-        SUM(loss_count) FILTER (WHERE period='recent') AS recent_losses,
-        SUM(win_count)  FILTER (WHERE period='older')  AS older_wins,
-        SUM(loss_count) FILTER (WHERE period='older')  AS older_losses,
-        AVG(unique_whales) FILTER (WHERE period='recent') AS recent_unique_whales,
-        AVG(unique_whales) FILTER (WHERE period='older')  AS older_unique_whales,
-        COUNT(*) FILTER (WHERE period='recent')::bigint AS recent_sample_count,
-        MIN(signal_count)    AS min_count,
-        MAX(signal_count)    AS max_count,
-        MIN(buy_volume_usd)  AS min_volume,
-        MAX(buy_volume_usd)  AS max_volume,
-        MIN(realized_pnl_sum) AS min_pnl,
-        MAX(realized_pnl_sum) AS max_pnl
-      FROM split
+        MAX(slot_signals)::numeric FILTER (WHERE rn = 1) AS current_count,
+        MAX(slot_volume)::numeric  FILTER (WHERE rn = 1) AS current_volume,
+        MAX(slot_pnl)::numeric     FILTER (WHERE rn = 1) AS current_pnl,
+        MAX(slot_wins)::numeric    FILTER (WHERE rn = 1) AS current_wins,
+        MAX(slot_losses)::numeric  FILTER (WHERE rn = 1) AS current_losses,
+        MAX(slot_uw)::numeric      FILTER (WHERE rn = 1) AS current_unique_whales,
+        AVG(slot_signals) AS avg_count,
+        AVG(slot_volume)  AS avg_volume,
+        AVG(slot_pnl)     AS avg_pnl,
+        AVG(slot_uw)      AS avg_unique_whales,
+        SUM(slot_wins)    AS total_wins,
+        SUM(slot_losses)  AS total_losses,
+        COUNT(*)::bigint  AS sample_count,
+        MIN(slot_signals) AS min_count,
+        MAX(slot_signals) AS max_count,
+        MIN(slot_volume)  AS min_volume,
+        MAX(slot_volume)  AS max_volume,
+        MIN(slot_pnl)     AS min_pnl,
+        MAX(slot_pnl)     AS max_pnl
+      FROM ranked
       GROUP BY slot, category
       ORDER BY slot
     `;
@@ -232,43 +225,33 @@ async function queryHourOfDayRows(
       WHERE bucket >= NOW() - (${`${lookbackDays} days`}::interval)
       GROUP BY day, slot, category
     ),
-    split AS (
-      SELECT
-        slot, category,
-        slot_signals AS signal_count,
-        slot_volume  AS buy_volume_usd,
-        slot_pnl     AS realized_pnl_sum,
-        slot_wins    AS win_count,
-        slot_losses  AS loss_count,
-        slot_uw      AS unique_whales,
-        CASE
-          WHEN day >= NOW() - (${`${half} days`}::interval) THEN 'recent'
-          ELSE 'older'
-        END AS period
+    ranked AS (
+      SELECT *,
+        ROW_NUMBER() OVER (PARTITION BY slot, category ORDER BY day DESC) AS rn
       FROM per_day_slot
     )
     SELECT
       slot, category,
-      AVG(signal_count)    FILTER (WHERE period='recent') AS recent_count,
-      AVG(signal_count)    FILTER (WHERE period='older')  AS older_count,
-      AVG(buy_volume_usd)  FILTER (WHERE period='recent') AS recent_volume,
-      AVG(buy_volume_usd)  FILTER (WHERE period='older')  AS older_volume,
-      AVG(realized_pnl_sum) FILTER (WHERE period='recent') AS recent_pnl,
-      AVG(realized_pnl_sum) FILTER (WHERE period='older')  AS older_pnl,
-      SUM(win_count)  FILTER (WHERE period='recent') AS recent_wins,
-      SUM(loss_count) FILTER (WHERE period='recent') AS recent_losses,
-      SUM(win_count)  FILTER (WHERE period='older')  AS older_wins,
-      SUM(loss_count) FILTER (WHERE period='older')  AS older_losses,
-      AVG(unique_whales) FILTER (WHERE period='recent') AS recent_unique_whales,
-      AVG(unique_whales) FILTER (WHERE period='older')  AS older_unique_whales,
-      COUNT(*) FILTER (WHERE period='recent')::bigint AS recent_sample_count,
-      MIN(signal_count)    AS min_count,
-      MAX(signal_count)    AS max_count,
-      MIN(buy_volume_usd)  AS min_volume,
-      MAX(buy_volume_usd)  AS max_volume,
-      MIN(realized_pnl_sum) AS min_pnl,
-      MAX(realized_pnl_sum) AS max_pnl
-    FROM split
+      MAX(slot_signals)::numeric FILTER (WHERE rn = 1) AS current_count,
+      MAX(slot_volume)::numeric  FILTER (WHERE rn = 1) AS current_volume,
+      MAX(slot_pnl)::numeric     FILTER (WHERE rn = 1) AS current_pnl,
+      MAX(slot_wins)::numeric    FILTER (WHERE rn = 1) AS current_wins,
+      MAX(slot_losses)::numeric  FILTER (WHERE rn = 1) AS current_losses,
+      MAX(slot_uw)::numeric      FILTER (WHERE rn = 1) AS current_unique_whales,
+      AVG(slot_signals) AS avg_count,
+      AVG(slot_volume)  AS avg_volume,
+      AVG(slot_pnl)     AS avg_pnl,
+      AVG(slot_uw)      AS avg_unique_whales,
+      SUM(slot_wins)    AS total_wins,
+      SUM(slot_losses)  AS total_losses,
+      COUNT(*)::bigint  AS sample_count,
+      MIN(slot_signals) AS min_count,
+      MAX(slot_signals) AS max_count,
+      MIN(slot_volume)  AS min_volume,
+      MAX(slot_volume)  AS max_volume,
+      MIN(slot_pnl)     AS min_pnl,
+      MAX(slot_pnl)     AS max_pnl
+    FROM ranked
     GROUP BY slot, category
     ORDER BY slot
   `;
@@ -280,8 +263,9 @@ async function queryDayOfWeekRows(
   lookbackDays: number,
   drillCategory: Category | null,
 ): Promise<ReadonlyArray<AggRow>> {
-  const half = lookbackDays / 2;
-  // Same drill-vs-aggregate split as queryHourOfDayRows.
+  // Same drill-vs-aggregate split as queryHourOfDayRows. For DOW each
+  // "cycle" = a week, so the most-recent-day-with-this-dow logic gives
+  // "this week's Monday" / "this week's Tuesday" / etc.
   if (drillCategory !== null) {
     return sql<AggRow[]>`
       WITH per_day AS (
@@ -301,36 +285,33 @@ async function queryDayOfWeekRows(
           AND subcategory IS NOT NULL
         GROUP BY day, slot, subcategory
       ),
-      split AS (
+      ranked AS (
         SELECT *,
-          CASE
-            WHEN day >= NOW() - (${`${half} days`}::interval) THEN 'recent'
-            ELSE 'older'
-          END AS period
+          ROW_NUMBER() OVER (PARTITION BY slot, category ORDER BY day DESC) AS rn
         FROM per_day
       )
       SELECT
         slot, category,
-        AVG(day_signals) FILTER (WHERE period='recent') AS recent_count,
-        AVG(day_signals) FILTER (WHERE period='older')  AS older_count,
-        AVG(day_volume)  FILTER (WHERE period='recent') AS recent_volume,
-        AVG(day_volume)  FILTER (WHERE period='older')  AS older_volume,
-        AVG(day_pnl)     FILTER (WHERE period='recent') AS recent_pnl,
-        AVG(day_pnl)     FILTER (WHERE period='older')  AS older_pnl,
-        SUM(day_wins)    FILTER (WHERE period='recent') AS recent_wins,
-        SUM(day_losses)  FILTER (WHERE period='recent') AS recent_losses,
-        SUM(day_wins)    FILTER (WHERE period='older')  AS older_wins,
-        SUM(day_losses)  FILTER (WHERE period='older')  AS older_losses,
-        AVG(day_uw)      FILTER (WHERE period='recent') AS recent_unique_whales,
-        AVG(day_uw)      FILTER (WHERE period='older')  AS older_unique_whales,
-        COUNT(*) FILTER (WHERE period='recent')::bigint AS recent_sample_count,
+        MAX(day_signals)::numeric FILTER (WHERE rn = 1) AS current_count,
+        MAX(day_volume)::numeric  FILTER (WHERE rn = 1) AS current_volume,
+        MAX(day_pnl)::numeric     FILTER (WHERE rn = 1) AS current_pnl,
+        MAX(day_wins)::numeric    FILTER (WHERE rn = 1) AS current_wins,
+        MAX(day_losses)::numeric  FILTER (WHERE rn = 1) AS current_losses,
+        MAX(day_uw)::numeric      FILTER (WHERE rn = 1) AS current_unique_whales,
+        AVG(day_signals) AS avg_count,
+        AVG(day_volume)  AS avg_volume,
+        AVG(day_pnl)     AS avg_pnl,
+        AVG(day_uw)      AS avg_unique_whales,
+        SUM(day_wins)    AS total_wins,
+        SUM(day_losses)  AS total_losses,
+        COUNT(*)::bigint AS sample_count,
         MIN(day_signals) AS min_count,
         MAX(day_signals) AS max_count,
         MIN(day_volume)  AS min_volume,
         MAX(day_volume)  AS max_volume,
         MIN(day_pnl)     AS min_pnl,
         MAX(day_pnl)     AS max_pnl
-      FROM split
+      FROM ranked
       GROUP BY slot, category
       ORDER BY slot
     `;
@@ -352,36 +333,33 @@ async function queryDayOfWeekRows(
       WHERE bucket >= NOW() - (${`${lookbackDays} days`}::interval)
       GROUP BY day, slot, category
     ),
-    split AS (
+    ranked AS (
       SELECT *,
-        CASE
-          WHEN day >= NOW() - (${`${half} days`}::interval) THEN 'recent'
-          ELSE 'older'
-        END AS period
+        ROW_NUMBER() OVER (PARTITION BY slot, category ORDER BY day DESC) AS rn
       FROM per_day
     )
     SELECT
       slot, category,
-      AVG(day_signals) FILTER (WHERE period='recent') AS recent_count,
-      AVG(day_signals) FILTER (WHERE period='older')  AS older_count,
-      AVG(day_volume)  FILTER (WHERE period='recent') AS recent_volume,
-      AVG(day_volume)  FILTER (WHERE period='older')  AS older_volume,
-      AVG(day_pnl)     FILTER (WHERE period='recent') AS recent_pnl,
-      AVG(day_pnl)     FILTER (WHERE period='older')  AS older_pnl,
-      SUM(day_wins)    FILTER (WHERE period='recent') AS recent_wins,
-      SUM(day_losses)  FILTER (WHERE period='recent') AS recent_losses,
-      SUM(day_wins)    FILTER (WHERE period='older')  AS older_wins,
-      SUM(day_losses)  FILTER (WHERE period='older')  AS older_losses,
-      AVG(day_uw)      FILTER (WHERE period='recent') AS recent_unique_whales,
-      AVG(day_uw)      FILTER (WHERE period='older')  AS older_unique_whales,
-      COUNT(*) FILTER (WHERE period='recent')::bigint AS recent_sample_count,
+      MAX(day_signals)::numeric FILTER (WHERE rn = 1) AS current_count,
+      MAX(day_volume)::numeric  FILTER (WHERE rn = 1) AS current_volume,
+      MAX(day_pnl)::numeric     FILTER (WHERE rn = 1) AS current_pnl,
+      MAX(day_wins)::numeric    FILTER (WHERE rn = 1) AS current_wins,
+      MAX(day_losses)::numeric  FILTER (WHERE rn = 1) AS current_losses,
+      MAX(day_uw)::numeric      FILTER (WHERE rn = 1) AS current_unique_whales,
+      AVG(day_signals) AS avg_count,
+      AVG(day_volume)  AS avg_volume,
+      AVG(day_pnl)     AS avg_pnl,
+      AVG(day_uw)      AS avg_unique_whales,
+      SUM(day_wins)    AS total_wins,
+      SUM(day_losses)  AS total_losses,
+      COUNT(*)::bigint AS sample_count,
       MIN(day_signals) AS min_count,
       MAX(day_signals) AS max_count,
       MIN(day_volume)  AS min_volume,
       MAX(day_volume)  AS max_volume,
       MIN(day_pnl)     AS min_pnl,
       MAX(day_pnl)     AS max_pnl
-    FROM split
+    FROM ranked
     GROUP BY slot, category
     ORDER BY slot
   `;
@@ -436,49 +414,46 @@ export function assemblePattern(
     const idx = slotIndex.get(slot);
     if (idx === undefined) continue;
 
-    const recentCount = num(r.recent_count);
-    const olderCount = num(r.older_count);
-    const recentVolume = num(r.recent_volume);
-    const olderVolume = num(r.older_volume);
-    const recentPnl = num(r.recent_pnl);
-    const olderPnl = num(r.older_pnl);
-    const recentWR = winRateOf(num(r.recent_wins), num(r.recent_losses));
-    const olderWR = winRateOf(num(r.older_wins), num(r.older_losses));
+    // CURRENT cycle = most recent slot occurrence (today for HOUR, this
+    // week for DOW). Cell shows this as the primary value — the static
+    // table refreshes "this slot" with the freshest data as the cycle
+    // progresses (today's 16:00 replaces yesterday's once data lands).
+    const currentCount  = num(r.current_count);
+    const currentVolume = num(r.current_volume);
+    const currentPnl    = num(r.current_pnl);
+    const currentWR     = winRateOf(num(r.current_wins), num(r.current_losses));
+    const currentUW     = num(r.current_unique_whales);
+
+    // AVG across all cycles in the lookback window (30 cycles for HOUR,
+    // 12 cycles for DOW). Shown in tooltip parens as the historical baseline.
+    const avgCount  = num(r.avg_count);
+    const avgVolume = num(r.avg_volume);
+    const avgPnl    = num(r.avg_pnl);
+    const avgUW     = num(r.avg_unique_whales);
+    const avgWR     = winRateOf(num(r.total_wins), num(r.total_losses));
 
     const cell = cells[key]?.[idx];
     if (!cell) continue;
-    const recentUW = num(r.recent_unique_whales);
-    const olderUW  = num(r.older_unique_whales);
-    cell.count = recentCount;
-    cell.volume = recentVolume;
-    cell.pnl = recentPnl;
-    cell.winRate = recentWR;
-    cell.uniqueWhales = recentUW;
+    cell.count        = currentCount;
+    cell.volume       = currentVolume;
+    cell.pnl          = currentPnl;
+    cell.winRate      = currentWR;
+    cell.uniqueWhales = currentUW;
     cell.delta = {
-      count: recentCount - olderCount,
-      volume: recentVolume - olderVolume,
-      pnl: recentPnl - olderPnl,
-      winRate: recentWR !== null && olderWR !== null ? recentWR - olderWR : null,
-      uniqueWhales: recentUW - olderUW,
+      count: currentCount - avgCount,
+      volume: currentVolume - avgVolume,
+      pnl: currentPnl - avgPnl,
+      winRate: currentWR !== null && avgWR !== null ? currentWR - avgWR : null,
+      uniqueWhales: currentUW - avgUW,
     };
-    // Full-window averages — null-tolerant so a single-half cell still gets
-    // a sensible baseline (the half that has data).
-    const recentCountN = numOrNull(r.recent_count);
-    const olderCountN  = numOrNull(r.older_count);
-    const recentVolN   = numOrNull(r.recent_volume);
-    const olderVolN    = numOrNull(r.older_volume);
-    const recentPnlN   = numOrNull(r.recent_pnl);
-    const olderPnlN    = numOrNull(r.older_pnl);
-    const recentUWN    = numOrNull(r.recent_unique_whales);
-    const olderUWN     = numOrNull(r.older_unique_whales);
     cell.full = {
-      count: avgOf(recentCountN, olderCountN),
-      volume: avgOf(recentVolN, olderVolN),
-      pnl: avgOf(recentPnlN, olderPnlN),
-      winRate: avgWinRate(recentWR, olderWR),
-      uniqueWhales: avgOf(recentUWN, olderUWN),
+      count: avgCount,
+      volume: avgVolume,
+      pnl: avgPnl,
+      winRate: avgWR,
+      uniqueWhales: avgUW,
     };
-    cell.sampleCount = num(r.recent_sample_count);
+    cell.sampleCount = num(r.sample_count);
     cell.min = {
       count: num(r.min_count),
       volume: num(r.min_volume),
@@ -605,8 +580,8 @@ export async function queryCellCycles(
     });
   }
 
-  // day-of-week → per-week samples
-  const cycles = args.cycles ?? 26;
+  // day-of-week → per-week samples (12 cycles = ~3 months)
+  const cycles = args.cycles ?? 12;
   const lookbackInterval = `${cycles * 7} days`;
   const rows = await sql<Array<{
     cycle: string; count: string | number;
