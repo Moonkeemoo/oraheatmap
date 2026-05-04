@@ -162,6 +162,11 @@ export function createApi(deps: ApiDeps) {
         // Browsers refuse `*` Access-Control-Allow-Origin alongside
         // credentials, so `origin: true` reflects the request origin.
         credentials: true,
+        // Be explicit: without this the middleware sometimes echoed
+        // "undefined" into Access-Control-Allow-Headers when the request
+        // didn't carry Access-Control-Request-Headers, which strict browsers
+        // reject as a preflight failure ("Failed to fetch" in the console).
+        allowedHeaders: ["content-type", "cookie", "authorization"],
       }),
     )
     .get("/api/me", async ({ request }) => {
