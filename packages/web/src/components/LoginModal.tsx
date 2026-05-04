@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
 import { SiweMessage } from "siwe";
 import { TOKENS } from "@/lib/tokens";
@@ -179,13 +179,11 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
             </ProviderButton>
           )}
           {has("telegram") && (
-            <ProviderButton
-              onClick={() => setError("Telegram login: open the widget — coming soon.")}
-              disabled={busy !== null}
-              loading={busy === "telegram"}
-            >
-              Continue with Telegram
-            </ProviderButton>
+            <TelegramLoginButton
+              onError={(msg) => setError(msg)}
+              onSuccess={onClose}
+              onBusy={(b) => setBusy(b ? "telegram" : null)}
+            />
           )}
           {has("resend") && (
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
@@ -220,6 +218,83 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
         )}
       </div>
     </>
+  );
+}
+
+/** Embeds the official Telegram Login Widget — when the user authorizes via
+ *  Telegram, the widget calls our global callback with the signed payload,
+ *  which we forward to Auth.js's "telegram" Credentials provider. The provider
+ *  re-verifies the HMAC server-side using TG_LOGIN_BOT_TOKEN before issuing
+ *  the session cookie. */
+function TelegramLoginButton({
+  onError,
+  onSuccess,
+  onBusy,
+}: {
+  onError: (msg: string) => void;
+  onSuccess: () => void;
+  onBusy: (busy: boolean) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const botUsername = process.env["NEXT_PUBLIC_TG_LOGIN_BOT_USERNAME"] ?? "";
+
+  useEffect(() => {
+    if (!botUsername) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Global callback the widget will invoke. Defined fresh each mount so
+    // the closure captures current props.
+    const cbName = "__tgLoginCallback";
+    (window as unknown as Record<string, unknown>)[cbName] = async (
+      user: Record<string, string>,
+    ): Promise<void> => {
+      onBusy(true);
+      try {
+        const result = await signIn("telegram", {
+          payload: JSON.stringify(user),
+          redirect: false,
+        });
+        if (result?.error) onError(result.error);
+        else onSuccess();
+      } catch (err) {
+        onError((err as Error).message);
+      } finally {
+        onBusy(false);
+      }
+    };
+
+    // Inject the official widget script. It builds itself in-place inside
+    // the container (it's a <script> that injects an <iframe>).
+    const script = document.createElement("script");
+    script.async = true;
+    script.src = "https://telegram.org/js/telegram-widget.js?22";
+    script.setAttribute("data-telegram-login", botUsername);
+    script.setAttribute("data-size", "large");
+    script.setAttribute("data-onauth", `${cbName}(user)`);
+    script.setAttribute("data-request-access", "write");
+    script.setAttribute("data-radius", "6");
+    container.appendChild(script);
+
+    return () => {
+      delete (window as unknown as Record<string, unknown>)[cbName];
+      // Strip the injected iframe + script so HMR / re-open doesn't dupe it.
+      while (container.firstChild) container.removeChild(container.firstChild);
+    };
+  }, [botUsername, onBusy, onError, onSuccess]);
+
+  if (!botUsername) return null;
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        // Container holds the Telegram-rendered button. No bg/padding here
+        // because the widget brings its own styling.
+        display: "flex",
+        justifyContent: "stretch",
+        minHeight: 40,
+      }}
+    />
   );
 }
 
