@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { categoryMeta } from "@/lib/categories";
 import { fmtMoney, fmtMoneyShort } from "@/lib/format";
+import { useCellCycles } from "@/hooks/useCellCycles";
 import { TOKENS } from "@/lib/tokens";
 import type {
   Category,
@@ -151,6 +152,90 @@ function fmtDeltaInline(metric: HeatmapMetric, d: HeatmapCell["delta"]): { text:
   return { text: display, color };
 }
 
+/** Translate the heatmap's display slot index back to the UTC-encoded slot
+ *  used by the backend (matches the hour-of-day / dow encoding in pattern-query.ts).
+ *  HOUR: display slot N (local 2h) → server slot (N + shift) % 12 (UTC 2h)
+ *  DOW : display slot N (Mon..Sun) → server slot DOW_DISPLAY_ORDER[N] (0=Sun..6=Sat) */
+const DOW_DISPLAY_ORDER: ReadonlyArray<number> = [1, 2, 3, 4, 5, 6, 0];
+function displaySlotToUtcSlot(kind: PatternKind, displaySlot: number): number {
+  if (kind === "hour-of-day") {
+    const tzOffset = -new Date().getTimezoneOffset() / 60;
+    const shift = ((Math.round(-tzOffset / 2) % 12) + 12) % 12;
+    return (displaySlot + shift) % 12;
+  }
+  return DOW_DISPLAY_ORDER[displaySlot] ?? 0;
+}
+
+/** Histogram of past-cycle values for a single (category × slot) cell.
+ *  Each bar = one cycle (day for HOUR pattern, week for DOW pattern).
+ *  PNL bars centre on a zero baseline. The faint horizontal line marks the
+ *  mean across cycles so the user can eyeball the spread. */
+function CycleHistogram({
+  samples,
+  metric,
+  height = 44,
+}: {
+  samples: ReadonlyArray<{ count: number; volume: number; pnl: number; winRate: number | null }>;
+  metric: HeatmapMetric;
+  height?: number;
+}) {
+  if (samples.length === 0) return null;
+  const vals = samples.map((s) => {
+    switch (metric) {
+      case "signals": return s.count;
+      case "volume":  return s.volume;
+      case "pnl":     return s.pnl;
+      case "winrate": return s.winRate ?? 0;
+      case "whales":  return s.count; // proxy — whales not in pattern aggregate
+    }
+  });
+  const isPnl = metric === "pnl";
+  const maxAbs = Math.max(...vals.map(Math.abs), 1);
+  const nonZero = vals.filter((v) => v !== 0);
+  const mean = nonZero.length > 0 ? nonZero.reduce((a, b) => a + b, 0) / nonZero.length : 0;
+  const meanY = isPnl
+    ? height / 2 - (height / 2) * (mean / maxAbs)
+    : height - 1 - (height - 2) * (Math.abs(mean) / maxAbs);
+  const n = vals.length;
+  const slot = 10;
+  const gap = 2;
+  return (
+    <svg
+      width="100%"
+      height={height}
+      viewBox={`0 0 ${n * slot} ${height}`}
+      preserveAspectRatio="none"
+      style={{ display: "block" }}
+    >
+      {vals.map((v, i) => {
+        const ratio = Math.min(1, Math.abs(v) / maxAbs);
+        const barH = isPnl ? (height / 2) * ratio : (height - 2) * ratio;
+        const y = isPnl
+          ? v >= 0 ? height / 2 - barH : height / 2
+          : height - 1 - barH;
+        const x = i * slot + gap / 2;
+        const w = slot - gap;
+        const fill = isPnl
+          ? v > 0 ? "rgba(63,185,80,0.7)"
+          : v < 0 ? "rgba(248,81,73,0.7)"
+          : "rgba(125,133,144,0.25)"
+          : v > 0 ? "rgba(167,139,250,0.7)" : "rgba(125,133,144,0.18)";
+        return (
+          <rect key={i} x={x} y={y} width={w} height={Math.max(1, barH)} fill={fill} rx={1} />
+        );
+      })}
+      {isPnl && (
+        <line x1={0} x2={n * slot} y1={height / 2} y2={height / 2}
+              stroke="rgba(255,255,255,0.18)" strokeWidth={0.5} />
+      )}
+      {nonZero.length > 1 && (
+        <line x1={0} x2={n * slot} y1={meanY} y2={meanY}
+              stroke="rgba(240,180,41,0.55)" strokeWidth={0.7} strokeDasharray="3 2" />
+      )}
+    </svg>
+  );
+}
+
 /** Numeric value of a cell for the active metric — used by the sparkline. */
 function cellMetricValue(metric: HeatmapMetric, c: HeatmapCell): number {
   switch (metric) {
@@ -274,6 +359,7 @@ export function Tooltip({
   onRequestLogin,
   onPlaced,
   onWhaleClick,
+  drillSubcategory,
 }: {
   cell: HeatmapCell;
   /** All cells of the same row (category) in display order. Used to draw
@@ -306,10 +392,25 @@ export function Tooltip({
   /** Open the whale drawer for the clicked address. Only fires from the
    *  locked tooltip — the hover tooltip is pointer-transparent. */
   onWhaleClick: (addr: string) => void;
+  /** Drill subcategory at L2 in PATTERN — when set, the cycle histogram
+   *  filters by subcategory column instead of category. NULL at L1. */
+  drillSubcategory?: string | null;
 }) {
   const meta = categoryMeta(category);
   const isPattern = mode === "pattern";
   const sortedMarkets = isPattern ? [] : sortMarkets(cell.markets, metric).slice(0, TOP_N);
+  // Per-cell historical cycles for PATTERN locked tooltip — fires only when
+  // we lock so we don't spam the API on every mouse move.
+  const cyclesEnabled = isPattern && locked;
+  const cyclesArgs = cyclesEnabled
+    ? {
+        kind: patternKind,
+        category,
+        subcategory: drillSubcategory ?? null,
+        slot: displaySlotToUtcSlot(patternKind, Math.max(0, rowCells.findIndex((c) => c === cell))),
+      }
+    : null;
+  const cycles = useCellCycles(cyclesArgs, cyclesEnabled);
   // Top whales in this cell — always sorted by USD volume desc (server-side).
   // Hide in PATTERN mode (no per-cell whale aggregation in the pattern query).
   const cellWhales: ReadonlyArray<WhaleCellSummary> =
@@ -328,8 +429,10 @@ export function Tooltip({
   const ref = useRef<HTMLDivElement | null>(null);
   const margin = 10;
   const initialW = 340;
+  // Pattern locked tooltip gets +60px for the cycle histogram.
+  const patternBase = 230 + (locked ? 60 : 0);
   const initialH = isPattern
-    ? 230
+    ? patternBase
     : sortedMarkets.length > 0
       ? 240 + sortedMarkets.length * 26 + (showSparkline ? 50 : 0) + (cellWhales.length > 0 ? 30 + cellWhales.length * 24 : 0)
       : 140 + (showSparkline ? 50 : 0) + (cellWhales.length > 0 ? 30 + cellWhales.length * 24 : 0);
@@ -568,6 +671,42 @@ export function Tooltip({
             >
               <span>min {fmtCellShort(metric, metricMin(metric, cell))}</span>
               <span>max {fmtCellShort(metric, metricMax(metric, cell))}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isPattern && locked && (
+        <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
+          <div
+            style={{
+              fontSize: 9,
+              letterSpacing: 0.5,
+              color: TOKENS.textMuted,
+              textTransform: "uppercase",
+              marginBottom: 6,
+              fontWeight: 600,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <span>Past cycles · {patternKind === "hour-of-day" ? "30 days" : "26 weeks"}</span>
+            <span style={{ color: TOKENS.textSec }}>{metric}</span>
+          </div>
+          {cycles.loading && (
+            <div style={{ fontSize: 11, color: TOKENS.textSec, padding: "8px 0" }}>loading…</div>
+          )}
+          {cycles.error && (
+            <div style={{ fontSize: 11, color: TOKENS.neg, padding: "8px 0" }}>
+              {cycles.error}
+            </div>
+          )}
+          {cycles.samples && cycles.samples.length > 0 && (
+            <CycleHistogram samples={cycles.samples} metric={metric} />
+          )}
+          {cycles.samples && cycles.samples.length === 0 && !cycles.loading && (
+            <div style={{ fontSize: 11, color: TOKENS.textMuted, padding: "8px 0" }}>
+              No history for this slot.
             </div>
           )}
         </div>

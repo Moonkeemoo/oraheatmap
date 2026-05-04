@@ -20,7 +20,7 @@ import {
 } from "./heatmap-query";
 import type { Ingestor } from "./ingestor";
 import { log } from "./log";
-import { type PatternKind, queryPattern } from "./pattern-query";
+import { type PatternKind, queryCellCycles, queryPattern } from "./pattern-query";
 import type { SignalHub } from "./signal-hub";
 import { readAuthFromHeaders } from "./auth-jwt";
 import { SUBCATEGORY_LABELS, subcategoriesOf } from "./subcategorize";
@@ -543,6 +543,31 @@ export function createApi(deps: ApiDeps) {
           range: t.Optional(
             t.Union([t.Literal("1h"), t.Literal("24h"), t.Literal("12d"), t.Literal("12w")]),
           ),
+        }),
+      },
+    )
+    .get(
+      "/api/cell-cycles",
+      async ({ query }) => {
+        const kind: PatternKind = query.kind ?? "hour-of-day";
+        const cat = query.category;
+        if (!(CATEGORIES as ReadonlyArray<string>).includes(cat)) {
+          return { error: "unknown category", samples: [] };
+        }
+        const samples = await queryCellCycles(deps.sql, {
+          kind,
+          category: cat as Category,
+          subcategory: query.subcategory ?? null,
+          slot: query.slot,
+        });
+        return { kind, category: cat, slot: query.slot, samples };
+      },
+      {
+        query: t.Object({
+          kind: t.Optional(t.Union([t.Literal("hour-of-day"), t.Literal("day-of-week")])),
+          category: t.String(),
+          subcategory: t.Optional(t.String()),
+          slot: t.Numeric({ minimum: 0, maximum: 11 }),
         }),
       },
     )

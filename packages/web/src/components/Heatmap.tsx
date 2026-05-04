@@ -332,6 +332,7 @@ export function Heatmap() {
                 isAuthed={isAuthed}
                 onRequestLogin={() => setLoginOpen(true)}
                 onWhaleClick={(addr) => setWhaleProfileAddr(addr)}
+                drillSubcategory={displayData.drillSubcategory}
               />
             )}
             {hover && hover.cellId !== locked?.cellId && (
@@ -352,6 +353,7 @@ export function Heatmap() {
                 isAuthed={isAuthed}
                 onRequestLogin={() => setLoginOpen(true)}
                 onWhaleClick={(addr) => setWhaleProfileAddr(addr)}
+                drillSubcategory={displayData.drillSubcategory}
               />
             )}
           </>

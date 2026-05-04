@@ -443,3 +443,152 @@ export async function queryPattern(
       : await queryDayOfWeekRows(sql, lookbackDays, drillCategory);
   return assemblePattern(rows, kind, lookbackDays, options);
 }
+
+// ─── Per-cell cycles (for the locked tooltip histogram) ─────────────────────
+
+export type CycleSample = {
+  /** ISO date — start of the day (HOUR pattern) or week (DOW pattern). */
+  cycle: string;
+  count: number;
+  volume: number;
+  pnl: number;
+  winRate: number | null;
+};
+
+export type CellCyclesArgs = {
+  kind: PatternKind;
+  /** Top-level category at L1, OR (when subcategory is set) parent category
+   *  for the subcategory filter. Always required. */
+  category: Category;
+  /** Optional drill — when set, filter rows by `subcategory` column instead
+   *  of `category`. */
+  subcategory?: string | null;
+  /** Slot in the SAME UTC encoding the heatmap uses internally:
+   *  HOUR → 0..11 (slot N = UTC hours [N*2, N*2+1])
+   *  DOW  → 0..6  (Postgres EXTRACT(dow): 0=Sunday..6=Saturday)
+   *  Frontend translates display-slot → UTC slot before calling this. */
+  slot: number;
+  /** Number of cycles to return — defaults to 30 for HOUR (days), 26 for
+   *  DOW (weeks). */
+  cycles?: number;
+};
+
+/**
+ * Per-cycle samples for the (category × slot) cell that powers the
+ * locked-tooltip histogram. Returns a series of length `cycles` (zero-filled
+ * for cycles that had no signals) so the histogram has a consistent x-axis.
+ */
+export async function queryCellCycles(
+  sql: Sql,
+  args: CellCyclesArgs,
+): Promise<ReadonlyArray<CycleSample>> {
+  const filterCol = args.subcategory ? "subcategory" : "category";
+  const filterVal = args.subcategory ?? args.category;
+
+  if (args.kind === "hour-of-day") {
+    const cycles = args.cycles ?? 30;
+    const lookbackInterval = `${cycles} days`;
+    const rows = await sql<Array<{
+      cycle: string; count: string | number;
+      volume: string | number; pnl: string | number;
+      wins: string | number; losses: string | number;
+    }>>`
+      WITH days AS (
+        SELECT generate_series(
+          date_trunc('day', NOW() - (${lookbackInterval}::interval - interval '1 day')),
+          date_trunc('day', NOW()),
+          interval '1 day'
+        ) AS cycle_start
+      ),
+      samples AS (
+        SELECT
+          date_trunc('day', ts AT TIME ZONE 'UTC') AS cycle_start,
+          COUNT(*)::bigint AS count,
+          COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0) AS volume,
+          COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl,
+          COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint AS wins,
+          COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint AS losses
+        FROM signals
+        WHERE ts >= NOW() - (${lookbackInterval}::interval)
+          AND ${sql(filterCol)} = ${filterVal}
+          AND (EXTRACT(hour FROM ts AT TIME ZONE 'UTC')::int / 2) = ${args.slot}
+        GROUP BY 1
+      )
+      SELECT
+        to_char(d.cycle_start, 'YYYY-MM-DD') AS cycle,
+        COALESCE(s.count, 0)  AS count,
+        COALESCE(s.volume, 0) AS volume,
+        COALESCE(s.pnl, 0)    AS pnl,
+        COALESCE(s.wins, 0)   AS wins,
+        COALESCE(s.losses, 0) AS losses
+      FROM days d
+      LEFT JOIN samples s ON s.cycle_start = d.cycle_start
+      ORDER BY d.cycle_start ASC
+    `;
+    return rows.map((r) => {
+      const wins = num(r.wins);
+      const losses = num(r.losses);
+      const decided = wins + losses;
+      return {
+        cycle: r.cycle,
+        count: num(r.count),
+        volume: num(r.volume),
+        pnl: num(r.pnl),
+        winRate: decided > 0 ? wins / decided : null,
+      };
+    });
+  }
+
+  // day-of-week → per-week samples
+  const cycles = args.cycles ?? 26;
+  const lookbackInterval = `${cycles * 7} days`;
+  const rows = await sql<Array<{
+    cycle: string; count: string | number;
+    volume: string | number; pnl: string | number;
+    wins: string | number; losses: string | number;
+  }>>`
+    WITH weeks AS (
+      SELECT generate_series(
+        date_trunc('week', NOW() - (${lookbackInterval}::interval - interval '7 days')),
+        date_trunc('week', NOW()),
+        interval '7 days'
+      ) AS cycle_start
+    ),
+    samples AS (
+      SELECT
+        date_trunc('week', ts AT TIME ZONE 'UTC') AS cycle_start,
+        COUNT(*)::bigint AS count,
+        COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0) AS volume,
+        COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl,
+        COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint AS wins,
+        COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint AS losses
+      FROM signals
+      WHERE ts >= NOW() - (${lookbackInterval}::interval)
+        AND ${sql(filterCol)} = ${filterVal}
+        AND EXTRACT(dow FROM ts AT TIME ZONE 'UTC')::int = ${args.slot}
+      GROUP BY 1
+    )
+    SELECT
+      to_char(w.cycle_start, 'YYYY-MM-DD') AS cycle,
+      COALESCE(s.count, 0)  AS count,
+      COALESCE(s.volume, 0) AS volume,
+      COALESCE(s.pnl, 0)    AS pnl,
+      COALESCE(s.wins, 0)   AS wins,
+      COALESCE(s.losses, 0) AS losses
+    FROM weeks w
+    LEFT JOIN samples s ON s.cycle_start = w.cycle_start
+    ORDER BY w.cycle_start ASC
+  `;
+  return rows.map((r) => {
+    const wins = num(r.wins);
+    const losses = num(r.losses);
+    const decided = wins + losses;
+    return {
+      cycle: r.cycle,
+      count: num(r.count),
+      volume: num(r.volume),
+      pnl: num(r.pnl),
+      winRate: decided > 0 ? wins / decided : null,
+    };
+  });
+}
