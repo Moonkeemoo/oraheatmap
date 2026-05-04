@@ -123,7 +123,17 @@ export function Heatmap() {
     return acc;
   }, [fetchedData, pendingSignals]);
 
+  // Magnitude-driven activity overlay — fed from the same useSse callback
+  // below so we keep one EventSource per tab. Hook itself is gated by
+  // mode (LIVE vs PATTERN) inside, so feeding it in PATTERN is a no-op.
+  const liveActivity = useLiveActivity({ enabled: mode === "live" });
+
   useSse((s) => {
+    // Activity overlay sees every signal regardless of whether the heatmap
+    // view itself is currently rendering it (cross-category convergence
+    // tracking still works on a drilled view, etc.).
+    liveActivity.ingest(s);
+
     if (!fetchedData) return;
     if (!metricAffectedBy(metric, s)) return;
 
@@ -180,14 +190,6 @@ export function Heatmap() {
 
 
   const isLive = mode === "live";
-
-  // Magnitude-driven activity overlay — only meaningful in LIVE because
-  // PATTERN cells are 30-day aggregates, not a moving "now" frame. The hook
-  // throttles internally; we just feed it every SSE signal and read back
-  // (callout, convergences) for rendering.
-  const liveActivity = useLiveActivity({ enabled: isLive });
-  useSse((s) => liveActivity.ingest(s));
-
   const daysOfData = displayData?.dataSpan.daysOfData ?? 0;
   // PATTERN is always clickable. Sample size shows up in the subtitle
   // ("low sample" badge under 7d) so the user can interpret accordingly,
