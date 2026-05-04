@@ -251,14 +251,12 @@ if (process.env["DISCORD_CLIENT_ID"] && process.env["DISCORD_CLIENT_SECRET"]) {
   );
 }
 
-// Passkey (WebAuthn) — no env keys needed; only requires HTTPS (or localhost).
-// Auth.js v5 ships an experimental Passkey provider that wires directly into
-// the existing Drizzle adapter (writes to auth_authenticators table).
-if (process.env["DATABASE_URL"]) {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Passkey = require("next-auth/providers/passkey").default as typeof import("next-auth/providers/passkey").default;
-  providers.push(Passkey({}));
-}
+// Passkey (WebAuthn) — DISABLED. Auth.js v5 beta's experimental webauthn
+// provider has multiple unresolved bugs in App Router (string userID
+// rejection by simplewebauthn v11+; "Cannot read properties of undefined
+// (reading 'headers')" deep in the route handler). Re-enable once Auth.js
+// ships a stable WebAuthn implementation. The auth_authenticators table
+// stays in the schema so we don't have to migrate again later.
 
 // Telegram Login Widget — verified hash check via custom Credentials provider.
 if (process.env["TG_LOGIN_BOT_TOKEN"]) {

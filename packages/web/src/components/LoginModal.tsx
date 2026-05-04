@@ -2,7 +2,6 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { signIn } from "next-auth/react";
-import { startAuthentication } from "@simplewebauthn/browser";
 import { SiweMessage } from "siwe";
 import { TOKENS } from "@/lib/tokens";
 import {
@@ -10,7 +9,6 @@ import {
   GithubIcon,
   MailIcon,
   MetaMaskIcon,
-  PasskeyIcon,
   TelegramIcon,
   XIcon,
 } from "./ProviderIcons";
@@ -215,81 +213,6 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
         )}
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {has("passkey") && (
-            <ProviderButton
-              onClick={async () => {
-                // Auth.js v5 webauthn signIn() doesn't actually run the
-                // browser-side WebAuthn ceremony — we have to do it
-                // ourselves. Three steps:
-                //   1. ask the server for an authentication challenge
-                //   2. let the browser pick a discoverable credential
-                //      (Touch ID / Face ID / security key prompt)
-                //   3. POST the signed assertion back to /callback/passkey
-                //      so Auth.js can verify + set the session cookie
-                setBusy("passkey");
-                setError(null);
-                try {
-                  const optsRes = await fetch(
-                    "/api/auth/webauthn-options/passkey?action=authenticate",
-                    { credentials: "include" },
-                  );
-                  if (!optsRes.ok) {
-                    const detail = await optsRes.text().catch(() => "");
-                    throw new Error(
-                      `Server said ${optsRes.status}${detail ? `: ${detail.slice(0, 120)}` : ""}`,
-                    );
-                  }
-                  const opts = (await optsRes.json()) as {
-                    action: "register" | "authenticate";
-                    options: Parameters<typeof startAuthentication>[0];
-                  };
-                  if (opts.action === "register") {
-                    setError("To register a passkey, sign in with another method first, then come back.");
-                    return;
-                  }
-                  const credential = await startAuthentication(opts.options);
-                  const csrfRes = await fetch("/api/auth/csrf", { credentials: "include" });
-                  const { csrfToken } = (await csrfRes.json()) as { csrfToken: string };
-                  const body = new URLSearchParams();
-                  body.append("csrfToken", csrfToken);
-                  body.append("data", JSON.stringify(credential));
-                  body.append("action", "authenticate");
-                  const callbackRes = await fetch("/api/auth/callback/passkey", {
-                    method: "POST",
-                    body,
-                    credentials: "include",
-                    redirect: "manual",
-                  });
-                  // Auth.js responds with a 302 to either callbackUrl (success)
-                  // or signin?error=... (failure). With redirect:"manual" the
-                  // fetch resolves "opaqueredirect" — we can't read it. Reload
-                  // so SessionProvider picks up the (possibly new) cookie.
-                  if (callbackRes.type === "opaqueredirect" || callbackRes.ok) {
-                    onClose();
-                    window.location.reload();
-                  } else {
-                    setError(`Passkey sign-in failed (${callbackRes.status}).`);
-                  }
-                } catch (err) {
-                  const e = err as Error;
-                  if (e.name === "InvalidStateError") {
-                    setError("No passkey registered on this device. Sign in another way first, then add a passkey from your profile.");
-                  } else if (e.name === "NotAllowedError") {
-                    setError("Passkey prompt cancelled.");
-                  } else {
-                    setError(e.message);
-                  }
-                } finally {
-                  setBusy(null);
-                }
-              }}
-              disabled={busy !== null}
-              loading={busy === "passkey"}
-              icon={<PasskeyIcon />}
-            >
-              Sign in with Passkey
-            </ProviderButton>
-          )}
           {has("siwe") && (
             <ProviderButton
               onClick={loginSiwe}

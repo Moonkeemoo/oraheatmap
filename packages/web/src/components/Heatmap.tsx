@@ -19,7 +19,6 @@ import { Breadcrumb } from "./Breadcrumb";
 import { Grid } from "./Grid";
 import { Header } from "./Header";
 import { LoginModal } from "./LoginModal";
-import { PasskeyPrompt } from "./PasskeyPrompt";
 import { StatsBar } from "./StatsBar";
 import { Tooltip, type TooltipAnchor, type TooltipRect } from "./Tooltip";
 import { WhaleDrawer } from "./WhaleDrawer";
@@ -218,10 +217,6 @@ export function Heatmap() {
         lowSample={lowSample}
         onRequestLogin={() => setLoginOpen(true)}
       />
-      {/* Top banner — visible to authed users without a passkey, dismissible.
-       *  Doesn't take vertical space when not shown; flexShrink:0 keeps it
-       *  from stealing space from the grid below. */}
-      <PasskeyPrompt />
 
       <div
         style={{
