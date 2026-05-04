@@ -149,9 +149,11 @@ Don't refactor `heatmap-query.ts` to be mode-aware in MVP — add `pattern-query
 | **v1.2** | Drill-down: category → subcategory · breadcrumb · top markets in tooltip · market name → Polymarket link with referral | ✅ shipped |
 | **v1.2.1** | Tooltip lock-on-click for side-by-side compare · rich KPI hover popovers with category/subcategory breakdowns · real-time TimescaleDB aggregation | ✅ shipped |
 | **v1.3** | PATTERN drill · tooltip-overlap fix · ingest-side filter for composite "0xADDR-TS" wallets | ✅ shipped |
-| **v1.4 (next)** | **Whale profiles** (click whale → side panel: positions, recent trades, per-cat PnL, alias + Polymarket link) | ⏳ next |
+| **v1.4** | **Whale profiles** (click whale → side panel: positions, recent trades, per-cat PnL, alias + Polymarket link) | ✅ shipped |
+| **v1.5** | **Auth foundation** — Auth.js v5, soft-gate on filters/modes/drill, 5 providers (SIWE/MetaMask, Email magic link via Resend, GitHub, Discord, Telegram). Email auto-links GitHub + Discord by verified email. SIWE and Telegram remain standalone accounts (no shared identifier with email — see v1.6). Default view 24h × volume; metric tabs locked too. Top-markets list in cell tooltip gated. | ✅ shipped |
+| **v1.6** | **Account linking / unify multiple sign-ins** — currently a user who logs in with MetaMask AND email AND Telegram ends up with 3 separate `auth_users` rows. Profile page exposing connected providers + "Link this method to my account" flow that adds a row to `auth_accounts` instead of creating a new user. Optional admin tool to consolidate already-split accounts. Re-evaluate Passkey provider when Auth.js v5 ships stable WebAuthn. | not started |
 | **v2.0 — Telegram bundle** | **Mobile-responsive UI** (Heatmap cramps below 768px today) · **Telegram WebApp** wrapper (full UI inside TG, identity from initData) · **TG alerts** for large signals · **Monetization**: feature gates paid via Telegram Stars + TON. Designed and shipped together — alerts need TG push, monetization fits TG-native flows, mobile work is on critical path for in-TG UX. | not started |
-| **v2.1+** | Web auth (only if there's a real audience outside TG) · trade execution via CLOB v2 (belongs to oralab) · mark-to-market PnL on open positions | not started |
+| **v2.1+** | Trade execution via CLOB v2 (belongs to oralab) · mark-to-market PnL on open positions · weekly cron for `refresh-corpus.ts` · DKIM/DMARC tightening (`p=quarantine`) once email volume justifies | not started |
 
 ## MVP scope (locked) — historical
 
