@@ -82,12 +82,12 @@ export function Hero() {
                 boxShadow: `0 0 8px ${TOKENS.pos}`,
               }}
             />
-            10,426 wallets · streaming live
+            The Nansen of Polymarket
           </div>
           <h1
             style={{
               margin: 0,
-              fontSize: 64,
+              fontSize: 60,
               lineHeight: 1.04,
               letterSpacing: -1.2,
               fontWeight: 700,
@@ -96,8 +96,9 @@ export function Hero() {
             }}
             className="hero-h1"
           >
-            When whales move,
+            10,426 Polymarket
             <br />
+            millionaires.{" "}
             <span
               style={{
                 background:
@@ -107,7 +108,7 @@ export function Hero() {
                 color: "transparent",
               }}
             >
-              you see it.
+              Every trade. Live.
             </span>
           </h1>
           <p
@@ -116,12 +117,13 @@ export function Hero() {
               fontSize: 18,
               lineHeight: 1.55,
               color: TOKENS.textSec,
-              maxWidth: 520,
+              maxWidth: 540,
             }}
           >
-            oralab is a real-time heatmap of every Polymarket trade from the
-            top <strong style={{ color: TOKENS.text }}>10,426 wallets</strong> by all-time PnL.
-            Categorized, drillable, charted from a 90-day track record.
+            Real-time heatmap of every Polymarket trade from the top wallets by all-time
+            PnL. Drill from a hot cell to the markets driving it and the whales pushing
+            them. The only smart-money tracker built specifically for{" "}
+            <strong style={{ color: TOKENS.text }}>prediction markets</strong>.
           </p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
             <Link

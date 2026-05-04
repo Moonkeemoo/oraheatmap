@@ -1,21 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { TOKENS } from "@/lib/tokens";
 
 /**
- * Animated heatmap mock for the hero. 8 categories × 16 time slots, cells
- * pulse with random opacity to simulate live signal flow. A floating
- * "signal" card animates between cells every few seconds.
+ * Animated heatmap mock for the hero. Tells the actual product narrative
+ * (not just "alive cells"):
  *
- * Pure visual — not connected to real SSE. Data-shaped enough to feel
- * authentic to anyone who's seen the dashboard. No external deps.
+ *   1. A trade dot flies in from the left, lands on a target cell, the cell
+ *      flashes brighter for ~1.5s, and a "+$X · Whale · BUY" callout pops
+ *      pinned to that cell.
+ *   2. Every ~12s a "convergence event" — 4 dots fly into the SAME cell in
+ *      quick succession, then a "🐋×4 in 8s" badge lights up.
+ *   3. A live counter top-right ticks up every time a trade lands —
+ *      "Signals streamed since you opened: 14".
+ *
+ * Pure visual. Zero connection to real SSE; all events are scripted with
+ * deterministic-ish randomness so the story plays out predictably while
+ * still feeling alive. No external deps.
  */
 
 const ROWS: ReadonlyArray<{ label: string; tilt: number }> = [
-  // tilt ∈ [-1, 1] — bias toward positive or negative PnL for that category.
-  // Story: politics ripping, finance bleeding, crypto mixed, etc. Picked so
-  // the grid visually tells a "smart money is rotating" story.
   { label: "POLITICS", tilt:  0.55 },
   { label: "SPORTS",   tilt: -0.35 },
   { label: "CRYPTO",   tilt:  0.20 },
@@ -27,46 +32,199 @@ const ROWS: ReadonlyArray<{ label: string; tilt: number }> = [
 ];
 const COLS = 16;
 
-/** Signed cell value in [-1, 1] — used to pick green/red and intensity. */
 function seedSigned(row: number, col: number): number {
   const tilt = ROWS[row]!.tilt;
-  // Recency weight — recent cells (right) more saturated than older (left).
   const recency = (col + 1) / COLS;
-  // Per-cell phase noise so the row isn't a flat shade.
   const phase = Math.sin(row * 1.7 + col * 0.6) * 0.4;
-  // Combine: tilt sets sign+baseline, phase adds variation, recency boosts.
   return Math.max(-1, Math.min(1, (tilt + phase) * (0.55 + recency * 0.45)));
 }
-
-/** Map a signed value to (color, alpha) using the dashboard's PnL palette. */
 function pnlColor(signed: number): { color: string; alpha: number } {
   const a = Math.abs(signed);
-  // Below this threshold cells read as "no data" — fade to a faint gray.
   if (a < 0.06) return { color: "#30363d", alpha: 0.35 };
-  const color = signed > 0 ? "#3fb950" : "#f85149";
-  // 0.22 floor so even small-magnitude cells are visible against panel bg.
-  return { color, alpha: 0.22 + a * 0.7 };
+  return { color: signed > 0 ? "#3fb950" : "#f85149", alpha: 0.22 + a * 0.7 };
+}
+
+type Trade = {
+  id: number;
+  row: number;
+  col: number;
+  alias: string;
+  side: "BUY" | "SELL";
+  usd: string;
+  /** ms since mount when trade was scheduled to land. */
+  landAt: number;
+};
+
+const ALIAS_POOL: ReadonlyArray<{ alias: string; cat: number }> = [
+  { alias: "Theo4",       cat: 2 },
+  { alias: "@PrincessOfCo", cat: 0 },
+  { alias: "0xAce…f7",    cat: 1 },
+  { alias: "@BetMaker",   cat: 3 },
+  { alias: "GammaGod",    cat: 2 },
+  { alias: "@EVMaxi",     cat: 4 },
+  { alias: "RoenickFan",  cat: 1 },
+  { alias: "0xWhale99",   cat: 0 },
+  { alias: "@SolEdge",    cat: 2 },
+];
+
+const USD_OPTIONS = ["$8.4k", "$22k", "$48k", "$84k", "$120k", "$310k"];
+
+let nextId = 1;
+function newRandomTrade(now: number): Trade {
+  const sample = ALIAS_POOL[Math.floor(Math.random() * ALIAS_POOL.length)]!;
+  // Trades skew to recent columns — the "now" edge.
+  const col = COLS - 1 - Math.floor(Math.random() * 4);
+  return {
+    id: nextId++,
+    row: sample.cat,
+    col,
+    alias: sample.alias,
+    side: Math.random() > 0.35 ? "BUY" : "SELL",
+    usd: USD_OPTIONS[Math.floor(Math.random() * USD_OPTIONS.length)]!,
+    landAt: now + 1100, // 1.1s flight time
+  };
+}
+
+type State = {
+  inflight: ReadonlyArray<Trade>;
+  active: ReadonlyArray<{ row: number; col: number; until: number }>;
+  callout: { row: number; col: number; alias: string; side: "BUY" | "SELL"; usd: string; until: number } | null;
+  convergence: { row: number; col: number; count: number; until: number } | null;
+  counter: number;
+};
+
+type Action =
+  | { type: "schedule"; trade: Trade }
+  | { type: "land"; trade: Trade; now: number }
+  | { type: "convergeStart"; row: number; col: number; now: number }
+  | { type: "convergeBump"; now: number }
+  | { type: "convergeEnd"; until: number }
+  | { type: "tick"; now: number };
+
+function reduce(state: State, action: Action): State {
+  switch (action.type) {
+    case "schedule":
+      return { ...state, inflight: [...state.inflight, action.trade] };
+    case "land": {
+      const cellUntil = action.now + 1500;
+      return {
+        ...state,
+        inflight: state.inflight.filter((t) => t.id !== action.trade.id),
+        active: [...state.active, { row: action.trade.row, col: action.trade.col, until: cellUntil }],
+        callout: {
+          row: action.trade.row,
+          col: action.trade.col,
+          alias: action.trade.alias,
+          side: action.trade.side,
+          usd: action.trade.usd,
+          until: action.now + 2400,
+        },
+        counter: state.counter + 1,
+      };
+    }
+    case "convergeStart":
+      return { ...state, convergence: { row: action.row, col: action.col, count: 1, until: action.now + 9000 } };
+    case "convergeBump":
+      return state.convergence
+        ? { ...state, convergence: { ...state.convergence, count: state.convergence.count + 1, until: action.now + 9000 } }
+        : state;
+    case "convergeEnd":
+      return state.convergence ? { ...state, convergence: { ...state.convergence, until: action.until } } : state;
+    case "tick": {
+      const now = action.now;
+      return {
+        ...state,
+        active: state.active.filter((a) => a.until > now),
+        callout: state.callout && state.callout.until > now ? state.callout : null,
+        convergence: state.convergence && state.convergence.until > now ? state.convergence : null,
+      };
+    }
+  }
 }
 
 export function HeroVisual() {
-  // Per-cell pulse offset — kicks tiny opacity bumps so the grid feels
-  // alive without being seizure-y. Initialized after mount to avoid
-  // hydration mismatches.
+  const [state, dispatch] = useReducer(reduce, {
+    inflight: [],
+    active: [],
+    callout: null,
+    convergence: null,
+    counter: 0,
+  });
   const [tick, setTick] = useState(0);
+  const startedAt = useRef<number>(0);
+  if (startedAt.current === 0) startedAt.current = typeof window !== "undefined" ? Date.now() : 0;
+
+  // Frame-ish tick — drives cell pulse + GC of expired animations.
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => (t + 1) % 1000), 380);
+    const id = setInterval(() => {
+      setTick((t) => (t + 1) % 10000);
+      dispatch({ type: "tick", now: Date.now() });
+    }, 250);
     return () => clearInterval(id);
   }, []);
 
-  const cells = useMemo(() => {
-    const arr: { row: number; col: number; signed: number }[] = [];
-    for (let r = 0; r < ROWS.length; r++) {
-      for (let c = 0; c < COLS; c++) {
-        arr.push({ row: r, col: c, signed: seedSigned(r, c) });
-      }
+  // Scheduler — kicks off random trades and the occasional convergence event.
+  useEffect(() => {
+    let cancelled = false;
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    let convergeTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function scheduleNextTrade() {
+      if (cancelled) return;
+      const t = newRandomTrade(Date.now());
+      dispatch({ type: "schedule", trade: t });
+      // Land after flight time.
+      setTimeout(() => {
+        if (cancelled) return;
+        dispatch({ type: "land", trade: t, now: Date.now() });
+      }, 1100);
+      const gap = 900 + Math.random() * 1700;
+      idleTimer = setTimeout(scheduleNextTrade, gap);
     }
-    return arr;
+
+    function scheduleConvergence() {
+      if (cancelled) return;
+      // Pick a target cell; fire 4 trades into it in quick succession.
+      const row = Math.floor(Math.random() * ROWS.length);
+      const col = COLS - 1 - Math.floor(Math.random() * 3);
+      dispatch({ type: "convergeStart", row, col, now: Date.now() });
+      const aliases: ReadonlyArray<string> = ["Theo4", "@PrincessOfCo", "GammaGod", "0xWhale99"];
+      aliases.forEach((alias, i) => {
+        setTimeout(() => {
+          if (cancelled) return;
+          const trade: Trade = {
+            id: nextId++,
+            row,
+            col,
+            alias,
+            side: "BUY",
+            usd: USD_OPTIONS[2 + (i % 3)]!,
+            landAt: Date.now() + 1100,
+          };
+          dispatch({ type: "schedule", trade });
+          setTimeout(() => {
+            if (cancelled) return;
+            dispatch({ type: "land", trade, now: Date.now() });
+            dispatch({ type: "convergeBump", now: Date.now() });
+          }, 1100);
+        }, i * 700);
+      });
+      // Re-trigger every 14–18s.
+      convergeTimer = setTimeout(scheduleConvergence, 14000 + Math.random() * 4000);
+    }
+
+    // Stagger initial start so the page has a quiet half-second after load.
+    idleTimer = setTimeout(scheduleNextTrade, 700);
+    convergeTimer = setTimeout(scheduleConvergence, 6000);
+    return () => {
+      cancelled = true;
+      if (idleTimer) clearTimeout(idleTimer);
+      if (convergeTimer) clearTimeout(convergeTimer);
+    };
   }, []);
+
+  const activeMap = new Map<string, number>();
+  state.active.forEach((a) => activeMap.set(`${a.row}:${a.col}`, a.until));
 
   return (
     <div
@@ -100,7 +258,10 @@ export function HeroVisual() {
             />
           ))}
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+          <span style={{ fontSize: 10, color: TOKENS.textMuted, fontFamily: TOKENS.mono, letterSpacing: 0.4, textTransform: "uppercase" }}>
+            signals streamed: <strong style={{ color: TOKENS.text, fontVariantNumeric: "tabular-nums" }}>{state.counter}</strong>
+          </span>
           <span
             style={{
               fontSize: 10,
@@ -108,66 +269,91 @@ export function HeroVisual() {
               fontFamily: TOKENS.mono,
               letterSpacing: 0.4,
               textTransform: "uppercase",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
             }}
           >
             LIVE · 24h · PnL
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: 6,
+                background: TOKENS.pos,
+                boxShadow: `0 0 10px ${TOKENS.pos}`,
+                animation: "heroPulse 1.6s ease-in-out infinite",
+              }}
+            />
           </span>
-          <span
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: 6,
-              background: TOKENS.pos,
-              boxShadow: `0 0 10px ${TOKENS.pos}`,
-              animation: "heroPulse 1.6s ease-in-out infinite",
-            }}
-          />
         </div>
       </div>
 
-      {/* heatmap grid */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: `74px repeat(${COLS}, 1fr)`,
-          gap: 3,
-        }}
-      >
-        {ROWS.map((row, r) => (
-          <RowFragment key={row.label} row={r} tick={tick} cells={cells} />
-        ))}
+      {/* heatmap grid — wraps in a positioning container so dots / callouts can overlay */}
+      <div style={{ position: "relative" }} ref={null}>
+        <Grid activeMap={activeMap} tick={tick} />
+        <Inflight trades={state.inflight} />
+        <Callout callout={state.callout} />
+        <Convergence convergence={state.convergence} />
       </div>
-
-      {/* floating signal callout */}
-      <SignalCallout tick={tick} />
 
       <style>{`
         @keyframes heroPulse {
           0%, 100% { opacity: 1; transform: scale(1); }
           50%      { opacity: 0.45; transform: scale(0.85); }
         }
-        @keyframes heroCellPulse {
-          0%, 100% { transform: scale(1); }
-          50%      { transform: scale(1.05); }
+        @keyframes cellFlash {
+          0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(63,185,80,0.5); }
+          40%  { transform: scale(1.18); box-shadow: 0 0 0 6px rgba(63,185,80,0.0); }
+          100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(63,185,80,0); }
+        }
+        @keyframes tipIn {
+          from { opacity: 0; transform: translate(-50%, calc(-100% - 14px)) scale(0.96); }
+          to   { opacity: 1; transform: translate(-50%, calc(-100% - 4px))  scale(1);    }
+        }
+        @keyframes flyIn {
+          from { left: -8%;  opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+          5%   { opacity: 1;  transform: translate(-50%, -50%) scale(1); }
+          95%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+          to   { opacity: 0;  transform: translate(-50%, -50%) scale(1.25); }
+        }
+        @keyframes convergePulse {
+          0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(240,180,41,0.45); }
+          50%      { transform: scale(1.04); box-shadow: 0 0 0 8px rgba(240,180,41,0); }
         }
       `}</style>
     </div>
   );
 }
 
-function RowFragment({
+// ─── Subcomponents ───────────────────────────────────────────────────────
+
+function Grid({
+  activeMap,
+  tick,
+}: {
+  activeMap: Map<string, number>;
+  tick: number;
+}) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: `74px repeat(${COLS}, 1fr)`, gap: 3 }}>
+      {ROWS.map((row, r) => (
+        <Row key={row.label} row={r} tick={tick} activeMap={activeMap} />
+      ))}
+    </div>
+  );
+}
+
+function Row({
   row,
   tick,
-  cells,
+  activeMap,
 }: {
   row: number;
   tick: number;
-  cells: ReadonlyArray<{ row: number; col: number; signed: number }>;
+  activeMap: Map<string, number>;
 }) {
   const r = ROWS[row]!;
-  const rowCells = cells.filter((c) => c.row === row);
-  // Row label — neutral chip with the category name. Replaces the prior
-  // colored badge so rows aren't visually competing with the PnL palette.
   return (
     <>
       <div
@@ -187,21 +373,28 @@ function RowFragment({
       >
         {r.label}
       </div>
-      {rowCells.map((cell) => {
-        // Per-cell pulse: stronger-magnitude cells flicker more.
-        const mag = Math.abs(cell.signed);
-        const pulse = (Math.sin((tick + row * 3 + cell.col * 5) * 0.7) + 1) / 2;
-        const { color, alpha } = pnlColor(cell.signed);
+      {Array.from({ length: COLS }).map((_, c) => {
+        const signed = seedSigned(row, c);
+        const mag = Math.abs(signed);
+        const pulse = (Math.sin((tick + row * 3 + c * 5) * 0.7) + 1) / 2;
+        const { color, alpha } = pnlColor(signed);
         const adjusted = Math.min(1, alpha + pulse * mag * 0.12);
+        const isActive = activeMap.has(`${row}:${c}`);
         return (
           <div
-            key={cell.col}
+            key={c}
+            data-cell={`${row}:${c}`}
             style={{
               height: 28,
               borderRadius: 3,
               background: color,
-              opacity: adjusted,
+              opacity: isActive ? Math.min(1, alpha + 0.4) : adjusted,
               transition: "opacity .35s ease-out",
+              animation: isActive ? "cellFlash 1.1s ease-out" : undefined,
+              outline: isActive ? `1.5px solid ${TOKENS.pos}` : undefined,
+              outlineOffset: -1,
+              position: "relative",
+              zIndex: isActive ? 2 : 0,
             }}
           />
         );
@@ -210,77 +403,137 @@ function RowFragment({
   );
 }
 
-function SignalCallout({ tick }: { tick: number }) {
-  // Cycle through a handful of fake signals — enough variety to feel real,
-  // few enough to render predictably. Kept short.
-  const samples: ReadonlyArray<{ alias: string; cat: string; side: "BUY" | "SELL"; usd: string; market: string }> = [
-    { alias: "Theo4",       cat: "CRYPTO",  side: "BUY",  usd: "$48.2k", market: "Bitcoin Up or Down · 2:30PM" },
-    { alias: "@PrincessOfCo", cat: "POLITICS", side: "BUY",  usd: "$120k", market: "Trump confirms cabinet pick" },
-    { alias: "0xAce…f7",    cat: "SPORTS",  side: "SELL", usd: "$31.5k", market: "Lakers vs Celtics" },
-    { alias: "@BetMaker",   cat: "FINANCE", side: "BUY",  usd: "$84k",   market: "Fed rate cut May 2026" },
-    { alias: "GammaGod",    cat: "CRYPTO",  side: "BUY",  usd: "$22k",   market: "Solana Up or Down · 2:45PM" },
-  ];
-  const idx = Math.floor(tick / 5) % samples.length;
-  const s = samples[idx]!;
-  const sideColor = s.side === "BUY" ? TOKENS.link : TOKENS.accent;
+/** % position of a cell's CENTER within the inner content area (label col + data cells). */
+function cellLeftPct(col: number): number {
+  // 74px label col is small relative to total; approximate as 0.092 of width.
+  const labelFrac = 74 / (74 + COLS * 60); // rough
+  const dataFrac = 1 - labelFrac;
+  const colFrac = (col + 0.5) / COLS;
+  return (labelFrac + dataFrac * colFrac) * 100;
+}
+function cellTopPct(row: number): number {
+  // Rows: 28px height + 3px gap; we have ROWS.length rows.
+  const total = ROWS.length;
+  return ((row + 0.5) / total) * 100;
+}
+
+function Inflight({ trades }: { trades: ReadonlyArray<Trade> }) {
+  return (
+    <>
+      {trades.map((t) => {
+        const left = cellLeftPct(t.col);
+        const top = cellTopPct(t.row);
+        const accent = t.side === "BUY" ? TOKENS.pos : TOKENS.neg;
+        return (
+          <div
+            key={t.id}
+            style={{
+              position: "absolute",
+              left: `${left}%`,
+              top: `${top}%`,
+              width: 12,
+              height: 12,
+              borderRadius: 12,
+              background: accent,
+              boxShadow: `0 0 12px ${accent}, 0 0 4px ${accent}`,
+              transform: "translate(-50%, -50%)",
+              animation: "flyIn 1.1s linear forwards",
+              pointerEvents: "none",
+              zIndex: 3,
+            }}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+function Callout({
+  callout,
+}: {
+  callout: State["callout"];
+}) {
+  if (!callout) return null;
+  const left = cellLeftPct(callout.col);
+  const top = cellTopPct(callout.row);
+  const accent = callout.side === "BUY" ? TOKENS.pos : TOKENS.accent;
   return (
     <div
       style={{
         position: "absolute",
-        right: 28,
-        bottom: 22,
-        background: TOKENS.panel2,
-        border: `1px solid ${TOKENS.borderHi}`,
-        borderRadius: 10,
-        padding: "10px 12px",
-        boxShadow: "0 10px 30px rgba(0,0,0,0.5), 0 0 0 1px rgba(240,180,41,0.18)",
-        minWidth: 220,
-        animation: "tipIn .35s ease-out",
+        left: `${left}%`,
+        top: `${top}%`,
+        transform: "translate(-50%, calc(-100% - 4px))",
+        background: TOKENS.panel,
+        border: `1px solid ${accent}`,
+        borderRadius: 8,
+        padding: "6px 10px",
+        boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+        whiteSpace: "nowrap",
+        animation: "tipIn .25s ease-out forwards",
         pointerEvents: "none",
+        zIndex: 4,
       }}
-      key={idx}
+      key={`${callout.row}-${callout.col}-${callout.alias}-${callout.until}`}
     >
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, fontFamily: TOKENS.mono, letterSpacing: 0.4, textTransform: "uppercase", fontWeight: 700, color: TOKENS.textMuted }}>
+        <span style={{ color: accent }}>{callout.side}</span>
+        <span>·</span>
+        <span style={{ color: TOKENS.text }}>{callout.usd}</span>
+      </div>
+      <div style={{ fontSize: 12, color: TOKENS.text, fontWeight: 700, marginTop: 1 }}>{callout.alias}</div>
+      {/* tail */}
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          fontSize: 9,
-          letterSpacing: 0.5,
-          textTransform: "uppercase",
-          color: TOKENS.textMuted,
-          fontWeight: 700,
-          marginBottom: 4,
+          position: "absolute",
+          left: "50%",
+          bottom: -5,
+          transform: "translateX(-50%) rotate(45deg)",
+          width: 8,
+          height: 8,
+          background: TOKENS.panel,
+          border: `1px solid ${accent}`,
+          borderTop: "none",
+          borderLeft: "none",
         }}
-      >
-        <span style={{ color: sideColor }}>{s.side}</span>
-        <span>·</span>
-        <span>{s.cat}</span>
-        <span>·</span>
-        <span style={{ color: TOKENS.text }}>{s.usd}</span>
-      </div>
-      <div style={{ fontSize: 12, color: TOKENS.text, fontWeight: 600, lineHeight: 1.3 }}>
-        {s.alias}
-      </div>
-      <div
-        style={{
-          fontSize: 11,
-          color: TOKENS.textSec,
-          marginTop: 2,
-          maxWidth: 220,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {s.market}
-      </div>
-      <style>{`
-        @keyframes tipIn {
-          from { opacity: 0; transform: translateY(8px) scale(.98); }
-          to   { opacity: 1; transform: translateY(0)  scale(1);   }
-        }
-      `}</style>
+      />
+    </div>
+  );
+}
+
+function Convergence({
+  convergence,
+}: {
+  convergence: State["convergence"];
+}) {
+  if (!convergence) return null;
+  const left = cellLeftPct(convergence.col);
+  const top = cellTopPct(convergence.row);
+  if (convergence.count < 2) return null; // wait until we have at least 2 hits
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: `${left}%`,
+        top: `${top}%`,
+        transform: "translate(-50%, calc(100% + 6px))",
+        background: TOKENS.accent,
+        color: "#1a1410",
+        borderRadius: 999,
+        padding: "4px 10px",
+        fontSize: 10,
+        fontWeight: 800,
+        fontFamily: TOKENS.mono,
+        letterSpacing: 0.6,
+        textTransform: "uppercase",
+        boxShadow: "0 6px 18px rgba(240,180,41,0.45)",
+        animation: "convergePulse 1.2s ease-in-out infinite",
+        pointerEvents: "none",
+        zIndex: 4,
+        whiteSpace: "nowrap",
+      }}
+    >
+      🐋×{convergence.count} converging
     </div>
   );
 }

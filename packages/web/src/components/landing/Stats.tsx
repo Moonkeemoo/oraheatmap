@@ -16,10 +16,10 @@ type Stat = {
 };
 
 const STATS: ReadonlyArray<Stat> = [
-  { value: "$2.4",  unit: "B",  label: "volume tracked",     sub: "across the watchlist" },
-  { value: "412",   unit: "k",  label: "signals streamed",   sub: "every trade · every minute" },
-  { value: "+$84",  unit: "M",  label: "net inflow · 24h",   sub: "buys minus sells",          tone: "pos" },
-  { value: "10,426",            label: "whales watched",     sub: "refreshed weekly" },
+  { value: "$2.4",  unit: "B",  label: "volume tracked",     sub: "lifetime · all watched whales" },
+  { value: "412",   unit: "k",  label: "signals streamed",   sub: "lifetime · every Buy / Sell" },
+  { value: "+$84",  unit: "M",  label: "net buy flow",       sub: "last 24h · buys minus sells", tone: "pos" },
+  { value: "10,426",            label: "whales watched",     sub: "refreshed weekly · top by all-time PnL" },
 ];
 
 export function Stats() {
