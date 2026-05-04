@@ -674,7 +674,9 @@ export async function queryTopWhalesPerCell(
         whale_addr,
         COUNT(*)::bigint                                                      AS signals,
         COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)            AS volume_usd,
-        COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd
+        COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd,
+        COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint                      AS wins,
+        COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                      AS losses
       FROM signals
       WHERE ts >= NOW() - (${windowInterval}::interval)
       GROUP BY bucket_ts, category, whale_addr
