@@ -165,3 +165,49 @@ CREATE TABLE IF NOT EXISTS processed_resolutions (
   winning_asset  TEXT,                        -- the clob_token_id that paid out at $1
   processed_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ══════════════════════════════════════════
+-- Auth.js (NextAuth v5) Drizzle adapter tables
+-- ══════════════════════════════════════════
+--
+-- Standard schema from https://authjs.dev/getting-started/adapters/drizzle.
+-- Email magic-link provider needs `auth_verification_tokens`. OAuth
+-- providers (Twitter) write to `auth_accounts`. SIWE / Telegram credentials
+-- stay JWT-only and never touch these tables, but the adapter still requires
+-- their existence.
+
+CREATE TABLE IF NOT EXISTS auth_users (
+  id               TEXT PRIMARY KEY,
+  name             TEXT,
+  email            TEXT UNIQUE,
+  email_verified   TIMESTAMPTZ,
+  image            TEXT
+);
+
+CREATE TABLE IF NOT EXISTS auth_accounts (
+  user_id              TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  type                 TEXT NOT NULL,
+  provider             TEXT NOT NULL,
+  provider_account_id  TEXT NOT NULL,
+  refresh_token        TEXT,
+  access_token         TEXT,
+  expires_at           INTEGER,
+  token_type           TEXT,
+  scope                TEXT,
+  id_token             TEXT,
+  session_state        TEXT,
+  PRIMARY KEY (provider, provider_account_id)
+);
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  session_token  TEXT PRIMARY KEY,
+  user_id        TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  expires        TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS auth_verification_tokens (
+  identifier  TEXT NOT NULL,
+  token       TEXT NOT NULL,
+  expires     TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (identifier, token)
+);

@@ -1,7 +1,10 @@
 import NextAuth, { type NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { SignJWT, jwtVerify } from "jose";
 import { SiweMessage } from "siwe";
+import { getDb } from "@/db";
+import { accounts, sessions, users, verificationTokens } from "@/db/auth-schema";
 
 /**
  * Auth.js (NextAuth v5) configuration for the heatmap web app.
@@ -135,8 +138,27 @@ if (process.env["TG_LOGIN_BOT_TOKEN"]) {
   );
 }
 
+// Drizzle adapter is required for the Email magic-link provider (stores
+// the one-time token + user). Twitter (OAuth) also writes account rows
+// here. SIWE / Telegram (Credentials) ignore it — JWT only. Lazy-init so
+// pages that don't touch DB (e.g. /api/auth/providers) don't open a
+// connection unnecessarily.
+let cachedAdapter: ReturnType<typeof DrizzleAdapter> | null = null;
+function adapter(): ReturnType<typeof DrizzleAdapter> {
+  if (cachedAdapter) return cachedAdapter;
+  const { db } = getDb();
+  cachedAdapter = DrizzleAdapter(db, {
+    usersTable: users,
+    accountsTable: accounts,
+    sessionsTable: sessions,
+    verificationTokensTable: verificationTokens,
+  });
+  return cachedAdapter;
+}
+
 export const authConfig: NextAuthConfig = {
   providers,
+  adapter: adapter(),
   trustHost: true,
   session: { strategy: "jwt", maxAge: TOKEN_TTL_SECONDS },
   // HS256 JWS so the Elysia API can verify with the same secret + jose.
