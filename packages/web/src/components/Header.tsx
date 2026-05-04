@@ -328,10 +328,10 @@ export function Header({
         </div>
       </div>
 
-      {/* Right column — brand logo fills the full header height while
-          preserving its proportions, BUT capped at a sensible maximum so
-          a narrow viewport (where the controls row wraps and the left
-          column grows tall) doesn't pump the logo into a 200px monster. */}
+      {/* Right column — brand mark at fixed hero size (icon 64, ORALAB 32,
+          descriptor 11). align-self:center vertically centers the logo in
+          the column whose height is driven by chip + controls. Doesn't
+          stretch on tall left-column wraps, so the logo never balloons. */}
       <div
         style={{
           color: TOKENS.text,
@@ -339,11 +339,9 @@ export function Header({
           alignItems: "center",
           alignSelf: "center",
           flexShrink: 0,
-          maxHeight: 72,
-          minHeight: 48,
         }}
       >
-        <BrandLogo size="fill" />
+        <BrandLogo size="hero" />
       </div>
     </div>
   );
