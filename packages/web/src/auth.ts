@@ -219,6 +219,13 @@ if (process.env["TWITTER_CLIENT_ID"] && process.env["TWITTER_CLIENT_SECRET"]) {
 }
 
 // GitHub OAuth — Auth.js native provider, free.
+//
+// allowDangerousEmailAccountLinking lets a user sign in with GitHub even
+// when they previously created the account via a different provider that
+// returned the same email (e.g. the email magic link). Auth.js calls this
+// "dangerous" because a hostile OAuth provider could claim an email it
+// doesn't own and hijack the account. For GitHub + Discord both providers
+// VERIFY emails before exposing them, so the risk is acceptable here.
 if (process.env["GITHUB_CLIENT_ID"] && process.env["GITHUB_CLIENT_SECRET"]) {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const GitHub = require("next-auth/providers/github").default as typeof import("next-auth/providers/github").default;
@@ -226,6 +233,7 @@ if (process.env["GITHUB_CLIENT_ID"] && process.env["GITHUB_CLIENT_SECRET"]) {
     GitHub({
       clientId: process.env["GITHUB_CLIENT_ID"],
       clientSecret: process.env["GITHUB_CLIENT_SECRET"],
+      allowDangerousEmailAccountLinking: true,
     }),
   );
 }
@@ -238,6 +246,7 @@ if (process.env["DISCORD_CLIENT_ID"] && process.env["DISCORD_CLIENT_SECRET"]) {
     Discord({
       clientId: process.env["DISCORD_CLIENT_ID"],
       clientSecret: process.env["DISCORD_CLIENT_SECRET"],
+      allowDangerousEmailAccountLinking: true,
     }),
   );
 }
