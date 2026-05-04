@@ -54,6 +54,13 @@ export type WhaleRecentTrade = {
   exitKind: "SELL" | "RESOLUTION" | null;
 };
 
+export type WhalePnlPoint = {
+  /** ISO date — day boundary in UTC. */
+  day: string;
+  /** Cumulative realized PnL up to and including this day, USD. */
+  cumulativePnl: number;
+};
+
 export type WhaleProfile = {
   addr: string;
   range: HeatmapRange;
@@ -62,10 +69,18 @@ export type WhaleProfile = {
   categoryMix: ReadonlyArray<WhaleCategorySplit>;
   openPositions: ReadonlyArray<WhaleOpenPosition>;
   recentTrades: ReadonlyArray<WhaleRecentTrade>;
+  /** Daily cumulative realized PnL across the whole 90-day lookback —
+   *  feeds the "balance growth" line chart in the drawer. Independent of
+   *  the active heatmap range (which is a much narrower window). */
+  pnlHistory: ReadonlyArray<WhalePnlPoint>;
 };
 
 const RECENT_TRADES_LIMIT = 50;
 const OPEN_POSITIONS_LIMIT = 10;
+/** PnL history lookback for the balance-growth chart. Independent of the
+ *  active heatmap range — chart should always show the whale's full
+ *  recent arc, not a 1h slice. */
+const PNL_HISTORY_DAYS = 90;
 
 function num(v: string | number | null | undefined): number {
   if (v === null || v === undefined) return 0;
@@ -101,6 +116,7 @@ export async function fetchWhaleProfile(
     opened_at: Date | string;
     last_modified_at: Date | string;
   };
+  type PnlRow = { day: string; cum_pnl: string | number };
   type TradeRow = {
     ts: Date | string;
     side: "BUY" | "SELL" | "SETTLEMENT";
@@ -120,8 +136,9 @@ export async function fetchWhaleProfile(
   }
 
   // Window-wide stats + per-category split + recent trades all hit the same
-  // (whale_addr, ts) index. Run them in parallel.
-  const [statsRows, categoryRows, posRows, tradeRows] = await Promise.all([
+  // (whale_addr, ts) index. Run them in parallel — including the wider
+  // 90-day pnl history for the balance-growth chart.
+  const [statsRows, categoryRows, posRows, tradeRows, pnlRows] = await Promise.all([
     sql<StatsRow[]>`
       SELECT
         COUNT(*)::bigint                                                       AS signals,
@@ -175,6 +192,23 @@ export async function fetchWhaleProfile(
       ORDER BY ts DESC
       LIMIT ${RECENT_TRADES_LIMIT}
     `,
+    sql<PnlRow[]>`
+      WITH per_day AS (
+        SELECT
+          DATE_TRUNC('day', ts AT TIME ZONE 'UTC') AS day,
+          COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS daily_pnl
+        FROM signals
+        WHERE whale_addr = ${addr}
+          AND ts >= NOW() - (${`${PNL_HISTORY_DAYS} days`}::interval)
+          AND ts <= NOW()
+        GROUP BY day
+      )
+      SELECT
+        to_char(day, 'YYYY-MM-DD') AS day,
+        SUM(daily_pnl) OVER (ORDER BY day) AS cum_pnl
+      FROM per_day
+      ORDER BY day
+    `,
   ]);
 
   const s = statsRows[0];
@@ -221,6 +255,11 @@ export async function fetchWhaleProfile(
     exitKind: t.exit_kind,
   }));
 
+  const pnlHistory: WhalePnlPoint[] = pnlRows.map((r) => ({
+    day: r.day,
+    cumulativePnl: num(r.cum_pnl),
+  }));
+
   return {
     addr,
     range,
@@ -229,5 +268,6 @@ export async function fetchWhaleProfile(
     categoryMix,
     openPositions,
     recentTrades,
+    pnlHistory,
   };
 }

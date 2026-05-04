@@ -200,6 +200,7 @@ export type WhaleProfile = {
     realizedPnl: number | null;
     exitKind: "SELL" | "RESOLUTION" | null;
   }>;
+  pnlHistory: ReadonlyArray<{ day: string; cumulativePnl: number }>;
 };
 
 // SSE wire shape mirrors api.ts:signalToWire().

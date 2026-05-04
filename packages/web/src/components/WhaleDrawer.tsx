@@ -6,6 +6,7 @@ import { categoryMeta } from "@/lib/categories";
 import { fmtMoney, fmtMoneyShort } from "@/lib/format";
 import { TOKENS } from "@/lib/tokens";
 import type { Category, LiveRange, WhaleProfile } from "@/lib/types";
+import { BalanceChart } from "./BalanceChart";
 import { WhaleAvatar } from "./WhaleAvatar";
 
 const POLY_REFERRAL =
@@ -228,6 +229,12 @@ function DrawerBody({
             }
           />
         </div>
+      </Section>
+
+      {/* Balance growth — last 90 days of cumulative realized PnL. Independent
+          of the active heatmap range; gives a longer arc than the stats above. */}
+      <Section title="Balance growth · last 90 days">
+        <BalanceChart points={data.pnlHistory} />
       </Section>
 
       {/* Category mix */}
