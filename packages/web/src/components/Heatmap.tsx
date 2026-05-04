@@ -218,6 +218,10 @@ export function Heatmap() {
         lowSample={lowSample}
         onRequestLogin={() => setLoginOpen(true)}
       />
+      {/* Top banner — visible to authed users without a passkey, dismissible.
+       *  Doesn't take vertical space when not shown; flexShrink:0 keeps it
+       *  from stealing space from the grid below. */}
+      <PasskeyPrompt />
 
       <div
         style={{
@@ -343,9 +347,6 @@ export function Heatmap() {
         onClose={() => setWhaleProfileAddr(null)}
       />
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
-      {/* Floats in the bottom-right after a fresh sign-in if the user
-       *  doesn't have a passkey yet. Dismissed → never shown again. */}
-      <PasskeyPrompt />
     </div>
   );
 }
