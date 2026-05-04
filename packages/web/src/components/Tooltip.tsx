@@ -80,7 +80,14 @@ function sortWhales(whales: ReadonlyArray<WhaleCellSummary>, metric: HeatmapMetr
       copy.sort((a, b) => cmpDesc(a.pnl, b.pnl));
       break;
     case "winrate":
+      // Whales without decided trades have winRate=null. Sort puts them
+      // last (cmpDesc treats null as -Infinity), so when the server's
+      // top-N by volume includes some null-winRate whales they fall
+      // below the ones who actually have a closed-trade record.
       copy.sort((a, b) => {
+        const aHas = a.winRate !== null;
+        const bHas = b.winRate !== null;
+        if (aHas !== bHas) return aHas ? -1 : 1;
         const c = cmpDesc(a.winRate, b.winRate);
         return c !== 0 ? c : cmpDesc(a.signals, b.signals);
       });

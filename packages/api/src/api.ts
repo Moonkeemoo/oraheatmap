@@ -47,7 +47,12 @@ const SSE_HEARTBEAT_MS = 25_000;
 const TOP_MARKETS_PER_CELL = 10;
 /** Top whales fetched per (category, bucket) cell — surfaced in tooltip's
  *  "Top whales" section, click to open the whale drawer. */
-const TOP_WHALES_PER_CELL = 5;
+// Server returns top-N by USD volume; UI re-sorts client-side by the
+// active metric and slices to top-5. 20 gives the UI room to surface
+// a different leader on PNL / WIN RATE / TRADES — small list of 5 was
+// always volume-leaders, so winrate/pnl tabs ended up with all-null
+// "—" because the volume top-5 happened to have no closed trades.
+const TOP_WHALES_PER_CELL = 20;
 /** Whales surfaced in the StatsBar "Top Whale" hover popover. */
 const TOP_WHALES_LIMIT = 10;
 /** Hard cap on rows in the L3 "markets in subcategory" heatmap — anything
