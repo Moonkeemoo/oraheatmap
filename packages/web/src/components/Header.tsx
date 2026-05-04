@@ -1,4 +1,4 @@
-import { useSession } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { TOKENS } from "@/lib/tokens";
 import type { HeatmapMetric, LiveRange, Mode, PatternKind } from "@/lib/types";
 import { LiveDot } from "./LiveDot";
@@ -198,7 +198,7 @@ export function Header({
   /** Open the login modal — used to gate range/mode/kind toggles. */
   onRequestLogin: () => void;
 }) {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const isAuthed = status === "authenticated";
   // Wrap a control's onClick — when not authed, intercept and open login instead.
   const gate = <T extends unknown[]>(fn: (...args: T) => void): ((...args: T) => void) => {
@@ -224,64 +224,78 @@ export function Header({
   return (
     <div
       style={{
-        // Right padding reserves room for the fixed sign-in chip in the
-        // top-right corner so metric tabs and the chip don't overlap.
-        padding: "16px 150px 12px 24px",
+        padding: "14px 24px 10px",
         borderBottom: `1px solid ${TOKENS.border}`,
         display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "space-between",
+        flexDirection: "column",
         gap: 12,
-        rowGap: 12,
-        flexWrap: "wrap",
         flexShrink: 0,
         minWidth: 0,
-        // Reserve enough height for the worst case (controls wrap below the
-        // title on a narrow viewport). Without this the grid below "jumps"
-        // up and down by ~32px when toggling LIVE/PATTERN or resizing.
-        minHeight: 92,
         boxSizing: "border-box",
       }}
     >
-      <div style={{ display: "flex", alignItems: "stretch", gap: 16 }}>
-        <div style={{ width: 3, background: TOKENS.accent, borderRadius: 2, alignSelf: "stretch" }} />
-        <div>
-          <div
-            style={{
-              fontSize: 11,
-              color: TOKENS.textSec,
-              letterSpacing: 0.7,
-              textTransform: "uppercase",
-              fontWeight: 600,
-              marginBottom: 6,
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
-            {isLive && range === "1h" && <LiveDot />}
-            <span style={{ color: tagColor }}>{tag}</span>
-            <span style={{ color: TOKENS.borderHi }}>·</span>
-            <span>{subtitle}</span>
-            <span style={{ color: TOKENS.borderHi }}>·</span>
-            <span>{trackedCount.toLocaleString()} whales tracked</span>
+      {/* Row 1: title (left, vertically centered) + sign-in chip (right). */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          minHeight: 44,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "stretch", gap: 16, minWidth: 0 }}>
+          <div style={{ width: 3, background: TOKENS.accent, borderRadius: 2, alignSelf: "stretch" }} />
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 10,
+                color: TOKENS.textSec,
+                letterSpacing: 0.7,
+                textTransform: "uppercase",
+                fontWeight: 600,
+                marginBottom: 4,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              {isLive && range === "1h" && <LiveDot />}
+              <span style={{ color: tagColor }}>{tag}</span>
+              <span style={{ color: TOKENS.borderHi }}>·</span>
+              <span>{subtitle}</span>
+              <span style={{ color: TOKENS.borderHi }}>·</span>
+              <span>{trackedCount.toLocaleString()} whales tracked</span>
+            </div>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                letterSpacing: 0.6,
+                textTransform: "uppercase",
+                color: TOKENS.text,
+                lineHeight: 1,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              <span style={{ color: TOKENS.accent }}>OraLab</span>
+              <span style={{ color: TOKENS.textSec }}>: </span>
+              Whale Signal Heatmap
+            </h1>
           </div>
-          <h1
-            style={{
-              margin: 0,
-              fontSize: 22,
-              fontWeight: 800,
-              letterSpacing: 0.6,
-              textTransform: "uppercase",
-              color: TOKENS.text,
-              lineHeight: 1,
-            }}
-          >
-            Whale Signal Heatmap
-          </h1>
         </div>
+        <UserChip
+          name={(session?.user?.name as string) || null}
+          authed={isAuthed}
+          onLogin={onRequestLogin}
+          onLogout={() => signOut()}
+        />
       </div>
 
+      {/* Row 2: scale legend + mode/range/metric controls, right-aligned. */}
       <div
         style={{
           display: "flex",
