@@ -21,7 +21,6 @@ import {
 import type { Ingestor } from "./ingestor";
 import { log } from "./log";
 import { type PatternKind, queryCellCycles, queryPattern } from "./pattern-query";
-import type { ScopeThresholds } from "./scope-thresholds";
 import type { SignalHub } from "./signal-hub";
 import { readAuthFromHeaders } from "./auth-jwt";
 import { SUBCATEGORY_LABELS, subcategoriesOf } from "./subcategorize";
@@ -39,7 +38,6 @@ export type ApiDeps = {
   gammaCacheSize: () => number;
   whaleCount: () => number;
   fetchMarketHistory: MarketHistoryFetcher;
-  scopeThresholds: ScopeThresholds;
 };
 
 const SSE_HEARTBEAT_MS = 25_000;
@@ -155,8 +153,7 @@ function shortenMarketLabel(label: string, subcategoryLabel: string | null): str
   return out.length > 0 ? out : label;
 }
 
-function signalToWire(s: Signal, scopeThresholds: ScopeThresholds): Record<string, unknown> {
-  const sizeUsd = s.size * s.price;
+function signalToWire(s: Signal): Record<string, unknown> {
   return {
     ts: s.ts.toISOString(),
     whaleAddr: s.whaleAddr,
@@ -171,26 +168,10 @@ function signalToWire(s: Signal, scopeThresholds: ScopeThresholds): Record<strin
     side: s.side,
     price: s.price,
     size: s.size,
-    sizeUsd,
+    sizeUsd: s.size * s.price,
     realizedPnl: s.realizedPnl,
     exitKind: s.exitKind,
     txHash: s.txHash,
-    /** Per-metric magnitude relative to scope distribution. The frontend
-     *  picks `magnitudes.volume` or `magnitudes.pnl` based on the active
-     *  metric tab and shows a highlight plaque on signals whose tag is
-     *  "huge" or "big". Both wins and losses surface on PnL — sign is
-     *  carried by `realizedPnl` itself.
-     *
-     *    volume: "huge" / "big" / null — BUYs whose size*price >= P99/P95
-     *    pnl:    "huge" / "big" / null — exits whose |realized_pnl| >= P99/P95 */
-    magnitudes: scopeThresholds.magnitudesFor({
-      category: s.category,
-      subcategory: s.subcategory,
-      conditionId: s.conditionId,
-      sizeUsd,
-      realizedPnl: s.realizedPnl,
-      side: s.side,
-    }),
   };
 }
 
@@ -689,7 +670,7 @@ export function createApi(deps: ApiDeps) {
           safeEnqueue(`event: hello\ndata: ${JSON.stringify({ ts: new Date().toISOString() })}\n\n`);
 
           const unsubscribe = deps.hub.subscribe((signal) => {
-            safeEnqueue(`event: signal\ndata: ${JSON.stringify(signalToWire(signal, deps.scopeThresholds))}\n\n`);
+            safeEnqueue(`event: signal\ndata: ${JSON.stringify(signalToWire(signal))}\n\n`);
           });
 
           // Periodic comment-line heartbeat keeps proxies + browsers happy

@@ -588,7 +588,6 @@ export function Grid({
               flashSeq={flashSeq}
               showDelta={isPattern}
               isLocked={lockedCellId === cellId}
-              category={cat}
               onHover={
                 options.isDragOverlay
                   ? () => {}

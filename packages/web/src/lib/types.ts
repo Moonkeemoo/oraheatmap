@@ -222,14 +222,4 @@ export type SignalEvent = {
   realizedPnl: number | null;
   exitKind: "SELL" | "RESOLUTION" | null;
   txHash: string | null;
-  /** Per-metric magnitudes relative to the trade's scope distribution.
-   *  - `volume`: tag for size*price among BUYs (top-1% = "huge", top-5% = "big").
-   *  - `pnl`:    tag for |realized_pnl| among exits (same buckets).
-   *  null when below threshold or insufficient sample size. The frontend
-   *  picks one based on the active metric tab to drive the highlight
-   *  plaque on /app. */
-  magnitudes: {
-    volume: "huge" | "big" | null;
-    pnl: "huge" | "big" | null;
-  };
 };

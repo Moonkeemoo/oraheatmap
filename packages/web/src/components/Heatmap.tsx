@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useHeatmap } from "@/hooks/useHeatmap";
 import { useRowOrder } from "@/hooks/useRowOrder";
-import { useLiveActivity } from "@/hooks/useLiveActivity";
 import { useSse } from "@/hooks/useSse";
 import { applySignal } from "@/lib/heatmap-apply";
 import { buildScopeKey } from "@/lib/row-order";
@@ -22,7 +21,6 @@ import { Breadcrumb } from "./Breadcrumb";
 import { Footer } from "./Footer";
 import { Grid } from "./Grid";
 import { Header } from "./Header";
-import { LiveActivityOverlay } from "./LiveActivityOverlay";
 import { HeatmapSkeleton } from "./HeatmapSkeleton";
 import { LoginModal } from "./LoginModal";
 import { StatsBar } from "./StatsBar";
@@ -123,18 +121,7 @@ export function Heatmap() {
     return acc;
   }, [fetchedData, pendingSignals]);
 
-  // Magnitude-driven activity overlay — fed from the same useSse callback
-  // below so we keep one EventSource per tab. Hook is metric-aware: in
-  // PnL mode it surfaces realised wins/losses; in volume mode big BUYs;
-  // signals/winrate fall back to volume/pnl respectively.
-  const liveActivity = useLiveActivity({ enabled: mode === "live", metric });
-
   useSse((s) => {
-    // Activity overlay sees every signal regardless of whether the heatmap
-    // view itself is currently rendering it (cross-category convergence
-    // tracking still works on a drilled view, etc.).
-    liveActivity.ingest(s);
-
     if (!fetchedData) return;
     if (!metricAffectedBy(metric, s)) return;
 
@@ -426,12 +413,6 @@ export function Heatmap() {
         onClose={() => setWhaleProfileAddr(null)}
       />
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
-      {isLive && (
-        <LiveActivityOverlay
-          plaque={liveActivity.currentPlaque}
-          convergences={liveActivity.convergences}
-        />
-      )}
     </div>
   );
 }

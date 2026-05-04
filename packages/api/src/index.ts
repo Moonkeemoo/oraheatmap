@@ -1,6 +1,5 @@
 import { createApi } from "./api";
 import { createDb, createSignalBuffer } from "./db";
-import { createScopeThresholds } from "./scope-thresholds";
 import { loadEnv } from "./env";
 import { createGammaCache } from "./gamma-cache";
 import { createMarketHistoryFetcher } from "./market-history";
@@ -78,13 +77,6 @@ async function main(): Promise<void> {
     gammaCache: gamma,
   });
 
-  // Loads P95 / P99 USD thresholds per (category, subcat, conditionId) scope
-  // from the signal_thresholds materialised view. Reloads in-memory map every
-  // hour to pick up the cron's REFRESH MATERIALIZED VIEW. SSE pipeline reads
-  // it to tag signals with magnitude="huge"|"big"|null for the frontend
-  // animation layer.
-  const scopeThresholds = await createScopeThresholds(sql);
-
   const api = createApi({
     sql,
     hub,
@@ -93,7 +85,6 @@ async function main(): Promise<void> {
     gammaCacheSize: () => gamma.size(),
     whaleCount: () => whales.size,
     fetchMarketHistory,
-    scopeThresholds,
   });
 
   // Periodic stats line so logs show liveness even when no whale matches happen.
