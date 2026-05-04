@@ -297,12 +297,17 @@ export function Heatmap() {
                     });
                   }}
                   onRowClick={
-                    !displayData.drillCategory
-                      ? (key) =>
-                          isAuthed ? setDrillCategory(key as Category) : setLoginOpen(true)
-                      : !displayData.drillSubcategory
-                        ? (key) => (isAuthed ? setDrillSubcategory(key) : setLoginOpen(true))
-                        : undefined
+                    // PATTERN doesn't support L3 (per-market) drill — bail
+                    // out when we're already inside a category, otherwise the
+                    // › chevron leads nowhere.
+                    mode === "pattern" && displayData.drillCategory
+                      ? undefined
+                      : !displayData.drillCategory
+                        ? (key) =>
+                            isAuthed ? setDrillCategory(key as Category) : setLoginOpen(true)
+                        : !displayData.drillSubcategory
+                          ? (key) => (isAuthed ? setDrillSubcategory(key) : setLoginOpen(true))
+                          : undefined
                   }
                   lockedCellId={locked?.cellId ?? null}
                   flashByCell={flashByCell}
