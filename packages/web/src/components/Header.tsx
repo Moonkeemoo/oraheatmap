@@ -208,27 +208,28 @@ export function Header({
   return (
     <div
       style={{
-        padding: "14px 24px 10px",
+        // Tight padding so the header height is driven by the brand logo
+        // (60px) and the controls row, not by stale defaults from when
+        // the meta strip lived above the controls.
+        padding: "8px 24px 8px",
         borderBottom: `1px solid ${TOKENS.border}`,
         display: "flex",
         flexDirection: "column",
-        gap: 12,
+        gap: 8,
         flexShrink: 0,
         minWidth: 0,
         boxSizing: "border-box",
       }}
     >
-      {/* Row 1: sign-in chip (left) + title (right, vertically centered).
-          Swapped from the original left-title layout — keeps the title as
-          a right-anchored brand mark while moving the user-action surface
-          to the same side as Row 2's controls. */}
+      {/* Row 1: sign-in chip (left) + brand logo (right). Both vertical-
+          centered so the chip doesn't "float" above the logo. No minHeight
+          — let the logo's natural 60px set the row height. */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           gap: 12,
-          minHeight: 44,
         }}
       >
         <UserChip
