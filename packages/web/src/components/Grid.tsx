@@ -1,8 +1,27 @@
 "use client";
 
-import { Fragment, useMemo } from "react";
+import {
+  closestCenter,
+  DndContext,
+  DragOverlay,
+  type DragEndEvent,
+  type DragStartEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { useMemo, useState } from "react";
 import { categoryMeta } from "@/lib/categories";
 import { makeIntensityFn } from "@/lib/colors";
+import { applyOrder } from "@/lib/row-order";
 import { TOKENS } from "@/lib/tokens";
 import type { Category, HeatmapBucket, HeatmapCell, HeatmapMetric, HeatmapResponse } from "@/lib/types";
 import { Cell } from "./Cell";
@@ -31,24 +50,14 @@ function tint(hex: string, amount: number): string {
 }
 
 const LABEL_W = 100;
-/** L3 (per-market) shows long market questions as row labels — needs more
- *  horizontal room and 2-line wrap to stay readable. */
 const LABEL_W_L3 = 170;
 const TIME_ROW_H = 26;
-/** Minimum height per category row. Drill mode can show 15 rows which on a
- *  short screen would squish below readable size; clamp here and let the
- *  page scroll (body overflow-y) instead. L3 needs a touch more for 2-line
- *  market labels. */
 const MIN_ROW_H = 38;
 const MIN_ROW_H_L3 = 44;
+/** Fixed-width drag handle column inside the label cell, only rendered when
+ *  reorder is enabled (auth'd). Kept narrow so it doesn't squeeze the label. */
+const DRAG_HANDLE_W = 14;
 
-/**
- * Bucket → human label.
- *   LIVE 1h/24h           → "16:35"  HH:MM, local TZ from bucket.ts
- *   LIVE 12d/12w          → "03/05"  DD/MM, local TZ
- *   PATTERN hour-of-day   → "16:00"  HH:MM start of local 2-hour slot
- *   PATTERN day-of-week   → "Mon".."Sun" from server
- */
 function formatSlotLabel(
   bucket: HeatmapBucket,
   mode: HeatmapResponse["mode"],
@@ -58,8 +67,6 @@ function formatSlotLabel(
 ): string {
   if (mode === "pattern") {
     if (patternKind === "hour-of-day") {
-      // After rotation, slotPosition is the local 2-hour slot index (0..11).
-      // Show the slot's start hour HH:00 — matches LIVE's HH:MM format.
       const h = (slotPosition * 2) % 24;
       return `${String(h).padStart(2, "0")}:00`;
     }
@@ -77,6 +84,245 @@ function formatSlotLabel(
   return `${dd}/${mo}`;
 }
 
+type RowMeta = {
+  cat: string;
+  rowColor: string;
+  rowLabel: string;
+  rawLabel: string;
+  isResolved: boolean;
+  isL3: boolean;
+  isDrillRow: boolean;
+  l3Url: string | null;
+};
+
+function makeRowMeta(
+  cat: string,
+  data: HeatmapResponse,
+): RowMeta {
+  const isDrillRow = data.drillCategory !== null;
+  const isL3 = data.drillSubcategory !== null;
+  const isResolved = isL3 && data.resolvedRows.includes(cat);
+  const baseColor = isDrillRow
+    ? categoryMeta(data.drillCategory as Category).color
+    : categoryMeta(cat as Category).color;
+  const rowColor = isDrillRow ? tint(baseColor, isResolved ? 0.4 : 0.05) : baseColor;
+  const rawLabel = isDrillRow
+    ? data.subcategoryLabels?.[cat] ?? (isL3 ? "(unknown)" : cat.toUpperCase())
+    : categoryMeta(cat as Category).label;
+  const l3Url = isL3 ? marketUrl(data.marketSlugs?.[cat] ?? null) : null;
+  return {
+    cat,
+    rowColor,
+    rowLabel: rawLabel,
+    rawLabel,
+    isResolved,
+    isL3,
+    isDrillRow,
+    l3Url,
+  };
+}
+
+/** A grip-icon. Only renders an interactive handle when reorderEnabled.
+ *  Disabled state shows a lock + tooltip, prompting login. */
+function DragHandle({
+  reorderEnabled,
+  onRequestLogin,
+  listeners,
+  attributes,
+}: {
+  reorderEnabled: boolean;
+  onRequestLogin?: () => void;
+  // dnd-kit's listeners/attributes are loosely typed; pass-through.
+  listeners?: Record<string, (event: unknown) => void>;
+  attributes?: Record<string, unknown>;
+}) {
+  const common: React.CSSProperties = {
+    width: DRAG_HANDLE_W,
+    height: 18,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: TOKENS.textSec,
+    flexShrink: 0,
+    background: "transparent",
+    border: "none",
+    padding: 0,
+  };
+  if (!reorderEnabled) {
+    return (
+      <button
+        type="button"
+        title="Sign in to customize row order"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRequestLogin?.();
+        }}
+        style={{ ...common, cursor: "pointer", opacity: 0.45 }}
+        aria-label="Sign in to reorder rows"
+      >
+        <svg width="10" height="12" viewBox="0 0 10 12" aria-hidden="true">
+          <rect x="2" y="5" width="6" height="6" rx="1" fill="currentColor" />
+          <path
+            d="M3 5V3.5a2 2 0 1 1 4 0V5"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            fill="none"
+          />
+        </svg>
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      title="Drag to reorder"
+      style={{ ...common, cursor: "grab", touchAction: "none" }}
+      aria-label="Drag to reorder row"
+      {...(attributes as object)}
+      {...(listeners as object)}
+    >
+      <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true">
+        <circle cx="3" cy="3" r="1.1" fill="currentColor" />
+        <circle cx="7" cy="3" r="1.1" fill="currentColor" />
+        <circle cx="3" cy="7" r="1.1" fill="currentColor" />
+        <circle cx="7" cy="7" r="1.1" fill="currentColor" />
+        <circle cx="3" cy="11" r="1.1" fill="currentColor" />
+        <circle cx="7" cy="11" r="1.1" fill="currentColor" />
+      </svg>
+    </button>
+  );
+}
+
+/** Render the label badge for a row — pure UI, used by both the live row
+ *  and the DragOverlay clone. */
+function RowLabelBadge({
+  meta,
+  clickableRow,
+  onRowClick,
+}: {
+  meta: RowMeta;
+  clickableRow: boolean;
+  onRowClick?: (rowKey: string) => void;
+}) {
+  const { isL3, isResolved, rowColor, rowLabel, rawLabel, l3Url } = meta;
+  const isInteractive = clickableRow || l3Url !== null;
+  const titleText = isL3
+    ? `${rawLabel}${isResolved ? " · resolved" : ""}${l3Url ? " — open on Polymarket" : ""}`
+    : clickableRow
+      ? `Drill into ${meta.isDrillRow ? "markets" : "subcategories"}`
+      : undefined;
+  const badgeStyle: React.CSSProperties = {
+    background: rowColor,
+    color: "#fff",
+    border: "none",
+    fontFamily: "inherit",
+    fontSize: 10,
+    fontWeight: isL3 ? 600 : 700,
+    letterSpacing: isL3 ? 0.2 : 0.6,
+    padding: isL3 ? "5px 8px" : "5px 10px",
+    borderRadius: 3,
+    textTransform: isL3 ? "none" : "uppercase",
+    textAlign: isL3 ? ("left" as const) : undefined,
+    width: "100%",
+    cursor: isInteractive ? "pointer" : "default",
+    transition: "filter .12s",
+    opacity: isResolved ? 0.55 : 1,
+    textDecoration: isResolved ? "line-through" : "none",
+    boxSizing: "border-box",
+    display: "block",
+    whiteSpace: isL3 ? "normal" : "nowrap",
+    lineHeight: isL3 ? "1.25" : undefined,
+    wordBreak: isL3 ? ("break-word" as const) : undefined,
+  };
+  const onEnter = (e: React.MouseEvent<HTMLElement>): void => {
+    if (isInteractive) e.currentTarget.style.filter = "brightness(1.15)";
+  };
+  const onLeave = (e: React.MouseEvent<HTMLElement>): void => {
+    if (isInteractive) e.currentTarget.style.filter = "none";
+  };
+  if (l3Url) {
+    return (
+      <a
+        href={l3Url}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={titleText}
+        style={badgeStyle}
+        onMouseEnter={onEnter}
+        onMouseLeave={onLeave}
+      >
+        {rowLabel}
+      </a>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={clickableRow ? () => onRowClick?.(meta.cat) : undefined}
+      disabled={!clickableRow}
+      title={titleText}
+      style={badgeStyle}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+    >
+      {rowLabel}
+    </button>
+  );
+}
+
+/** A single sortable row. Wrapped in a subgrid container so it spans all
+ *  columns of the outer grid and shares the column template. The whole row
+ *  receives the sortable transform — both label badge and data cells slide
+ *  together as a unit, matching the user's mental model of "category =
+ *  the entire horizontal stripe of values that belongs to it". */
+function SortableRow({
+  rowKey,
+  reorderEnabled,
+  children,
+}: {
+  rowKey: string;
+  reorderEnabled: boolean;
+  children: (
+    listeners: Record<string, (event: unknown) => void> | undefined,
+    attributes: Record<string, unknown>,
+    isDragging: boolean,
+  ) => React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: rowKey,
+    disabled: !reorderEnabled,
+  });
+  const style: React.CSSProperties = {
+    gridColumn: "1 / -1",
+    display: "grid",
+    gridTemplateColumns: "subgrid",
+    gap: 4,
+    transform: CSS.Transform.toString(transform),
+    transition,
+    // Hide the live row while dragging — DragOverlay paints the moving copy.
+    opacity: isDragging ? 0 : 1,
+    // Lift dragged item above peers (defensive — DragOverlay handles z-index).
+    zIndex: isDragging ? 2 : "auto",
+    position: "relative",
+  };
+  return (
+    <div ref={setNodeRef} style={style} data-row-key={rowKey}>
+      {children(
+        listeners as unknown as Record<string, (e: unknown) => void> | undefined,
+        attributes as unknown as Record<string, unknown>,
+        isDragging,
+      )}
+    </div>
+  );
+}
+
 export function Grid({
   data,
   metric,
@@ -86,45 +332,51 @@ export function Grid({
   lockedCellId,
   flashByCell,
   gridKey,
+  savedOrder,
+  onReorder,
+  reorderEnabled,
+  onRequestLogin,
 }: {
   data: HeatmapResponse;
   metric: HeatmapMetric;
   onHover: (h: { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string; cellId: string } | null) => void;
   onClick: (h: { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string; cellId: string }) => void;
-  /** Clicking a row badge drills one level deeper. At L1 the arg is a Category
-   *  name, at L2 a subcategory slug. L3 has no further drill. */
   onRowClick?: (rowKey: string) => void;
-  /** `${category}:${slotIdx}` of the currently locked cell, or null. */
   lockedCellId: string | null;
   flashByCell: FlashByCell;
   gridKey: string;
+  /** User's saved order for this scope. undefined when no preference saved
+   *  yet — Grid falls back to data.categories' natural order. */
+  savedOrder: string[] | undefined;
+  /** Persist a new order. Called once per drag-end. */
+  onReorder: (next: string[]) => void;
+  /** When false, drag handles render as locked icons that prompt login. */
+  reorderEnabled: boolean;
+  onRequestLogin?: () => void;
 }) {
   const num = data.buckets.length;
   const isPattern = data.mode === "pattern";
 
-  // Backend pattern queries group by UTC slot. To display in viewer's local TZ
-  // we rotate the bucket array.
-  //
-  // hour-of-day: 12 slots × 2h. shift unit = 2h. For non-even tzOffsets
-  // (e.g. UTC+5.5 India, UTC+3 Kyiv) the slot boundary doesn't align with
-  // the local hour boundary — we round to the nearest 2-hour slot, accepting
-  // up to a 1-hour skew. Acceptable for a pattern view.
-  //
-  // displayColumn[localSlot] = server[(localSlot + shift) % 12].
-  // shift = (-tzOffset/2) mod 12.
   const localShiftIdx = useMemo<number>(() => {
     if (data.mode !== "pattern") return 0;
     if (data.patternKind === "hour-of-day") {
       const tzOffset = -new Date().getTimezoneOffset() / 60;
       return ((Math.round(-tzOffset / 2) % 12) + 12) % 12;
     }
-    return 0; // day-of-week: leave UTC dow for MVP — TZ shift rarely changes day
+    return 0;
   }, [data]);
 
   const buckets = useMemo(() => {
     if (localShiftIdx === 0) return data.buckets;
     return data.buckets.slice(localShiftIdx).concat(data.buckets.slice(0, localShiftIdx));
   }, [data.buckets, localShiftIdx]);
+
+  // Display order = saved order applied to natural order; new keys go to
+  // their natural position (next to their default-rank neighbour).
+  const displayCategories = useMemo(
+    () => applyOrder(data.categories, savedOrder),
+    [data.categories, savedOrder],
+  );
 
   const cellsByCat = useMemo(() => {
     const out: Record<string, ReadonlyArray<HeatmapCell>> = {};
@@ -147,214 +399,246 @@ export function Grid({
     return makeIntensityFn(flat, key);
   }, [data.categories, cellsByCat, metric]);
 
-  // Highlight the slot corresponding to "now" in PATTERN — it's where new
-  // signals will land. Computed in viewer's local TZ to match label format.
-  // For hour-of-day after local rotation, NOW = local hour (column position).
   const nowSlotIndex = useMemo<number | null>(() => {
     if (data.mode === "live") return num - 1;
     if (data.patternKind === "hour-of-day") return Math.floor(new Date().getHours() / 2);
     if (data.patternKind === "day-of-week") {
-      const dow = new Date().getDay(); // 0=Sun
+      const dow = new Date().getDay();
       const monFirst = [1, 2, 3, 4, 5, 6, 0];
       return monFirst.indexOf(dow);
     }
     return null;
   }, [data, num]);
 
+  const isL3Grid = data.drillSubcategory !== null;
+
+  // Pointer sensor with an activation distance so a short click on the
+  // handle still registers as a click (no accidental drag start).
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+  );
+
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+
+  const handleDragStart = (e: DragStartEvent): void => {
+    setActiveKey(String(e.active.id));
+  };
+
+  const handleDragEnd = (e: DragEndEvent): void => {
+    setActiveKey(null);
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const oldIndex = displayCategories.indexOf(String(active.id));
+    const newIndex = displayCategories.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    const next = arrayMove(displayCategories, oldIndex, newIndex);
+    onReorder(next);
+  };
+
+  // Build a renderer for a row's INNER content (label cell + N data cells).
+  // Reused by both live rows and the DragOverlay clone, so the overlay's
+  // appearance matches what's underneath.
+  const renderRowInner = (
+    cat: string,
+    options: {
+      reorderEnabled: boolean;
+      listeners: Record<string, (event: unknown) => void> | undefined;
+      attributes: Record<string, unknown> | undefined;
+      isDragOverlay: boolean;
+    },
+  ): React.ReactNode => {
+    const meta = makeRowMeta(cat, data);
+    const clickableRow = !meta.isL3 && onRowClick !== undefined && !options.isDragOverlay;
+    return (
+      <>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-start",
+            gap: 4,
+            paddingRight: 10,
+          }}
+        >
+          <DragHandle
+            reorderEnabled={options.reorderEnabled}
+            onRequestLogin={onRequestLogin}
+            listeners={options.listeners}
+            attributes={options.attributes}
+          />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <RowLabelBadge
+              meta={meta}
+              clickableRow={clickableRow}
+              onRowClick={onRowClick}
+            />
+          </div>
+        </div>
+        {(cellsByCat[cat] ?? []).map((cell, slot) => {
+          const isNowCol = slot === nowSlotIndex;
+          const originalIdx = (slot + localShiftIdx) % num;
+          const flashSeq = flashByCell[`${cat}:${originalIdx}`] ?? 0;
+          const cellId = `${cat}:${slot}`;
+          const slotLabel = formatSlotLabel(
+            buckets[slot]!,
+            data.mode,
+            data.patternKind,
+            slot,
+            data.range,
+          );
+          return (
+            <Cell
+              key={`${cat}-${slot}-${gridKey}`}
+              cell={cell}
+              metric={metric}
+              intensityFn={intensityFn}
+              isNowCol={isNowCol}
+              flashSeq={flashSeq}
+              showDelta={isPattern}
+              isLocked={lockedCellId === cellId}
+              onHover={
+                options.isDragOverlay
+                  ? () => {}
+                  : (h) =>
+                      onHover(
+                        h
+                          ? { ...h, category: cat, slotLabel, cellId }
+                          : null,
+                      )
+              }
+              onClick={
+                options.isDragOverlay
+                  ? () => {}
+                  : (h) => onClick({ ...h, category: cat, slotLabel, cellId })
+              }
+            />
+          );
+        })}
+      </>
+    );
+  };
+
+  const labelColW = isL3Grid ? LABEL_W_L3 : LABEL_W;
+  const minRowH = isL3Grid ? MIN_ROW_H_L3 : MIN_ROW_H;
+
   return (
-    <div
-      data-hm-grid-wrap
-      style={{
-        display: "grid",
-        gridTemplateColumns: `${data.drillSubcategory ? LABEL_W_L3 : LABEL_W}px repeat(${num}, minmax(0, 1fr))`,
-        // minmax(MIN_ROW_H, 1fr): rows expand to fill available height when
-        // there's room, but never shrink below MIN_ROW_H — page scrolls
-        // instead. Critical for drill mode (15 rows) on short screens.
-        gridTemplateRows: `${TIME_ROW_H}px repeat(${data.categories.length}, minmax(${data.drillSubcategory ? MIN_ROW_H_L3 : MIN_ROW_H}px, 1fr))`,
-        gap: 4,
-        width: "100%",
-        height: "100%",
-        position: "relative",
-        fontSize: 12,
-        boxSizing: "border-box",
-      }}
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={() => setActiveKey(null)}
+      modifiers={[restrictToVerticalAxis, restrictToParentElement]}
     >
-      <div />
-      {buckets.map((b, i) => {
-        const lbl = formatSlotLabel(b, data.mode, data.patternKind, i, data.range);
-        const isNow = i === nowSlotIndex;
-        return (
+      <div
+        data-hm-grid-wrap
+        style={{
+          display: "grid",
+          gridTemplateColumns: `${labelColW}px repeat(${num}, minmax(0, 1fr))`,
+          gridTemplateRows: `${TIME_ROW_H}px repeat(${displayCategories.length}, minmax(${minRowH}px, 1fr))`,
+          gap: 4,
+          width: "100%",
+          height: "100%",
+          position: "relative",
+          fontSize: 12,
+          boxSizing: "border-box",
+        }}
+      >
+        {/* Header row — time labels */}
+        <div
+          style={{
+            gridColumn: "1 / -1",
+            display: "grid",
+            gridTemplateColumns: "subgrid",
+            gap: 4,
+          }}
+        >
+          <div />
+          {buckets.map((b, i) => {
+            const lbl = formatSlotLabel(b, data.mode, data.patternKind, i, data.range);
+            const isNow = i === nowSlotIndex;
+            return (
+              <div
+                key={i}
+                style={{
+                  fontSize: 10,
+                  fontFamily: TOKENS.mono,
+                  color: isNow ? TOKENS.pos : TOKENS.textSec,
+                  fontWeight: isNow ? 700 : 500,
+                  letterSpacing: 0.5,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {isNow ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: 6,
+                        background: TOKENS.pos,
+                        boxShadow: `0 0 6px ${TOKENS.pos}`,
+                      }}
+                    />
+                    {lbl}
+                  </span>
+                ) : (
+                  lbl
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <SortableContext items={displayCategories} strategy={verticalListSortingStrategy}>
+          {displayCategories.map((cat) => (
+            <SortableRow key={cat} rowKey={cat} reorderEnabled={reorderEnabled}>
+              {(listeners, attributes) =>
+                renderRowInner(cat, {
+                  reorderEnabled,
+                  listeners,
+                  attributes,
+                  isDragOverlay: false,
+                })
+              }
+            </SortableRow>
+          ))}
+        </SortableContext>
+      </div>
+
+      {/* Drag overlay — renders the actively dragged row as a fused card.
+          Sits in a portal-like absolute layer so it can move freely outside
+          the grid. We replicate the column template so cells line up. */}
+      <DragOverlay dropAnimation={null}>
+        {activeKey ? (
           <div
-            key={i}
             style={{
-              fontSize: 10,
-              fontFamily: TOKENS.mono,
-              color: isNow ? TOKENS.pos : TOKENS.textSec,
-              fontWeight: isNow ? 700 : 500,
-              letterSpacing: 0.5,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              display: "grid",
+              gridTemplateColumns: `${labelColW}px repeat(${num}, minmax(0, 1fr))`,
+              gap: 4,
+              width: "100%",
+              fontSize: 12,
+              boxSizing: "border-box",
+              padding: 4,
+              borderRadius: 6,
+              background: "rgba(22, 27, 34, 0.96)",
+              boxShadow: "0 12px 28px rgba(0,0,0,0.55), 0 0 0 1px rgba(240,180,41,0.45)",
+              backdropFilter: "blur(2px)",
+              cursor: "grabbing",
+              opacity: 0.95,
             }}
           >
-            {isNow ? (
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                <span
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: 6,
-                    background: TOKENS.pos,
-                    boxShadow: `0 0 6px ${TOKENS.pos}`,
-                  }}
-                />
-                {lbl}
-              </span>
-            ) : (
-              lbl
-            )}
-          </div>
-        );
-      })}
-
-      {data.categories.map((cat) => {
-        // In drill mode `cat` is a subcategory slug (L2) or condition_id (L3);
-        // we colour all rows with a single tinted variant of the parent
-        // category's hue so the grid still reads as "this is Sports". L3 rows
-        // get a slightly stronger tint when the market has resolved.
-        const isDrillRow = data.drillCategory !== null;
-        const isL3 = data.drillSubcategory !== null;
-        const isResolved = isL3 && data.resolvedRows.includes(cat);
-        const baseColor = isDrillRow
-          ? categoryMeta(data.drillCategory as Category).color
-          : categoryMeta(cat as Category).color;
-        const rowColor = isDrillRow ? tint(baseColor, isResolved ? 0.4 : 0.05) : baseColor;
-        const rawLabel = isDrillRow
-          ? data.subcategoryLabels?.[cat] ?? (isL3 ? "(unknown)" : cat.toUpperCase())
-          : categoryMeta(cat as Category).label;
-        // L3 labels are full market questions — the button itself wraps to
-        // 2 lines and CSS line-clamp adds an ellipsis past that. Full text
-        // remains accessible via the `title` attribute.
-        const rowLabel = rawLabel;
-        // L1 → click drills into category. L2 → click drills into subcategory.
-        // L3 → no further drill.
-        const clickableRow = !isL3 && onRowClick !== undefined;
-        return (
-          <Fragment key={cat}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "flex-start",
-                paddingRight: 10,
-              }}
-            >
-              {(() => {
-                // L3 rows: anchor → polymarket.com/event/{slug} (no further drill).
-                // L1/L2 rows: button → drill one level deeper.
-                const l3Url = isL3 ? marketUrl(data.marketSlugs?.[cat] ?? null) : null;
-                const isInteractive = clickableRow || l3Url !== null;
-                const titleText = isL3
-                  ? `${rawLabel}${isResolved ? " · resolved" : ""}${l3Url ? " — open on Polymarket" : ""}`
-                  : clickableRow
-                    ? `Drill into ${isDrillRow ? "markets" : "subcategories"}`
-                    : undefined;
-                // L3 badge expands to fit whatever text it has — no clipping.
-                // The grid row grows with it (minmax 1fr) so the whole row's
-                // cells stretch to match. Server-side label shortening keeps
-                // most rows compact; the few long ones just get a taller row.
-                const badgeStyle: React.CSSProperties = {
-                  background: rowColor,
-                  color: "#fff",
-                  border: "none",
-                  fontFamily: "inherit",
-                  fontSize: isL3 ? 10 : 10,
-                  fontWeight: isL3 ? 600 : 700,
-                  letterSpacing: isL3 ? 0.2 : 0.6,
-                  padding: isL3 ? "5px 8px" : "5px 10px",
-                  borderRadius: 3,
-                  textTransform: isL3 ? "none" : "uppercase",
-                  textAlign: isL3 ? ("left" as const) : undefined,
-                  width: isL3 ? "100%" : undefined,
-                  cursor: isInteractive ? "pointer" : "default",
-                  transition: "filter .12s",
-                  opacity: isResolved ? 0.55 : 1,
-                  textDecoration: isResolved ? "line-through" : "none",
-                  boxSizing: "border-box",
-                  display: isL3 ? "block" : undefined,
-                  whiteSpace: isL3 ? "normal" : "nowrap",
-                  lineHeight: isL3 ? "1.25" : undefined,
-                  wordBreak: isL3 ? ("break-word" as const) : undefined,
-                };
-                const onEnter = (e: React.MouseEvent<HTMLElement>): void => {
-                  if (isInteractive) e.currentTarget.style.filter = "brightness(1.15)";
-                };
-                const onLeave = (e: React.MouseEvent<HTMLElement>): void => {
-                  if (isInteractive) e.currentTarget.style.filter = "none";
-                };
-                const inner = rowLabel;
-                if (l3Url) {
-                  return (
-                    <a
-                      href={l3Url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={titleText}
-                      style={badgeStyle}
-                      onMouseEnter={onEnter}
-                      onMouseLeave={onLeave}
-                    >
-                      {inner}
-                    </a>
-                  );
-                }
-                return (
-                  <button
-                    type="button"
-                    onClick={clickableRow ? () => onRowClick!(cat) : undefined}
-                    disabled={!clickableRow}
-                    title={titleText}
-                    style={badgeStyle}
-                    onMouseEnter={onEnter}
-                    onMouseLeave={onLeave}
-                  >
-                    {inner}
-                  </button>
-                );
-              })()}
-            </div>
-            {(cellsByCat[cat] ?? []).map((cell, slot) => {
-              const isNowCol = slot === nowSlotIndex;
-              // flashByCell key is keyed by ORIGINAL bucket position (server
-              // index). After local-shift rotation, original index = (slot + shift) mod num.
-              const originalIdx = (slot + localShiftIdx) % num;
-              const flashSeq = flashByCell[`${cat}:${originalIdx}`] ?? 0;
-              const cellId = `${cat}:${slot}`;
-              const slotLabel = formatSlotLabel(buckets[slot]!, data.mode, data.patternKind, slot, data.range);
-              return (
-                <Cell
-                  key={`${cat}-${slot}-${gridKey}`}
-                  cell={cell}
-                  metric={metric}
-                  intensityFn={intensityFn}
-                  isNowCol={isNowCol}
-                  flashSeq={flashSeq}
-                  showDelta={isPattern}
-                  isLocked={lockedCellId === cellId}
-                  onHover={(h) =>
-                    onHover(
-                      h
-                        ? { ...h, category: cat, slotLabel, cellId }
-                        : null,
-                    )
-                  }
-                  onClick={(h) => onClick({ ...h, category: cat, slotLabel, cellId })}
-                />
-              );
+            {renderRowInner(activeKey, {
+              reorderEnabled: true,
+              listeners: undefined,
+              attributes: undefined,
+              isDragOverlay: true,
             })}
-          </Fragment>
-        );
-      })}
-    </div>
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   );
 }

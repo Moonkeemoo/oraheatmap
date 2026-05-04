@@ -58,6 +58,29 @@ export function streamUrl(): string {
   return `${apiBase()}/api/stream`;
 }
 
+export async function fetchAllRowOrders(): Promise<Record<string, string[]>> {
+  const res = await fetch(`${apiBase()}/api/me/row-order`, {
+    cache: "no-store",
+    credentials: "include",
+  });
+  if (res.status === 401) return {};
+  if (!res.ok) throw new Error(`row-order fetch failed: ${res.status}`);
+  const body = (await res.json()) as { orders?: Record<string, string[]> };
+  return body.orders ?? {};
+}
+
+export async function saveRowOrder(scope: string, orderedKeys: string[]): Promise<void> {
+  const res = await fetch(`${apiBase()}/api/me/row-order`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ scope, orderedKeys }),
+  });
+  if (!res.ok && res.status !== 401) {
+    throw new Error(`row-order save failed: ${res.status}`);
+  }
+}
+
 export async function fetchWhaleProfile(args: {
   addr: string;
   range: LiveRange;

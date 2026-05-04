@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useHeatmap } from "@/hooks/useHeatmap";
+import { useRowOrder } from "@/hooks/useRowOrder";
 import { useSse } from "@/hooks/useSse";
 import { applySignal } from "@/lib/heatmap-apply";
+import { buildScopeKey } from "@/lib/row-order";
 import { TOKENS } from "@/lib/tokens";
 import type {
   Category,
@@ -90,6 +92,7 @@ export function Heatmap() {
   const [whaleProfileAddr, setWhaleProfileAddr] = useState<string | null>(null);
   const [flashByCell, setFlashByCell] = useState<FlashByCell>({});
   const [pendingSignals, setPendingSignals] = useState<SignalEvent[]>([]);
+  const rowOrder = useRowOrder();
 
   const { data: fetchedData, loading, error } = useHeatmap({
     mode,
@@ -257,38 +260,60 @@ export function Heatmap() {
                 onBackToCategory={() => setDrillSubcategory(null)}
               />
             )}
-            <Grid
-              data={displayData}
-              metric={metric}
-              onHover={(h) => setHover(h)}
-              onClick={(h) => {
-                // Toggle: same cell unlocks, any other cell takes the lock.
-                setLocked((prev) => {
-                  if (prev?.cellId === h.cellId) {
-                    setLockedRect(null);
-                    return null;
+            {(() => {
+              // Scope key encodes (level, mode, parents). Range is intentionally
+              // NOT in the scope — a user's preferred Sports order survives
+              // 1h↔24h↔7d. Pattern HOUR vs DOW vs LIVE each carry independent
+              // orders so reordering one mode doesn't bleed into another.
+              const level: 1 | 2 | 3 = displayData.drillSubcategory
+                ? 3
+                : displayData.drillCategory
+                  ? 2
+                  : 1;
+              const parents: string[] = displayData.drillSubcategory
+                ? [displayData.drillCategory!, displayData.drillSubcategory]
+                : displayData.drillCategory
+                  ? [displayData.drillCategory]
+                  : [];
+              const scopeKey = buildScopeKey(
+                displayData.mode,
+                displayData.mode === "pattern" ? patternKind : null,
+                level,
+                parents,
+              );
+              return (
+                <Grid
+                  data={displayData}
+                  metric={metric}
+                  onHover={(h) => setHover(h)}
+                  onClick={(h) => {
+                    setLocked((prev) => {
+                      if (prev?.cellId === h.cellId) {
+                        setLockedRect(null);
+                        return null;
+                      }
+                      setLockedRect(null);
+                      return h;
+                    });
+                  }}
+                  onRowClick={
+                    !displayData.drillCategory
+                      ? (key) =>
+                          isAuthed ? setDrillCategory(key as Category) : setLoginOpen(true)
+                      : !displayData.drillSubcategory
+                        ? (key) => (isAuthed ? setDrillSubcategory(key) : setLoginOpen(true))
+                        : undefined
                   }
-                  // Force re-place on lock change so the locked tooltip's rect
-                  // re-reports for the hover dodge logic.
-                  setLockedRect(null);
-                  return h;
-                });
-              }}
-              onRowClick={
-                !displayData.drillCategory
-                  ? // L1 → click category, drill into it (gated)
-                    (key) =>
-                      isAuthed ? setDrillCategory(key as Category) : setLoginOpen(true)
-                  : !displayData.drillSubcategory
-                    ? // L2 → click subcategory slug, drill into it (gated)
-                      (key) => (isAuthed ? setDrillSubcategory(key) : setLoginOpen(true))
-                    : // L3 → no further drill
-                      undefined
-              }
-              lockedCellId={locked?.cellId ?? null}
-              flashByCell={flashByCell}
-              gridKey={`${mode}-${range}-${patternKind}-${drillCategory ?? "top"}`}
-            />
+                  lockedCellId={locked?.cellId ?? null}
+                  flashByCell={flashByCell}
+                  gridKey={`${mode}-${range}-${patternKind}-${drillCategory ?? "top"}`}
+                  savedOrder={rowOrder.get(scopeKey)}
+                  onReorder={(next) => rowOrder.set(scopeKey, next)}
+                  reorderEnabled={isAuthed}
+                  onRequestLogin={() => setLoginOpen(true)}
+                />
+              );
+            })()}
             {locked && (
               <Tooltip
                 key={`locked-${locked.cellId}`}
