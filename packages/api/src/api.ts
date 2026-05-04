@@ -535,6 +535,7 @@ export function createApi(deps: ApiDeps) {
               t.Literal("volume"),
               t.Literal("pnl"),
               t.Literal("winrate"),
+              t.Literal("whales"),
             ]),
           ),
           /** Drill-down L2: when set to a Category name (e.g. "Sports"), the
