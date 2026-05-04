@@ -138,35 +138,23 @@ if (process.env["TG_LOGIN_BOT_TOKEN"]) {
   );
 }
 
-// Drizzle adapter is required for the Email magic-link provider (stores
-// the one-time token + user). Twitter (OAuth) also writes account rows
-// here. SIWE / Telegram (Credentials) ignore it — JWT only.
-//
-// Wrapped in a Proxy so the underlying DB connection is opened on FIRST
-// METHOD CALL, not at module-eval. Otherwise `next build` (which evaluates
-// route modules without runtime env) crashes when DATABASE_URL is unset.
-let cachedAdapter: ReturnType<typeof DrizzleAdapter> | null = null;
-function realAdapter(): ReturnType<typeof DrizzleAdapter> {
-  if (cachedAdapter) return cachedAdapter;
-  const { db } = getDb();
-  cachedAdapter = DrizzleAdapter(db, {
-    usersTable: users,
-    accountsTable: accounts,
-    sessionsTable: sessions,
-    verificationTokensTable: verificationTokens,
-  });
-  return cachedAdapter;
-}
-const lazyAdapter = new Proxy({} as ReturnType<typeof DrizzleAdapter>, {
-  get(_target, prop) {
-    const v = realAdapter()[prop as keyof ReturnType<typeof DrizzleAdapter>];
-    return typeof v === "function" ? v.bind(realAdapter()) : v;
-  },
-});
+// Drizzle adapter is wired only when DATABASE_URL is set. Email provider
+// REQUIRES it; OAuth providers WRITE to it; SIWE / Telegram (Credentials)
+// ignore it. Skipping when no env keeps `next build` (which evaluates
+// route modules without runtime DATABASE_URL) from crashing — at runtime
+// systemd loads .env so the adapter inits normally.
+const drizzleAdapter = process.env["DATABASE_URL"]
+  ? DrizzleAdapter(getDb().db, {
+      usersTable: users,
+      accountsTable: accounts,
+      sessionsTable: sessions,
+      verificationTokensTable: verificationTokens,
+    })
+  : undefined;
 
 export const authConfig: NextAuthConfig = {
   providers,
-  adapter: lazyAdapter,
+  adapter: drizzleAdapter,
   trustHost: true,
   session: { strategy: "jwt", maxAge: TOKEN_TTL_SECONDS },
   // HS256 JWS so the Elysia API can verify with the same secret + jose.
