@@ -535,6 +535,7 @@ export async function queryTopMarketsPerCell(
         condition_id,
         MAX(market_question)                                                  AS market_question,
         MAX(market_slug)                                                      AS market_slug,
+        MAX(market_icon)                                                      AS market_icon,
         COUNT(*)::bigint                                                      AS signals,
         COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)            AS volume_usd,
         COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd,
