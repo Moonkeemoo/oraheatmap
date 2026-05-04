@@ -4,6 +4,7 @@ import { fmtMoney, fmtMoneyShort } from "@/lib/format";
 import { TOKENS } from "@/lib/tokens";
 import type { Category, HeatmapResponse } from "@/lib/types";
 import { MiniSpark } from "./MiniSpark";
+import { WhaleAvatar } from "./WhaleAvatar";
 
 type StatItem = {
   label: string;
@@ -542,15 +543,7 @@ export function StatsBar({
                 <span style={{ color: TOKENS.textMuted, fontFamily: TOKENS.mono, fontSize: 10, fontWeight: 700 }}>
                   {i + 1}.
                 </span>
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: 8,
-                    background: w.color,
-                    boxShadow: `0 0 6px ${w.color}88`,
-                  }}
-                />
+                <WhaleAvatar profileImage={w.profileImage} color={w.color} size={16} />
                 <span
                   style={{
                     color: TOKENS.text,

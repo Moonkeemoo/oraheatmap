@@ -6,6 +6,7 @@ import { categoryMeta } from "@/lib/categories";
 import { fmtMoney, fmtMoneyShort } from "@/lib/format";
 import { TOKENS } from "@/lib/tokens";
 import type { Category, LiveRange, WhaleProfile } from "@/lib/types";
+import { WhaleAvatar } from "./WhaleAvatar";
 
 const POLY_REFERRAL =
   (typeof process !== "undefined" && process.env["NEXT_PUBLIC_POLYMARKET_REFERRAL"]) || "Moonkeee";
@@ -137,17 +138,13 @@ function DrawerBody({
       {/* Header */}
       <div style={{ padding: "16px 18px 12px", borderBottom: `1px solid ${TOKENS.border}` }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-          <span
-            style={{
-              width: 12,
-              height: 12,
-              borderRadius: 12,
-              background: data.color,
-              boxShadow: `0 0 10px ${data.color}88`,
-              marginTop: 6,
-              flexShrink: 0,
-            }}
-          />
+          <div style={{ marginTop: 2 }}>
+            <WhaleAvatar
+              profileImage={data.profileImage}
+              color={data.color}
+              size={42}
+            />
+          </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{

@@ -60,6 +60,9 @@ export type WhaleCellSummary = {
   addr: string;
   alias: string;
   color: string;
+  /** Polymarket-hosted avatar URL when the whale set one. NULL otherwise —
+   *  UI falls back to the deterministic colored dot in `color`. */
+  profileImage: string | null;
   signals: number;
   volume: number;
   pnl: number;
@@ -73,7 +76,7 @@ export type HeatmapTotals = {
   uniqueWhales: number;
   activeWhales: number;
   topCategory: Category | null;
-  topWhale: { addr: string; alias: string; color: string } | null;
+  topWhale: { addr: string; alias: string; color: string; profileImage: string | null } | null;
 };
 
 export type HeatmapBucket = {
@@ -127,6 +130,7 @@ export type HeatmapResponse = {
     addr: string;
     alias: string;
     color: string;
+    profileImage: string | null;
     signals: number;
     volume: number;
     pnl: number;
@@ -149,6 +153,7 @@ export type WhaleProfile = {
   alias: string;
   xHandle: string | null;
   verified: boolean;
+  profileImage: string | null;
   color: string;
   range: LiveRange;
   windowMinutes: number;

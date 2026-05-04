@@ -12,6 +12,8 @@ export type WhaleAliasInfo = {
   alias: string;
   xHandle: string | null;
   verified: boolean;
+  /** Polymarket-hosted avatar URL. NULL when the user never set one. */
+  profileImage: string | null;
 };
 
 let aliasMap: ReadonlyMap<string, WhaleAliasInfo> = new Map();
@@ -25,12 +27,21 @@ export async function loadWhaleAliases(path: string): Promise<Map<string, WhaleA
   if (parsed === null || typeof parsed !== "object") return out;
   for (const [addr, info] of Object.entries(parsed as Record<string, unknown>)) {
     if (info === null || typeof info !== "object") continue;
-    const rec = info as { alias?: unknown; xHandle?: unknown; verified?: unknown };
+    const rec = info as {
+      alias?: unknown;
+      xHandle?: unknown;
+      verified?: unknown;
+      profileImage?: unknown;
+    };
     if (typeof rec.alias !== "string" || rec.alias.length === 0) continue;
     out.set(addr.toLowerCase(), {
       alias: rec.alias,
       xHandle: typeof rec.xHandle === "string" && rec.xHandle.length > 0 ? rec.xHandle : null,
       verified: rec.verified === true,
+      profileImage:
+        typeof rec.profileImage === "string" && rec.profileImage.length > 0
+          ? rec.profileImage
+          : null,
     });
   }
   return out;

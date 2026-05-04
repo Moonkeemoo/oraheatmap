@@ -448,17 +448,28 @@ export function createApi(deps: ApiDeps) {
         // and we're augmenting it post-build with display fields.
         for (const rowKey of Object.keys(grid.cells)) {
           const row = grid.cells[rowKey] as unknown as Array<{
-            topWhales: Array<{ addr: string; alias?: string; color?: string }>;
+            topWhales: Array<{
+              addr: string;
+              alias?: string;
+              color?: string;
+              profileImage?: string | null;
+            }>;
           }>;
           for (const cell of row) {
             for (const w of cell.topWhales) {
               w.alias = whaleAlias(w.addr);
               w.color = whaleColor(w.addr);
+              w.profileImage = whaleAliasInfo(w.addr)?.profileImage ?? null;
             }
           }
         }
         const topWhale = topWhaleAddr
-          ? { addr: topWhaleAddr, alias: whaleAlias(topWhaleAddr), color: whaleColor(topWhaleAddr) }
+          ? {
+              addr: topWhaleAddr,
+              alias: whaleAlias(topWhaleAddr),
+              color: whaleColor(topWhaleAddr),
+              profileImage: whaleAliasInfo(topWhaleAddr)?.profileImage ?? null,
+            }
           : null;
         const topWhales = topWhaleRows.map((r) => {
           const addr = r.whale_addr;
@@ -466,6 +477,7 @@ export function createApi(deps: ApiDeps) {
             addr,
             alias: whaleAlias(addr),
             color: whaleColor(addr),
+            profileImage: whaleAliasInfo(addr)?.profileImage ?? null,
             signals: typeof r.signals === "number" ? r.signals : Number(r.signals),
             volume: typeof r.volume_usd === "number" ? r.volume_usd : Number(r.volume_usd),
             pnl: r.pnl_usd === null
@@ -553,6 +565,7 @@ export function createApi(deps: ApiDeps) {
           alias: aliasInfo?.alias ?? whaleAlias(addr),
           xHandle: aliasInfo?.xHandle ?? null,
           verified: aliasInfo?.verified ?? false,
+          profileImage: aliasInfo?.profileImage ?? null,
           color: whaleColor(addr),
         };
       },

@@ -5,6 +5,7 @@ import { useCellCycles } from "@/hooks/useCellCycles";
 import { useMarketHistory } from "@/hooks/useMarketHistory";
 import { TOKENS } from "@/lib/tokens";
 import { ProbabilityChart } from "./ProbabilityChart";
+import { WhaleAvatar } from "./WhaleAvatar";
 import type {
   Category,
   HeatmapCell,
@@ -894,7 +895,7 @@ export function Tooltip({
               onClick={() => onWhaleClick(w.addr)}
               style={{
                 display: "grid",
-                gridTemplateColumns: "10px 1fr auto auto",
+                gridTemplateColumns: "18px 1fr auto auto",
                 alignItems: "center",
                 gap: 8,
                 width: "100%",
@@ -916,15 +917,7 @@ export function Tooltip({
               }}
               title={`${w.alias} — open whale profile`}
             >
-              <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: 8,
-                  background: w.color,
-                  flexShrink: 0,
-                }}
-              />
+              <WhaleAvatar profileImage={w.profileImage} color={w.color} size={18} />
               <span
                 style={{
                   overflow: "hidden",

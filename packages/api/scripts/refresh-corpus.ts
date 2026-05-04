@@ -48,7 +48,9 @@ const POLY_TO_BUCKET: ReadonlyArray<{ poly: string; bucket: Bucket }> = [
 
 const LEADERBOARD_BASE = "https://data-api.polymarket.com/v1/leaderboard";
 const PER_CALL = 50; // Polymarket max
-const TARGET_PER_CATEGORY = 500; // → 10 paginated calls per cat
+// Top-1500 per category × 9 buckets = up to 13.5k candidates; with dedup
+// across categories the corpus lands around 5–6k unique addresses.
+const TARGET_PER_CATEGORY = 1500; // → 30 paginated calls per cat
 const POLITE_DELAY_MS = 200;
 const TIME_PERIOD = "ALL"; // proven all-time winners (most stable signal)
 const ORDER_BY = "PNL";
@@ -63,12 +65,15 @@ type LeaderboardEntry = {
   pnl?: number;
   xUsername?: string;
   verifiedBadge?: boolean;
+  profileImage?: string;
 };
 
 type WhaleAlias = {
   alias: string | null;
   xHandle: string | null;
   verified: boolean;
+  /** Polymarket-hosted avatar URL (S3). Empty/null when the user never set one. */
+  profileImage: string | null;
   sources: Array<{ category: Bucket; rank: number; pnl: number; vol: number }>;
 };
 
@@ -140,11 +145,22 @@ async function main(): Promise<void> {
       };
       if (existing) {
         existing.sources.push(sourceEntry);
+        // Backfill alias / profileImage from a later category if the first
+        // one we saw didn't have them set. Polymarket sometimes returns
+        // empty fields for the same wallet on different leaderboards.
+        if (!existing.profileImage && typeof e.profileImage === "string" && e.profileImage.length > 0) {
+          existing.profileImage = e.profileImage;
+        }
+        if (!existing.xHandle && typeof e.xUsername === "string" && e.xUsername.length > 0) {
+          existing.xHandle = e.xUsername;
+        }
       } else {
         aliasMap.set(addr, {
           alias: typeof e.userName === "string" && e.userName.length > 0 ? e.userName : null,
           xHandle: typeof e.xUsername === "string" && e.xUsername.length > 0 ? e.xUsername : null,
           verified: Boolean(e.verifiedBadge),
+          profileImage:
+            typeof e.profileImage === "string" && e.profileImage.length > 0 ? e.profileImage : null,
           sources: [sourceEntry],
         });
         bucketAdds += 1;
@@ -173,6 +189,7 @@ async function main(): Promise<void> {
   console.log(`unique whales:  ${addrs.length}`);
   console.log(`with alias:     ${addrs.filter((a) => aliasMap.get(a)?.alias).length}`);
   console.log(`with X handle:  ${addrs.filter((a) => aliasMap.get(a)?.xHandle).length}`);
+  console.log(`with avatar:    ${addrs.filter((a) => aliasMap.get(a)?.profileImage).length}`);
   console.log(`verified:       ${addrs.filter((a) => aliasMap.get(a)?.verified).length}`);
   console.log("per bucket (new whales added):");
   for (const [b, n] of perBucketCounts) {
