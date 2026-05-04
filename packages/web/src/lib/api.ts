@@ -7,13 +7,22 @@ import type {
   WhaleProfile,
 } from "./types";
 
-const DEFAULT_BASE = "http://localhost:3001";
-
+/** API base URL.
+ *
+ * Order of resolution (first non-empty wins):
+ *   1. `NEXT_PUBLIC_API_URL` env baked at build (used when web and api live
+ *      on different origins or you're testing against a remote API from a
+ *      local web).
+ *   2. `window.location.origin` — works for the deploy where Caddy proxies
+ *      /api/* to Elysia under the same host as the web app. Same-origin
+ *      means no CORS, no preflight, no cookie-domain headaches.
+ *   3. Local-dev fallback to localhost:3001.
+ */
 export function apiBase(): string {
-  if (typeof process !== "undefined" && process.env["NEXT_PUBLIC_API_URL"]) {
-    return process.env["NEXT_PUBLIC_API_URL"];
-  }
-  return DEFAULT_BASE;
+  const envUrl = process.env["NEXT_PUBLIC_API_URL"];
+  if (envUrl) return envUrl;
+  if (typeof window !== "undefined" && window.location?.origin) return window.location.origin;
+  return "http://localhost:3001";
 }
 
 export async function fetchHeatmap(args: {
