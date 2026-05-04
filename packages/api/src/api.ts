@@ -102,6 +102,15 @@ function shortenMarketLabel(label: string, subcategoryLabel: string | null): str
       `${city} ${hl.toLowerCase() === "highest" ? "max" : "min"} ${val} · ${date}`,
   );
 
+  // 7b — tennis match-ups: "{Tournament}, {Round}: {P1} vs {P2}" → "{P1} vs {P2}"
+  // ATP/WTA event titles are very long and almost always repeat the same
+  // tournament prefix across every row in a drill view. The breadcrumb
+  // already shows what tournament we're in.
+  out = out.replace(
+    /^[^:]+:\s*(.+\s+vs\s+.+)$/i,
+    "$1",
+  );
+
   // 8 — football clubs: strip the " FC" / " F.C." suffix from team names
   // ("Manchester City FC win" → "Manchester City win") wherever it appears,
   // not just at the end. Same for ", end in a draw" → " draw".

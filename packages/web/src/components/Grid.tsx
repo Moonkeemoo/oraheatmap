@@ -273,16 +273,25 @@ function RowLabelBadge({
     opacity: isResolved ? 0.55 : 1,
     textDecoration: isResolved ? "line-through" : "none",
     boxSizing: "border-box",
-    // Always block + relative so the corner-pinned affordance has a
-    // positioned ancestor regardless of L1/L2/L3.
-    display: "block",
+    // Always relative so the corner-pinned affordance has a positioned
+    // ancestor regardless of L1/L2/L3.
     position: "relative",
     whiteSpace: isL3 ? "normal" : "nowrap",
-    overflow: isL3 ? "visible" : "hidden",
+    // L3 multi-line: clamp at 2 lines with ellipsis so long tennis names
+    // ("Internazionali BNL d'Italia, Qualification: P1 vs P2") don't bleed
+    // past the badge box. L1/L2 single-line: nowrap + ellipsis as before.
+    overflow: "hidden",
     textOverflow: isL3 ? undefined : ("ellipsis" as const),
     lineHeight: isL3 ? "1.25" : undefined,
     wordBreak: isL3 ? ("break-word" as const) : undefined,
     boxShadow: interactiveBoxShadow,
+    ...(isL3
+      ? {
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical" as const,
+        }
+      : { display: "block" }),
   };
   const onEnter = (e: React.MouseEvent<HTMLElement>): void => {
     if (!isInteractive) return;
