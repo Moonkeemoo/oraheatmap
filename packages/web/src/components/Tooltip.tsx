@@ -75,10 +75,10 @@ function sortMarkets(markets: ReadonlyArray<MarketSummary>, metric: HeatmapMetri
       });
       break;
     case "whales":
-      // MarketSummary doesn't carry per-market unique-whale count yet;
-      // signal count is the closest proxy ("more signals = likelier more
-      // unique whales"). Backend extension is queued.
-      copy.sort((a, b) => cmpDesc(a.count, b.count));
+      copy.sort((a, b) => {
+        const c = cmpDesc(a.uniqueWhales, b.uniqueWhales);
+        return c !== 0 ? c : cmpDesc(a.count, b.count);
+      });
       break;
   }
   return copy;
@@ -88,7 +88,7 @@ function fmtMetric(metric: HeatmapMetric, m: MarketSummary): string {
   if (metric === "signals") return String(m.count);
   if (metric === "volume") return fmtMoneyShort(m.volume);
   if (metric === "pnl") return fmtMoney(m.pnl);
-  if (metric === "whales") return String(m.count); // proxy via signal count
+  if (metric === "whales") return String(m.uniqueWhales);
   return m.winRate === null ? "—" : Math.round(m.winRate * 100) + "%";
 }
 

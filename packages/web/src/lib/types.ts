@@ -31,6 +31,8 @@ export type MarketSummary = {
   volume: number;
   pnl: number;
   winRate: number | null;
+  /** Unique top-corpus whales who traded this market in this bucket. */
+  uniqueWhales: number;
 };
 
 /** Cell shape unified across LIVE and PATTERN. PATTERN cells additionally

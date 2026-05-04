@@ -421,6 +421,7 @@ export function Grid({
   onReorder,
   reorderEnabled,
   onRequestLogin,
+  whaleThreshold,
 }: {
   data: HeatmapResponse;
   metric: HeatmapMetric;
@@ -438,6 +439,10 @@ export function Grid({
   /** When false, drag handles render as locked icons that prompt login. */
   reorderEnabled: boolean;
   onRequestLogin?: () => void;
+  /** Convergence threshold — when metric=whales, cells with fewer unique
+   *  whales than this get rendered dimmed-out (opacity 0.18) so the user
+   *  sees only the slots that meet the convergence bar. 1 = show all. */
+  whaleThreshold: number;
 }) {
   const num = data.buckets.length;
   const isPattern = data.mode === "pattern";
@@ -578,6 +583,11 @@ export function Grid({
             slot,
             data.range,
           );
+          // Convergence dim: when the user is on the WHALES lens, cells
+          // below the threshold render mostly transparent so the slots that
+          // meet the convergence bar pop out. Doesn't affect other metrics.
+          const dimForThreshold =
+            metric === "whales" && cell.uniqueWhales < whaleThreshold;
           return (
             <Cell
               key={`${cat}-${slot}-${gridKey}`}
@@ -588,6 +598,7 @@ export function Grid({
               flashSeq={flashSeq}
               showDelta={isPattern}
               isLocked={lockedCellId === cellId}
+              dim={dimForThreshold}
               onHover={
                 options.isDragOverlay
                   ? () => {}

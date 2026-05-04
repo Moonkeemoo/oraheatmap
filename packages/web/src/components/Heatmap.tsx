@@ -93,6 +93,10 @@ export function Heatmap() {
   const [flashByCell, setFlashByCell] = useState<FlashByCell>({});
   const [pendingSignals, setPendingSignals] = useState<SignalEvent[]>([]);
   const rowOrder = useRowOrder();
+  // Convergence threshold for the WHALES metric: cells with fewer unique
+  // whales than this get dimmed out so the user sees only the slots where
+  // N+ independent top-corpus addresses converged. Defaults to 1 (show all).
+  const [whaleThreshold, setWhaleThreshold] = useState<number>(1);
 
   const { data: fetchedData, loading, error } = useHeatmap({
     mode,
@@ -218,6 +222,8 @@ export function Heatmap() {
         patternUnlocked={patternUnlocked}
         daysOfData={daysOfData}
         lowSample={lowSample}
+        whaleThreshold={whaleThreshold}
+        setWhaleThreshold={setWhaleThreshold}
         onRequestLogin={() => setLoginOpen(true)}
       />
 
@@ -311,6 +317,7 @@ export function Heatmap() {
                   onReorder={(next) => rowOrder.set(scopeKey, next)}
                   reorderEnabled={isAuthed}
                   onRequestLogin={() => setLoginOpen(true)}
+                  whaleThreshold={whaleThreshold}
                 />
               );
             })()}

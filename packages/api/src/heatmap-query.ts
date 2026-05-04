@@ -47,6 +47,9 @@ export type MarketSummary = {
   volume: number;
   pnl: number;
   winRate: number | null;
+  /** Unique top-corpus whales who traded this market in this bucket. The
+   *  convergence indicator at market level. */
+  uniqueWhales: number;
 };
 
 export type HeatmapCell = {
@@ -117,6 +120,7 @@ type MarketRow = {
   pnl_usd: string | number | null;
   win_count: string | number;
   loss_count: string | number;
+  unique_whales: string | number;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -267,6 +271,7 @@ export function assembleHeatmap(
       volume: num(m.volume_usd),
       pnl: num(m.pnl_usd),
       winRate: decided > 0 ? wins / decided : null,
+      uniqueWhales: num(m.unique_whales),
     });
   }
 
@@ -466,7 +471,8 @@ export async function queryTopMarketsPerCell(
           COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)            AS volume_usd,
           COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd,
           COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint                      AS win_count,
-          COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                      AS loss_count
+          COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                      AS loss_count,
+          COUNT(DISTINCT whale_addr)::bigint                                    AS unique_whales
         FROM signals
         WHERE ts >= NOW() - (${windowInterval}::interval)
           AND category = ${drillCategory}
@@ -481,7 +487,7 @@ export async function queryTopMarketsPerCell(
       )
       SELECT
         to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
-        category, condition_id, market_question, market_slug, signals, volume_usd, pnl_usd, win_count, loss_count
+        category, condition_id, market_question, market_slug, signals, volume_usd, pnl_usd, win_count, loss_count, unique_whales
       FROM ranked
       WHERE rn <= ${perCellLimit}
     `;
@@ -500,7 +506,8 @@ export async function queryTopMarketsPerCell(
         COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)            AS volume_usd,
         COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd,
         COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint                      AS win_count,
-        COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                      AS loss_count
+        COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                      AS loss_count,
+        COUNT(DISTINCT whale_addr)::bigint                                    AS unique_whales
       FROM signals
       WHERE ts >= NOW() - (${windowInterval}::interval)
         AND condition_id IS NOT NULL
@@ -513,7 +520,7 @@ export async function queryTopMarketsPerCell(
     )
     SELECT
       to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
-      category, condition_id, market_question, market_slug, signals, volume_usd, pnl_usd, win_count, loss_count
+      category, condition_id, market_question, market_slug, signals, volume_usd, pnl_usd, win_count, loss_count, unique_whales
     FROM ranked
     WHERE rn <= ${perCellLimit}
   `;
