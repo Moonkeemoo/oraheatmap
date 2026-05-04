@@ -234,7 +234,10 @@ export function Header({
         boxSizing: "border-box",
       }}
     >
-      {/* Row 1: title (left, vertically centered) + sign-in chip (right). */}
+      {/* Row 1: sign-in chip (left) + title (right, vertically centered).
+          Swapped from the original left-title layout — keeps the title as
+          a right-anchored brand mark while moving the user-action surface
+          to the same side as Row 2's controls. */}
       <div
         style={{
           display: "flex",
@@ -244,9 +247,27 @@ export function Header({
           minHeight: 44,
         }}
       >
-        <div style={{ display: "flex", alignItems: "stretch", gap: 16, minWidth: 0 }}>
+        <UserChip
+          name={(session?.user?.name as string) || null}
+          email={(session?.user?.email as string) || null}
+          authed={isAuthed}
+          onLogin={onRequestLogin}
+          onLogout={() => signOut()}
+        />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "stretch",
+            gap: 16,
+            minWidth: 0,
+            // Right-side title: text first, accent bar mirrors to the right
+            // edge of the screen so the brand reads as a single right-anchored
+            // block (vs. having the bar floating in the middle of the row).
+            flexDirection: "row-reverse",
+          }}
+        >
           <div style={{ width: 3, background: TOKENS.accent, borderRadius: 2, alignSelf: "stretch" }} />
-          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", minWidth: 0 }}>
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", minWidth: 0, alignItems: "flex-end" }}>
             <div
               style={{
                 fontSize: 10,
@@ -279,6 +300,7 @@ export function Header({
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
+                textAlign: "right",
               }}
             >
               <span style={{ color: TOKENS.accent }}>OraLab</span>
@@ -287,16 +309,12 @@ export function Header({
             </h1>
           </div>
         </div>
-        <UserChip
-          name={(session?.user?.name as string) || null}
-          email={(session?.user?.email as string) || null}
-          authed={isAuthed}
-          onLogin={onRequestLogin}
-          onLogout={() => signOut()}
-        />
       </div>
 
-      {/* Row 2: scale legend + mode/range/metric controls, right-aligned. */}
+      {/* Row 2: filter controls, left-aligned. Order: mode → mode-block
+          (range OR patternKind) → metric → scale. Reads left-to-right as a
+          progressive choice: pick mode, narrow the timing within it, pick
+          what to measure, then see the colour legend for that metric. */}
       <div
         style={{
           display: "flex",
@@ -304,13 +322,10 @@ export function Header({
           gap: 10,
           rowGap: 10,
           flexWrap: "wrap",
-          justifyContent: "flex-end",
+          justifyContent: "flex-start",
           minWidth: 0,
         }}
       >
-        <ScaleLegend metric={metric} />
-        <div style={{ width: 1, height: 26, background: TOKENS.border }} />
-
         <ModeToggle
           mode={mode}
           setMode={gate(setMode)}
@@ -377,7 +392,9 @@ export function Header({
             );
           })}
         </div>
+        <div style={{ width: 1, height: 26, background: TOKENS.border }} />
 
+        <ScaleLegend metric={metric} />
       </div>
     </div>
   );
