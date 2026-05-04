@@ -1,26 +1,34 @@
 /**
- * Refresh data/whale_corpus.json with the top-N (default 200) traders per
- * category by all-time PNL, sourced from Polymarket's official leaderboard.
+ * Refresh data/whale_corpus.json + whale_aliases.json from Polymarket's
+ * leaderboard. Designed to run weekly via cron — adds newcomers to the top,
+ * updates evolving aliases, and lets fallen-off whales drop out of the
+ * watchlist while preserving their historical alias info.
  *
  *   bun run packages/api/scripts/refresh-corpus.ts
  *
  * Behavior:
- *   - Hits https://data-api.polymarket.com/v1/leaderboard for each Polymarket
- *     leaderboard category we map to one of our 8 buckets, paginated
- *     (limit=50 × 4 calls per cat to reach 200).
+ *   - Hits https://data-api.polymarket.com/v1/leaderboard for each
+ *     Polymarket leaderboard category that maps to one of our 8 buckets,
+ *     paginated (limit=50 × N calls per cat to reach TARGET_PER_CATEGORY).
  *   - Polite 200ms delay between calls so we don't hammer Polymarket's API.
  *   - Dedupes across categories (one whale can be top in multiple).
  *   - Writes:
- *       data/whale_corpus.json   — flat array of lowercase 0x addresses
- *       data/whale_aliases.json  — { addr: {alias, xHandle, verified, sources}}
+ *       data/whale_corpus.json   — REPLACED with the current top set. The
+ *         ingestor reloads this Set on restart; whales no longer in the
+ *         file stop receiving new tracking, but their historical signals
+ *         in the DB stay.
+ *       data/whale_aliases.json  — MERGED. New entries from this run
+ *         overwrite per-key, but entries we've seen before that fell off
+ *         the top survive so the WhaleDrawer / Tooltip can still show
+ *         their last-known alias / X handle / avatar against historical
+ *         signals.
  *
- * Does NOT touch the DB. To wipe state and start fresh after a refresh:
- *   docker compose exec -T db psql -U postgres -d whale_heatmap \
- *     -c "TRUNCATE signals, whale_positions, processed_resolutions"
- * Then restart the ingestor.
+ * Does NOT touch the DB. We deliberately do NOT TRUNCATE signals — past
+ * trades from now-untracked whales are still load-bearing for receipts,
+ * the balance-growth chart, and PATTERN cycles.
  */
 
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 // ─── Polymarket leaderboard categories → our 8 buckets ───────────────────────
@@ -170,9 +178,9 @@ async function main(): Promise<void> {
     await sleep(POLITE_DELAY_MS);
   }
 
-  const addrs = Array.from(aliasMap.keys()).sort();
-  const aliasesObject = Object.fromEntries(
-    addrs.map((a) => [a, aliasMap.get(a)!]),
+  const currentAddrs = Array.from(aliasMap.keys()).sort();
+  const currentAliasesObject = Object.fromEntries(
+    currentAddrs.map((a) => [a, aliasMap.get(a)!]),
   );
 
   // Resolve paths relative to the repo root regardless of where the script
@@ -181,17 +189,50 @@ async function main(): Promise<void> {
   const corpusPath = join(repoRoot, "data", "whale_corpus.json");
   const aliasesPath = join(repoRoot, "data", "whale_aliases.json");
 
-  await writeFile(corpusPath, JSON.stringify(addrs, null, 2) + "\n", "utf8");
-  await writeFile(aliasesPath, JSON.stringify(aliasesObject, null, 2) + "\n", "utf8");
+  // ── Merge aliases with previous run ───────────────────────────────────────
+  // Goal: keep names/avatars for whales that fell off the top so historical
+  // signals don't suddenly render as raw 0x addresses in the UI.
+  const previousAliases: Record<string, WhaleAlias> = {};
+  try {
+    const prevRaw = await readFile(aliasesPath, "utf8");
+    const prevParsed = JSON.parse(prevRaw) as unknown;
+    if (prevParsed && typeof prevParsed === "object" && !Array.isArray(prevParsed)) {
+      Object.assign(previousAliases, prevParsed as Record<string, WhaleAlias>);
+    }
+  } catch (err) {
+    // First-ever run, file missing, or malformed JSON — fall through with
+    // empty previous map. We log because the silent merge-vs-overwrite
+    // distinction matters for debugging cron behaviour.
+    console.warn(`(no previous aliases merged: ${(err as Error).message})`);
+  }
+  const previousCount = Object.keys(previousAliases).length;
+  const mergedAliases: Record<string, WhaleAlias> = {
+    ...previousAliases,
+    ...currentAliasesObject,
+  };
+  // Sort keys so the JSON file diffs cleanly week to week.
+  const mergedSortedKeys = Object.keys(mergedAliases).sort();
+  const mergedAliasesSorted = Object.fromEntries(
+    mergedSortedKeys.map((k) => [k, mergedAliases[k]!]),
+  );
+  const survivors = mergedSortedKeys.filter(
+    (a) => previousAliases[a] && !aliasMap.has(a),
+  ).length;
+  const newcomers = currentAddrs.filter((a) => !previousAliases[a]).length;
+  const refreshed = currentAddrs.filter((a) => previousAliases[a]).length;
+
+  await writeFile(corpusPath, JSON.stringify(currentAddrs, null, 2) + "\n", "utf8");
+  await writeFile(aliasesPath, JSON.stringify(mergedAliasesSorted, null, 2) + "\n", "utf8");
 
   console.log("");
   console.log("─── summary ───");
-  console.log(`unique whales:  ${addrs.length}`);
-  console.log(`with alias:     ${addrs.filter((a) => aliasMap.get(a)?.alias).length}`);
-  console.log(`with X handle:  ${addrs.filter((a) => aliasMap.get(a)?.xHandle).length}`);
-  console.log(`with avatar:    ${addrs.filter((a) => aliasMap.get(a)?.profileImage).length}`);
-  console.log(`verified:       ${addrs.filter((a) => aliasMap.get(a)?.verified).length}`);
-  console.log("per bucket (new whales added):");
+  console.log(`current top whales (corpus): ${currentAddrs.length}`);
+  console.log(`  newcomers vs last run:     ${newcomers}`);
+  console.log(`  refreshed (still in top):  ${refreshed}`);
+  console.log(`previous file had:           ${previousCount}`);
+  console.log(`  survivors (kept for UI):   ${survivors}`);
+  console.log(`merged aliases written:      ${mergedSortedKeys.length}`);
+  console.log("per bucket (this run):");
   for (const [b, n] of perBucketCounts) {
     console.log(`  ${b.padEnd(10)} ${n}`);
   }
@@ -199,10 +240,11 @@ async function main(): Promise<void> {
   console.log(`wrote ${corpusPath}`);
   console.log(`wrote ${aliasesPath}`);
   console.log("");
-  console.log("To activate, restart the ingestor. To start clean, first wipe DB:");
   console.log(
-    `  docker compose exec -T db psql -U postgres -d whale_heatmap -c "TRUNCATE signals, whale_positions, processed_resolutions;"`,
+    "To activate the new corpus on a running deploy, restart the ingestor:\n" +
+    "  sudo systemctl restart oraheatmap-api",
   );
+  console.log("Do NOT TRUNCATE signals — historical trades from dropped whales remain valuable.");
 }
 
 main().catch((err) => {
