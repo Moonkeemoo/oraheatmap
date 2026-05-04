@@ -101,6 +101,25 @@ function shortenMarketLabel(label: string, subcategoryLabel: string | null): str
       `${city} ${hl.toLowerCase() === "highest" ? "max" : "min"} ${val} · ${date}`,
   );
 
+  // 8 — football clubs: strip the " FC" / " F.C." suffix from team names
+  // ("Manchester City FC win" → "Manchester City win") wherever it appears,
+  // not just at the end. Same for ", end in a draw" → " draw".
+  out = out.replace(/\s+F\.?C\.?\b/g, "");
+  out = out.replace(/\s+end\s+in\s+a\s+draw/i, " draw");
+
+  // 9 — drop redundant "win on YYYY-MM-DD" date when it's today/tomorrow.
+  // Most sports markets resolve same-day, so the date is noise.
+  const today = new Date().toISOString().slice(0, 10);
+  const tomorrowDate = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  for (const d of [today, tomorrowDate]) {
+    out = out.replace(new RegExp(`\\s+on\\s+${d}\\b`, "i"), "");
+  }
+
+  // 10 — "Spread: X (-N.N)" → "X -N.N" (the "Spread:" prefix is dead weight
+  // — the tooltip section heading and the parenthesized number make it
+  // obvious what kind of market this is).
+  out = out.replace(/^Spread:\s*(.+?)\s*\(([+-]?\d+(?:\.\d+)?)\)\s*$/, "$1 $2");
+
   // 4 — trailing "?"
   out = out.replace(/\?\s*$/, "");
   return out.length > 0 ? out : label;

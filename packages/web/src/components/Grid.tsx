@@ -259,33 +259,42 @@ export function Grid({
                   : clickableRow
                     ? `Drill into ${isDrillRow ? "markets" : "subcategories"}`
                     : undefined;
-                const sharedStyle: React.CSSProperties = {
+                // The badge handles bg/padding/interactivity. The INNER span
+                // owns line-clamping — putting line-clamp on a flex/anchor
+                // child unreliably constrains the parent's height in some
+                // browsers, leaving a third line peeking below the bg.
+                const badgeStyle: React.CSSProperties = {
                   background: rowColor,
                   color: "#fff",
                   border: "none",
                   fontFamily: "inherit",
-                  fontSize: 10,
+                  fontSize: isL3 ? 9 : 10,
                   fontWeight: isL3 ? 600 : 700,
                   letterSpacing: isL3 ? 0.1 : 0.6,
-                  padding: isL3 ? "4px 8px" : "5px 10px",
+                  padding: isL3 ? "3px 7px" : "5px 10px",
                   borderRadius: 3,
                   textTransform: isL3 ? "none" : "uppercase",
-                  whiteSpace: isL3 ? "normal" : "nowrap",
-                  display: isL3 ? ("-webkit-box" as const) : undefined,
-                  WebkitLineClamp: isL3 ? 2 : undefined,
-                  WebkitBoxOrient: isL3 ? ("vertical" as const) : undefined,
-                  overflow: isL3 ? "hidden" : "visible",
-                  lineHeight: isL3 ? "1.2" : undefined,
-                  maxHeight: isL3 ? "2.4em" : undefined,
-                  wordBreak: isL3 ? ("break-word" as const) : undefined,
                   textAlign: isL3 ? ("left" as const) : undefined,
                   width: isL3 ? "100%" : undefined,
                   cursor: isInteractive ? "pointer" : "default",
-                  transition: "filter .12s, transform .12s",
+                  transition: "filter .12s",
                   opacity: isResolved ? 0.55 : 1,
                   textDecoration: isResolved ? "line-through" : "none",
-                  textDecorationLine: isResolved ? "line-through" : undefined,
                   boxSizing: "border-box",
+                  display: isL3 ? "block" : undefined,
+                  whiteSpace: isL3 ? "normal" : "nowrap",
+                };
+                const clampSpanStyle: React.CSSProperties = {
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical" as const,
+                  overflow: "hidden",
+                  lineHeight: "1.15",
+                  // Both max-height (rendering engines that respect line-clamp)
+                  // and a deliberate height limit so the box never grows past
+                  // 2 lines no matter how the parent layout shifts.
+                  maxHeight: "2.3em",
+                  wordBreak: "break-word" as const,
                 };
                 const onEnter = (e: React.MouseEvent<HTMLElement>): void => {
                   if (isInteractive) e.currentTarget.style.filter = "brightness(1.15)";
@@ -293,6 +302,7 @@ export function Grid({
                 const onLeave = (e: React.MouseEvent<HTMLElement>): void => {
                   if (isInteractive) e.currentTarget.style.filter = "none";
                 };
+                const inner = isL3 ? <span style={clampSpanStyle}>{rowLabel}</span> : rowLabel;
                 if (l3Url) {
                   return (
                     <a
@@ -300,11 +310,11 @@ export function Grid({
                       target="_blank"
                       rel="noopener noreferrer"
                       title={titleText}
-                      style={sharedStyle}
+                      style={badgeStyle}
                       onMouseEnter={onEnter}
                       onMouseLeave={onLeave}
                     >
-                      {rowLabel}
+                      {inner}
                     </a>
                   );
                 }
@@ -314,11 +324,11 @@ export function Grid({
                     onClick={clickableRow ? () => onRowClick!(cat) : undefined}
                     disabled={!clickableRow}
                     title={titleText}
-                    style={sharedStyle}
+                    style={badgeStyle}
                     onMouseEnter={onEnter}
                     onMouseLeave={onLeave}
                   >
-                    {rowLabel}
+                    {inner}
                   </button>
                 );
               })()}

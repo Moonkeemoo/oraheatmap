@@ -39,7 +39,12 @@ const DOW_DISPLAY_ORDER: ReadonlyArray<number> = [1, 2, 3, 4, 5, 6, 0]; // Mon..
 
 /** Map a signal timestamp to the bucket index AS IT APPEARS IN SERVER RESPONSE.
  *  Grid handles local-TZ rotation separately for display. LIVE: last index (NOW).
- *  PATTERN-hour: UTC hour / 2 → 0..11 (12 two-hour slots, matches backend).
+ *  PATTERN-hour: server-side bucket = UTC hour / 2. The Grid then rotates that
+ *    by `localShiftIdx` to display in the viewer's TZ. We mirror the same
+ *    rotation here so a signal arriving at "local 08:30" lights up the column
+ *    labelled 08:00 — not the column 2 hours behind. For non-2h-aligned TZs
+ *    (Kyiv UTC+3, India UTC+5.5) the data underneath is still a UTC bucket;
+ *    the visual flash just lands on the column the user sees as "now".
  *  PATTERN-dow: 0..6 in Mon..Sun display order. */
 function flashSlotIndex(
   mode: Mode,
@@ -49,7 +54,17 @@ function flashSlotIndex(
 ): number {
   if (mode === "live") return bucketCount - 1;
   const d = new Date(ts);
-  if (kind === "hour-of-day") return Math.floor(d.getUTCHours() / 2);
+  if (kind === "hour-of-day") {
+    // Use LOCAL hours so the flash aligns with the column header the user
+    // perceives as "now". Grid keys flashByCell by display position via the
+    // same shift, so the cell that lights up matches the live column dot.
+    const localSlot = Math.floor(d.getHours() / 2);
+    const tzOffset = -d.getTimezoneOffset() / 60;
+    const shift = ((Math.round(-tzOffset / 2) % 12) + 12) % 12;
+    // Reverse the rotation Grid will apply: flashByCell key = (display + shift) % 12.
+    // We want display = localSlot, so key = (localSlot + shift) % 12.
+    return (localSlot + shift) % 12;
+  }
   if (kind === "day-of-week") return DOW_DISPLAY_ORDER.indexOf(d.getUTCDay());
   return -1;
 }
