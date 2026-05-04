@@ -241,13 +241,13 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
                   }
                   const opts = (await optsRes.json()) as {
                     action: "register" | "authenticate";
-                    options: Parameters<typeof startAuthentication>[0]["optionsJSON"];
+                    options: Parameters<typeof startAuthentication>[0];
                   };
                   if (opts.action === "register") {
                     setError("To register a passkey, sign in with another method first, then come back.");
                     return;
                   }
-                  const credential = await startAuthentication({ optionsJSON: opts.options });
+                  const credential = await startAuthentication(opts.options);
                   const csrfRes = await fetch("/api/auth/csrf", { credentials: "include" });
                   const { csrfToken } = (await csrfRes.json()) as { csrfToken: string };
                   const body = new URLSearchParams();

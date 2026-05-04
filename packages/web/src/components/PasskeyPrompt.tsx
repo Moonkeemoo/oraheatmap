@@ -59,7 +59,7 @@ export function PasskeyPrompt() {
       }
       const { action, options } = (await optsRes.json()) as {
         action: "register" | "authenticate";
-        options: Parameters<typeof startRegistration>[0]["optionsJSON"];
+        options: Parameters<typeof startRegistration>[0];
       };
       if (action !== "register") {
         // User already has at least one passkey on this account — nothing to
@@ -68,7 +68,7 @@ export function PasskeyPrompt() {
         setTimeout(dismiss, 1500);
         return;
       }
-      const credential = await startRegistration({ optionsJSON: options });
+      const credential = await startRegistration(options);
       const csrfRes = await fetch("/api/auth/csrf", { credentials: "include" });
       const { csrfToken } = (await csrfRes.json()) as { csrfToken: string };
       const body = new URLSearchParams();
