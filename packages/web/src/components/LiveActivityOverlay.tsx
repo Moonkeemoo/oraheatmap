@@ -151,34 +151,65 @@ function Callout({ category, alias, sizeUsd, side }: CalloutProps) {
 function Convergence({ category, count }: ConvergenceProps) {
   const rect = useCellRect(category);
   if (!rect) return null;
+  // Anchor in the left-margin gutter outside the grid wrapper, vertically
+  // aligned to the now-cell's middle, with a connector line pointing right
+  // to the cell. Earlier we anchored under the cell which both obscured the
+  // cell value (PnL number) and stacked tightly between adjacent rows.
+  const wrap = document.querySelector("[data-hm-grid-wrap]") as HTMLElement | null;
+  const wrapRect = wrap?.getBoundingClientRect();
+  const gutterLeft = (wrapRect?.left ?? 16) - 12;
+  const cellMidY = rect.top + rect.height / 2;
+  const connectorWidth = Math.max(8, rect.left - gutterLeft - 4);
+
   return (
     <div
       style={{
         position: "fixed",
-        left: rect.left + rect.width / 2,
-        top: rect.bottom + 6,
-        transform: "translateX(-50%)",
-        background: TOKENS.accent,
-        color: "#1a1410",
-        borderRadius: 999,
-        padding: "3px 9px",
-        fontSize: 10,
-        fontWeight: 800,
-        fontFamily: TOKENS.mono,
-        letterSpacing: 0.6,
-        textTransform: "uppercase",
-        boxShadow: "0 6px 16px rgba(240,180,41,0.45)",
-        animation: "convergePulse 1.2s ease-in-out infinite",
+        left: gutterLeft,
+        top: cellMidY,
+        transform: "translate(-100%, -50%)",
+        display: "flex",
+        alignItems: "center",
+        gap: 0,
         pointerEvents: "none",
         zIndex: 60,
         whiteSpace: "nowrap",
+        animation: "convergeIn .25s ease-out",
       }}
     >
-      🐋×{count} converging
+      <span
+        style={{
+          background: TOKENS.accent,
+          color: "#1a1410",
+          borderRadius: 999,
+          padding: "3px 9px",
+          fontSize: 10,
+          fontWeight: 800,
+          fontFamily: TOKENS.mono,
+          letterSpacing: 0.6,
+          boxShadow: "0 6px 16px rgba(240,180,41,0.45)",
+          animation: "convergePulseDot 1.4s ease-in-out infinite",
+        }}
+      >
+        🐋×{count}
+      </span>
+      {/* connector line pointing right toward the cell */}
+      <span
+        aria-hidden="true"
+        style={{
+          width: connectorWidth,
+          height: 1,
+          background: `linear-gradient(90deg, ${TOKENS.accent}, rgba(240,180,41,0))`,
+        }}
+      />
       <style>{`
-        @keyframes convergePulse {
-          0%, 100% { transform: translateX(-50%) scale(1);    box-shadow: 0 0 0 0 rgba(240,180,41,0.45); }
-          50%      { transform: translateX(-50%) scale(1.04); box-shadow: 0 0 0 6px rgba(240,180,41,0); }
+        @keyframes convergeIn {
+          from { opacity: 0; transform: translate(-110%, -50%); }
+          to   { opacity: 1; transform: translate(-100%, -50%); }
+        }
+        @keyframes convergePulseDot {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(240,180,41,0.45); }
+          50%      { box-shadow: 0 0 0 6px rgba(240,180,41,0); }
         }
       `}</style>
     </div>

@@ -24,8 +24,11 @@ import type { SignalEvent } from "@/lib/types";
 const CALLOUT_DURATION_MS = 2400;
 const CALLOUT_GLOBAL_RATE_PER_MIN = 6;
 const QUEUE_MAX = 3;
-const CONVERGE_WINDOW_MS = 90_000;
-const CONVERGE_MIN_WHALES = 3;
+const CONVERGE_WINDOW_MS = 60_000;
+// At peak hours (266 unique whales/min) the 3-whale threshold fired
+// constantly across most categories. 5+ whales in 60s keeps the badge
+// "this is unusual" rather than ambient noise.
+const CONVERGE_MIN_WHALES = 5;
 
 type Callout = {
   id: number;
