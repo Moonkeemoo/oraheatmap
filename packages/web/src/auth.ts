@@ -196,6 +196,24 @@ if (process.env["TWITTER_CLIENT_ID"] && process.env["TWITTER_CLIENT_SECRET"]) {
     Twitter({
       clientId: process.env["TWITTER_CLIENT_ID"],
       clientSecret: process.env["TWITTER_CLIENT_SECRET"],
+      // Defensive profile parser — the default Auth.js Twitter provider
+      // assumes the response shape {data: {id, name, ...}}, but if Twitter
+      // returns errors or a different shape we want a clear log line
+      // instead of "Cannot read properties of undefined (reading 'id')".
+      profile(raw: unknown) {
+        const r = raw as { data?: { id?: string; name?: string; username?: string; profile_image_url?: string } } & Record<string, unknown>;
+        const data = r?.data ?? (r as { id?: string; name?: string; username?: string; profile_image_url?: string });
+        if (!data?.id) {
+          console.error("[auth/twitter] unexpected profile shape:", JSON.stringify(raw).slice(0, 500));
+          throw new Error("Twitter returned no user id");
+        }
+        return {
+          id: String(data.id),
+          name: data.name ?? data.username ?? null,
+          image: data.profile_image_url ?? null,
+          email: null,
+        };
+      },
     }),
   );
 }
@@ -280,23 +298,13 @@ export const authConfig: NextAuthConfig = {
       }
     },
   },
-  // Cookie domain — apex so /api/* on Elysia sees the same cookie. In dev
-  // (no AUTH_COOKIE_DOMAIN set) Auth.js defaults to host-only, which is
-  // fine when web + api share localhost.
-  cookies: process.env["AUTH_COOKIE_DOMAIN"]
-    ? {
-        sessionToken: {
-          name: "authjs.session-token",
-          options: {
-            httpOnly: true,
-            sameSite: "lax",
-            path: "/",
-            secure: true,
-            domain: process.env["AUTH_COOKIE_DOMAIN"],
-          },
-        },
-      }
-    : undefined,
+  // We deliberately DON'T override Auth.js cookies here. On a single-apex
+  // deploy (web + api both on oralab.xyz behind Caddy) the default
+  // host-only Secure cookies are sent on every same-origin request — which
+  // covers /api/* on Elysia too. Overriding only the sessionToken (as we
+  // did before) left the OAuth state/PKCE/CSRF cookies on different scopes
+  // than the session, breaking Twitter's state-check on callback with
+  // "InvalidCheck: state value could not be parsed".
   callbacks: {
     async jwt({ token, user, account }) {
       if (user) {
