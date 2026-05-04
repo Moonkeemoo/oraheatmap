@@ -196,26 +196,28 @@ function DragHandle({
   );
 }
 
-/** Trailing indicator that signals "this badge is clickable":
+/** Corner-pinned indicator that signals "this badge is clickable":
  *    L1/L2 (drill into deeper level)  → ›  (chevron-right)
  *    L3 with polymarket link          → ↗  (external link arrow)
- *  Renders semi-transparent so it doesn't fight with the label text, then
- *  pops to full opacity + slides on hover via the parent's :hover state. */
+ *  Absolutely positioned in the top-right corner of the badge so it stays
+ *  put regardless of text length / wrap — multi-line L3 markets no longer
+ *  have a floating arrow that lands wherever the last word ended. */
 function ClickAffordance({ kind }: { kind: "drill" | "external" }) {
   return (
     <span
       data-affordance
       style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        marginLeft: 4,
-        opacity: 0.7,
-        fontSize: kind === "external" ? 10 : 12,
+        position: "absolute",
+        top: 4,
+        right: 6,
+        opacity: 0.75,
+        fontSize: kind === "external" ? 10 : 13,
         lineHeight: 1,
         transition: "transform .15s, opacity .15s",
-        flexShrink: 0,
         color: "rgba(255,255,255,0.95)",
+        // Click goes through to the parent button/anchor — this span is
+        // decoration-only.
+        pointerEvents: "none",
       }}
       aria-hidden="true"
     >
@@ -244,10 +246,15 @@ function RowLabelBadge({
       : undefined;
   // Subtle "raised" feel for clickable rows — a 1px inner highlight on the
   // top edge + a 1px outer border on the bottom edge reads as a button.
-  // Combined with the trailing ›/↗ icon it's hard to mistake for static text.
+  // Combined with the corner-pinned ›/↗ icon it's hard to mistake for
+  // static text.
   const interactiveBoxShadow = isInteractive
     ? "inset 0 1px 0 rgba(255,255,255,0.18), 0 1px 0 rgba(0,0,0,0.18)"
     : "none";
+  // Reserve room on the right for the corner-pinned affordance icon so the
+  // text never visually overlaps it. 18px is enough for both › and ↗ at
+  // their current sizes; non-interactive rows skip the reserve.
+  const padRight = isInteractive ? 18 : 8;
   const badgeStyle: React.CSSProperties = {
     background: rowColor,
     color: "#fff",
@@ -256,7 +263,7 @@ function RowLabelBadge({
     fontSize: 10,
     fontWeight: isL3 ? 600 : 700,
     letterSpacing: isL3 ? 0.2 : 0.6,
-    padding: isL3 ? "5px 8px" : "5px 8px",
+    padding: `5px ${padRight}px 5px 8px`,
     borderRadius: 4,
     textTransform: isL3 ? "none" : "uppercase",
     textAlign: isL3 ? ("left" as const) : ("center" as const),
@@ -266,15 +273,16 @@ function RowLabelBadge({
     opacity: isResolved ? 0.55 : 1,
     textDecoration: isResolved ? "line-through" : "none",
     boxSizing: "border-box",
-    display: isL3 ? "block" : "flex",
-    alignItems: isL3 ? undefined : ("center" as const),
-    justifyContent: isL3 ? undefined : ("center" as const),
-    gap: 0,
+    // Always block + relative so the corner-pinned affordance has a
+    // positioned ancestor regardless of L1/L2/L3.
+    display: "block",
+    position: "relative",
     whiteSpace: isL3 ? "normal" : "nowrap",
+    overflow: isL3 ? "visible" : "hidden",
+    textOverflow: isL3 ? undefined : ("ellipsis" as const),
     lineHeight: isL3 ? "1.25" : undefined,
     wordBreak: isL3 ? ("break-word" as const) : undefined,
     boxShadow: interactiveBoxShadow,
-    textDecorationLine: isResolved ? "line-through" : undefined,
   };
   const onEnter = (e: React.MouseEvent<HTMLElement>): void => {
     if (!isInteractive) return;
@@ -282,7 +290,6 @@ function RowLabelBadge({
     el.style.filter = "brightness(1.18)";
     el.style.boxShadow =
       "inset 0 1px 0 rgba(255,255,255,0.28), 0 2px 0 rgba(0,0,0,0.22), 0 0 0 1px rgba(255,255,255,0.22)";
-    // Slide the trailing chevron a couple px to hint "this goes deeper".
     const aff = el.querySelector<HTMLSpanElement>("[data-affordance]");
     if (aff) {
       aff.style.opacity = "1";
@@ -296,29 +303,17 @@ function RowLabelBadge({
     el.style.boxShadow = interactiveBoxShadow;
     const aff = el.querySelector<HTMLSpanElement>("[data-affordance]");
     if (aff) {
-      aff.style.opacity = "0.7";
+      aff.style.opacity = "0.75";
       aff.style.transform = "translateX(0)";
     }
   };
-  // Wrap the text so the trailing chevron sits flush at the right edge of
-  // the badge (text-and-icon row, label takes the rest, icon hugs the right).
-  const labelInner = (
-    <>
-      <span
-        style={{
-          flex: isL3 ? undefined : 1,
-          minWidth: 0,
-          overflow: isL3 ? undefined : "hidden",
-          textOverflow: isL3 ? undefined : "ellipsis",
-          textAlign: isL3 ? ("left" as const) : ("center" as const),
-        }}
-      >
-        {rowLabel}
-      </span>
-      {clickableRow && <ClickAffordance kind="drill" />}
-      {l3Url && <ClickAffordance kind="external" />}
-    </>
-  );
+  // Pick which affordance kind to show. L3-with-link wins over drill (a
+  // market row is never simultaneously a drill target).
+  const affordanceKind: "drill" | "external" | null = l3Url
+    ? "external"
+    : clickableRow
+      ? "drill"
+      : null;
   if (l3Url) {
     return (
       <a
@@ -326,19 +321,12 @@ function RowLabelBadge({
         target="_blank"
         rel="noopener noreferrer"
         title={titleText}
-        style={{
-          ...badgeStyle,
-          // L3 with link is full-width left-aligned multi-line — keep the
-          // chevron inline with the last word rather than floating to the
-          // far right edge of a possibly-tall badge.
-          display: "inline",
-        }}
+        style={badgeStyle}
         onMouseEnter={onEnter}
         onMouseLeave={onLeave}
       >
-        <span style={{ display: "inline" }}>{rowLabel}</span>
-        {" "}
-        <ClickAffordance kind="external" />
+        {rowLabel}
+        {affordanceKind && <ClickAffordance kind={affordanceKind} />}
       </a>
     );
   }
@@ -352,7 +340,8 @@ function RowLabelBadge({
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
     >
-      {labelInner}
+      {rowLabel}
+      {affordanceKind && <ClickAffordance kind={affordanceKind} />}
     </button>
   );
 }
