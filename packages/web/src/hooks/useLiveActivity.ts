@@ -1,138 +1,168 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { SignalEvent } from "@/lib/types";
+import type { HeatmapMetric, SignalEvent } from "@/lib/types";
 
 /**
- * Live activity layer for the dashboard. Consumes SSE signals and exposes
- * two state slices the overlay reads:
+ * Live activity layer for /app — reads SSE signals and surfaces a unified
+ * left-side "highlight plaque" for each notable trade in the active metric.
  *
- *   - `currentCallout` — at most one floating "huge" trade pop visible at
- *     a time. New "huge" arrivals queue if one is already showing; queue
- *     length capped at QUEUE_MAX so a peak-hour burst doesn't smear the UI.
+ * Activation is METRIC-AWARE:
+ *   - metric=pnl       → plaque shows for signals where magnitudes.pnl is
+ *                        "huge" or "big" (significant realised win or loss
+ *                        relative to scope). Both wins and losses surface;
+ *                        the realisedPnl sign drives the plaque colour.
+ *   - metric=volume    → plaque shows for signals where magnitudes.volume
+ *                        is "huge"/"big" (large BUY in scope).
+ *   - metric=signals   → falls back to volume tag, since one signal IS one
+ *                        trade and "many trades" can't be a per-signal cue.
+ *   - metric=winrate   → falls back to pnl tag (same rationale: realised
+ *                        wins/losses are what feed winrate).
  *
- *   - `convergences` — per-(category) convergence badges. We track distinct
- *     whales with `magnitude` ≥ "big" hitting the same cell within the last
- *     CONVERGE_WINDOW_MS. Once N+ unique whales are in the window, surface
- *     a "🐋×N converging" badge until the window slides past.
+ * Throttling: a single visible plaque at a time, queue length 3,
+ * drop-on-overflow. Global rate cap so a peak-hour burst doesn't strobe.
  *
- * All work is in-memory + tiny — adds zero overhead to the SSE pipeline. We
- * tap into the same callback the existing `applySignal` pipeline uses, no
- * second WebSocket.
+ * Convergence: per-(category) tracker. 5+ unique whales hitting the same
+ * cell within 60s with magnitude>=big in the active metric → badge.
  */
 
-const CALLOUT_DURATION_MS = 2400;
-const CALLOUT_GLOBAL_RATE_PER_MIN = 6;
+const PLAQUE_DURATION_MS = 3000;
+const PLAQUE_GLOBAL_RATE_PER_MIN = 8;
 const QUEUE_MAX = 3;
 const CONVERGE_WINDOW_MS = 60_000;
-// At peak hours (266 unique whales/min) the 3-whale threshold fired
-// constantly across most categories. 5+ whales in 60s keeps the badge
-// "this is unusual" rather than ambient noise.
 const CONVERGE_MIN_WHALES = 5;
 
-type Callout = {
+export type Plaque = {
   id: number;
   category: string;
   alias: string;
+  marketQuestion: string | null;
+  marketSlug: string | null;
   sizeUsd: number;
-  side: "BUY" | "SELL";
-  magnitude: "huge" | "big";
+  side: "BUY" | "SELL" | "SETTLEMENT";
+  /** Whale color from server, hashed-stable per address. */
+  whaleColor: string;
+  /** "pnl" | "volume" — drives copy + colour scheme. */
+  kind: "pnl" | "volume";
+  /** Realised PnL for "pnl" plaques (signed). null for "volume" plaques. */
+  pnlUsd: number | null;
   showAt: number;
   until: number;
 };
 
-type Convergence = {
-  category: string;
-  whales: ReadonlyArray<{ addr: string; ts: number }>;
-  count: number;
-};
+type Convergence = { category: string; count: number };
 
 let nextId = 1;
 
-export function useLiveActivity({ enabled }: { enabled: boolean }) {
-  const [currentCallout, setCurrentCallout] = useState<Callout | null>(null);
+function magnitudeForMetric(m: HeatmapMetric, s: SignalEvent): { kind: "pnl" | "volume"; mag: "huge" | "big" } | null {
+  // Pick which magnitude tag fires the plaque for the given active metric.
+  const wantPnl = m === "pnl" || m === "winrate";
+  const wantVol = m === "volume" || m === "signals";
+  if (wantPnl && s.magnitudes.pnl) return { kind: "pnl", mag: s.magnitudes.pnl };
+  if (wantVol && s.magnitudes.volume) return { kind: "volume", mag: s.magnitudes.volume };
+  return null;
+}
+
+export function useLiveActivity({
+  enabled,
+  metric,
+}: {
+  enabled: boolean;
+  metric: HeatmapMetric;
+}) {
+  const [currentPlaque, setCurrentPlaque] = useState<Plaque | null>(null);
   const [convergences, setConvergences] = useState<ReadonlyArray<Convergence>>([]);
 
-  // Mutable refs so we can mutate without re-rendering until we choose to.
-  const queueRef = useRef<Callout[]>([]);
-  const recentTimestampsRef = useRef<number[]>([]); // for global rate-cap
+  const queueRef = useRef<Plaque[]>([]);
+  const recentTimestampsRef = useRef<number[]>([]);
   const convergeMapRef = useRef<Map<string, Array<{ addr: string; ts: number }>>>(new Map());
 
-  // Pump the queue: when the active callout expires, advance to the next
-  // queued one. Run a low-frequency tick that GCs everything past its
-  // sliding window.
+  // GC tick — expires plaque, ages out global rate cap, ages out convergence.
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) {
+      // When toggling off (PATTERN mode etc), clear visible state.
+      setCurrentPlaque(null);
+      setConvergences([]);
+      queueRef.current = [];
+      convergeMapRef.current.clear();
+      return;
+    }
     const id = setInterval(() => {
       const now = Date.now();
-      // 1. expire current callout
-      setCurrentCallout((prev) => {
+      setCurrentPlaque((prev) => {
         if (prev && prev.until > now) return prev;
-        const next = queueRef.current.shift();
-        return next ?? null;
+        return queueRef.current.shift() ?? null;
       });
-      // 2. age out global rate-cap timestamps (>60s)
       recentTimestampsRef.current = recentTimestampsRef.current.filter((t) => now - t < 60_000);
-      // 3. age out per-category convergence whales
-      let convergesChanged = false;
+
       const newList: Convergence[] = [];
       for (const [cat, list] of convergeMapRef.current) {
         const fresh = list.filter((w) => now - w.ts < CONVERGE_WINDOW_MS);
-        if (fresh.length !== list.length) {
-          convergesChanged = true;
-          if (fresh.length === 0) convergeMapRef.current.delete(cat);
-          else convergeMapRef.current.set(cat, fresh);
-        }
+        if (fresh.length === 0) convergeMapRef.current.delete(cat);
+        else if (fresh.length !== list.length) convergeMapRef.current.set(cat, fresh);
         const distinct = new Set(fresh.map((w) => w.addr));
-        if (distinct.size >= CONVERGE_MIN_WHALES) {
-          newList.push({ category: cat, whales: fresh, count: distinct.size });
+        if (distinct.size >= CONVERGE_MIN_WHALES) newList.push({ category: cat, count: distinct.size });
+      }
+      // Only setState when the convergence list shape has changed — avoids
+      // re-rendering the overlay every tick.
+      setConvergences((prev) => {
+        if (prev.length !== newList.length) return newList;
+        for (let i = 0; i < prev.length; i++) {
+          if (prev[i]!.category !== newList[i]!.category || prev[i]!.count !== newList[i]!.count) return newList;
         }
-      }
-      if (convergesChanged || newList.length !== convergences.length) {
-        setConvergences(newList);
-      }
-    }, 400);
+        return prev;
+      });
+    }, 500);
     return () => clearInterval(id);
-    // We don't add `convergences` as dep — newList drives state when it changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
+
+  // Reset convergence on metric switch — the relevant magnitude differs.
+  useEffect(() => {
+    convergeMapRef.current.clear();
+    setConvergences([]);
+  }, [metric]);
 
   function ingest(s: SignalEvent): void {
     if (!enabled) return;
-    if (s.magnitude === null) return;
-    if (s.side !== "BUY") return;
+    const tag = magnitudeForMetric(metric, s);
+    if (!tag) return;
     const now = Date.now();
 
-    // 1. convergence tracking — any "big" or "huge" counts
-    const existing = convergeMapRef.current.get(s.category) ?? [];
-    existing.push({ addr: s.whaleAddr, ts: now });
-    convergeMapRef.current.set(s.category, existing);
+    // Convergence — both "big" and "huge" count.
+    const list = convergeMapRef.current.get(s.category) ?? [];
+    list.push({ addr: s.whaleAddr, ts: now });
+    convergeMapRef.current.set(s.category, list);
 
-    // 2. callout — only "huge" gets a floating pop, and even then only if
-    //    we're under the global rate cap. The cap is intentionally generous
-    //    enough that a quiet hour shows every huge but a peak hour clamps.
-    if (s.magnitude !== "huge") return;
-    if (recentTimestampsRef.current.length >= CALLOUT_GLOBAL_RATE_PER_MIN) return;
+    // Plaque — only "huge" pops the floating plaque, and even then only
+    // under the global rate cap.
+    if (tag.mag !== "huge") return;
+    if (recentTimestampsRef.current.length >= PLAQUE_GLOBAL_RATE_PER_MIN) return;
 
-    const c: Callout = {
+    // Side type narrowing — magnitudes.pnl can fire on SELL/SETTLEMENT,
+    // magnitudes.volume only on BUY. Both are valid plaque sides.
+    const plaque: Plaque = {
       id: nextId++,
       category: s.category,
       alias: s.whaleAlias,
+      marketQuestion: s.marketQuestion,
+      marketSlug: s.marketSlug,
       sizeUsd: s.sizeUsd,
       side: s.side,
-      magnitude: s.magnitude,
+      whaleColor: s.whaleColor,
+      kind: tag.kind,
+      pnlUsd: tag.kind === "pnl" ? s.realizedPnl : null,
       showAt: now,
-      until: now + CALLOUT_DURATION_MS,
+      until: now + PLAQUE_DURATION_MS,
     };
     recentTimestampsRef.current.push(now);
 
-    if (!currentCallout) {
-      setCurrentCallout(c);
+    if (!currentPlaque) {
+      setCurrentPlaque(plaque);
     } else if (queueRef.current.length < QUEUE_MAX) {
-      queueRef.current.push(c);
+      queueRef.current.push(plaque);
     }
-    // else drop — peak-hour stampede protection
+    // else drop (peak-hour stampede protection)
   }
 
-  return { ingest, currentCallout, convergences };
+  return { ingest, currentPlaque, convergences };
 }

@@ -175,14 +175,20 @@ function signalToWire(s: Signal, scopeThresholds: ScopeThresholds): Record<strin
     realizedPnl: s.realizedPnl,
     exitKind: s.exitKind,
     txHash: s.txHash,
-    /** "huge" = top 1% in scope (P99+), "big" = top 5% (P95+), null = ordinary.
-     *  Frontend uses this to gate the "fly-in callout" / convergence-badge
-     *  animations so the dashboard doesn't strobe at peak hours. */
-    magnitude: scopeThresholds.magnitudeFor({
+    /** Per-metric magnitude relative to scope distribution. The frontend
+     *  picks `magnitudes.volume` or `magnitudes.pnl` based on the active
+     *  metric tab and shows a highlight plaque on signals whose tag is
+     *  "huge" or "big". Both wins and losses surface on PnL — sign is
+     *  carried by `realizedPnl` itself.
+     *
+     *    volume: "huge" / "big" / null — BUYs whose size*price >= P99/P95
+     *    pnl:    "huge" / "big" / null — exits whose |realized_pnl| >= P99/P95 */
+    magnitudes: scopeThresholds.magnitudesFor({
       category: s.category,
       subcategory: s.subcategory,
       conditionId: s.conditionId,
       sizeUsd,
+      realizedPnl: s.realizedPnl,
       side: s.side,
     }),
   };

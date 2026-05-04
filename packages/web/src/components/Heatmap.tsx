@@ -124,9 +124,10 @@ export function Heatmap() {
   }, [fetchedData, pendingSignals]);
 
   // Magnitude-driven activity overlay — fed from the same useSse callback
-  // below so we keep one EventSource per tab. Hook itself is gated by
-  // mode (LIVE vs PATTERN) inside, so feeding it in PATTERN is a no-op.
-  const liveActivity = useLiveActivity({ enabled: mode === "live" });
+  // below so we keep one EventSource per tab. Hook is metric-aware: in
+  // PnL mode it surfaces realised wins/losses; in volume mode big BUYs;
+  // signals/winrate fall back to volume/pnl respectively.
+  const liveActivity = useLiveActivity({ enabled: mode === "live", metric });
 
   useSse((s) => {
     // Activity overlay sees every signal regardless of whether the heatmap
@@ -427,7 +428,7 @@ export function Heatmap() {
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
       {isLive && (
         <LiveActivityOverlay
-          callout={liveActivity.currentCallout}
+          plaque={liveActivity.currentPlaque}
           convergences={liveActivity.convergences}
         />
       )}
