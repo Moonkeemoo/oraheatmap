@@ -259,19 +259,19 @@ export function Grid({
                   : clickableRow
                     ? `Drill into ${isDrillRow ? "markets" : "subcategories"}`
                     : undefined;
-                // The badge handles bg/padding/interactivity. The INNER span
-                // owns line-clamping — putting line-clamp on a flex/anchor
-                // child unreliably constrains the parent's height in some
-                // browsers, leaving a third line peeking below the bg.
+                // L3 badge expands to fit whatever text it has — no clipping.
+                // The grid row grows with it (minmax 1fr) so the whole row's
+                // cells stretch to match. Server-side label shortening keeps
+                // most rows compact; the few long ones just get a taller row.
                 const badgeStyle: React.CSSProperties = {
                   background: rowColor,
                   color: "#fff",
                   border: "none",
                   fontFamily: "inherit",
-                  fontSize: isL3 ? 9 : 10,
+                  fontSize: isL3 ? 10 : 10,
                   fontWeight: isL3 ? 600 : 700,
-                  letterSpacing: isL3 ? 0.1 : 0.6,
-                  padding: isL3 ? "3px 7px" : "5px 10px",
+                  letterSpacing: isL3 ? 0.2 : 0.6,
+                  padding: isL3 ? "5px 8px" : "5px 10px",
                   borderRadius: 3,
                   textTransform: isL3 ? "none" : "uppercase",
                   textAlign: isL3 ? ("left" as const) : undefined,
@@ -283,18 +283,8 @@ export function Grid({
                   boxSizing: "border-box",
                   display: isL3 ? "block" : undefined,
                   whiteSpace: isL3 ? "normal" : "nowrap",
-                };
-                const clampSpanStyle: React.CSSProperties = {
-                  display: "-webkit-box",
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: "vertical" as const,
-                  overflow: "hidden",
-                  lineHeight: "1.15",
-                  // Both max-height (rendering engines that respect line-clamp)
-                  // and a deliberate height limit so the box never grows past
-                  // 2 lines no matter how the parent layout shifts.
-                  maxHeight: "2.3em",
-                  wordBreak: "break-word" as const,
+                  lineHeight: isL3 ? "1.25" : undefined,
+                  wordBreak: isL3 ? ("break-word" as const) : undefined,
                 };
                 const onEnter = (e: React.MouseEvent<HTMLElement>): void => {
                   if (isInteractive) e.currentTarget.style.filter = "brightness(1.15)";
@@ -302,7 +292,7 @@ export function Grid({
                 const onLeave = (e: React.MouseEvent<HTMLElement>): void => {
                   if (isInteractive) e.currentTarget.style.filter = "none";
                 };
-                const inner = isL3 ? <span style={clampSpanStyle}>{rowLabel}</span> : rowLabel;
+                const inner = rowLabel;
                 if (l3Url) {
                   return (
                     <a
