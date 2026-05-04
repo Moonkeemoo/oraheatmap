@@ -81,6 +81,12 @@ export function Cell({
 
   const isEmpty = cell.count === 0;
   const bg = getCellFill(metric, cell, intensityFn);
+  // visualEmpty covers BOTH actually-empty cells (count = 0) AND cells
+  // with activity but no fill for the current metric — e.g. WIN RATE on
+  // a slot with no decided trades, or WHALES on a PATTERN cell when the
+  // backend hasn't aggregated uniqueWhales. Without this, those cells
+  // collapsed into pure-black gaps and read as "the layout is broken".
+  const visualEmpty = isEmpty || bg === "transparent";
   const value = isEmpty ? "" : getCellValue(metric, cell);
   const valColor = isEmpty ? TOKENS.text : getValueColor(metric, cell);
   // PATTERN parens now show full-lookback AVG (not Δ vs older half) — gives
@@ -129,11 +135,11 @@ export function Cell({
       onClick={onClickHandler}
       style={{
         background: bg,
-        backgroundImage: isEmpty
+        backgroundImage: visualEmpty
           ? `radial-gradient(circle at 50% 50%, ${TOKENS.border} 0.5px, transparent 1px)`
           : "none",
-        backgroundSize: isEmpty ? "6px 6px" : "auto",
-        border: isEmpty ? `1px solid ${TOKENS.border}` : "none",
+        backgroundSize: visualEmpty ? "6px 6px" : "auto",
+        border: visualEmpty ? `1px solid ${TOKENS.border}` : "none",
         borderRadius: 7,
         display: "flex",
         alignItems: "center",
