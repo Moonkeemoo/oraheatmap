@@ -329,14 +329,18 @@ export function Header({
       </div>
 
       {/* Right column — brand logo fills the full header height while
-          preserving its proportions (icon : ORALAB : descriptor = 1 : 0.6 : 0.2).
-          align-self:stretch is implicit via the parent's align-items:stretch. */}
+          preserving its proportions, BUT capped at a sensible maximum so
+          a narrow viewport (where the controls row wraps and the left
+          column grows tall) doesn't pump the logo into a 200px monster. */}
       <div
         style={{
           color: TOKENS.text,
           display: "flex",
           alignItems: "center",
+          alignSelf: "center",
           flexShrink: 0,
+          maxHeight: 72,
+          minHeight: 48,
         }}
       >
         <BrandLogo size="fill" />

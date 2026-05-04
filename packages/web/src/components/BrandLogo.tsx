@@ -112,12 +112,13 @@ function FillBrand({ ariaLabel, showDescriptor }: { ariaLabel: string; showDescr
   return (
     <svg
       viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-      width="auto"
-      height="100%"
-      preserveAspectRatio="xMaxYMid meet"
+      preserveAspectRatio="xMidYMid meet"
       role="img"
       aria-label={ariaLabel}
-      style={{ display: "block", color: "currentColor" }}
+      // CSS-only sizing — height fills the container, width is derived
+      // from the viewBox aspect ratio. Avoids the browser default of
+      // 300×150 that kicks in when SVG attributes are "auto".
+      style={{ display: "block", height: "100%", width: "auto", color: "currentColor" }}
     >
       <title>{ariaLabel}</title>
       <g transform={`translate(0, ${(HEIGHT - ICON_PX) / 2}) scale(${SCALE})`}>
