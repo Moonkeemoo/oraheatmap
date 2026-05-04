@@ -166,6 +166,8 @@ export function Tooltip({
   lookbackDays,
   locked,
   avoidRect,
+  isAuthed,
+  onRequestLogin,
   onPlaced,
 }: {
   cell: HeatmapCell;
@@ -185,6 +187,13 @@ export function Tooltip({
   /** Reports the final placement rect after layout. Used by the parent to
    *  feed the locked tooltip's rect back as `avoidRect` for the hover one. */
   onPlaced?: (rect: TooltipRect) => void;
+  /** Whether the viewer is signed in. When false, the per-market list is
+   *  hidden behind a "Sign in to unlock" teaser. Cell metric numbers, win
+   *  rate, the pattern delta etc. stay visible regardless. */
+  isAuthed: boolean;
+  /** Open the login modal — used for the "Sign in to view markets" CTA in
+   *  the locked tooltip. */
+  onRequestLogin: () => void;
 }) {
   const meta = categoryMeta(category);
   const isPattern = mode === "pattern";
@@ -417,7 +426,53 @@ export function Tooltip({
         </div>
       )}
 
-      {!isPattern && sortedMarkets.length > 0 && (
+      {!isPattern && sortedMarkets.length > 0 && !isAuthed && (
+        <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8 }}>
+          <div
+            style={{
+              fontSize: 9,
+              letterSpacing: 0.5,
+              color: TOKENS.textMuted,
+              textTransform: "uppercase",
+              marginBottom: 6,
+              fontWeight: 600,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <span>Top markets</span>
+            <span style={{ color: TOKENS.textSec }}>🔒 sign in</span>
+          </div>
+          {locked ? (
+            <button
+              onClick={onRequestLogin}
+              style={{
+                background: TOKENS.panel2,
+                border: `1px solid ${TOKENS.borderHi}`,
+                color: TOKENS.text,
+                fontFamily: "inherit",
+                fontSize: 11,
+                fontWeight: 600,
+                padding: "8px 10px",
+                borderRadius: 6,
+                width: "100%",
+                cursor: "pointer",
+                transition: "filter .12s",
+              }}
+              onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.filter = "brightness(1.2)")}
+              onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.filter = "none")}
+            >
+              Sign in to see {sortedMarkets.length} top market{sortedMarkets.length === 1 ? "" : "s"} →
+            </button>
+          ) : (
+            <div style={{ fontSize: 11, color: TOKENS.textSec, lineHeight: 1.4 }}>
+              {sortedMarkets.length} market{sortedMarkets.length === 1 ? "" : "s"} hidden — click cell to lock, then sign in
+            </div>
+          )}
+        </div>
+      )}
+
+      {!isPattern && sortedMarkets.length > 0 && isAuthed && (
         <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8 }}>
           <div
             style={{

@@ -73,9 +73,12 @@ function flashSlotIndex(
 
 export function Heatmap() {
   const [mode, setMode] = useState<Mode>("live");
-  const [range, setRange] = useState<LiveRange>("1h");
+  // Default view: 24h × volume — most informative single-glance combination
+  // for an unauthenticated visitor (volume = "where is money flowing today").
+  // Every other range/mode/kind/metric requires auth.
+  const [range, setRange] = useState<LiveRange>("24h");
   const [patternKind, setPatternKind] = useState<PatternKind>("hour-of-day");
-  const [metric, setMetric] = useState<HeatmapMetric>("signals");
+  const [metric, setMetric] = useState<HeatmapMetric>("volume");
   const [drillCategory, setDrillCategory] = useState<Category | null>(null);
   const [drillSubcategory, setDrillSubcategory] = useState<string | null>(null);
   const [loginOpen, setLoginOpen] = useState(false);
@@ -298,6 +301,8 @@ export function Heatmap() {
                 lookbackDays={displayData.lookbackDays ?? 30}
                 locked
                 onPlaced={setLockedRect}
+                isAuthed={isAuthed}
+                onRequestLogin={() => setLoginOpen(true)}
               />
             )}
             {hover && hover.cellId !== locked?.cellId && (
@@ -314,6 +319,8 @@ export function Heatmap() {
                 lookbackDays={displayData.lookbackDays ?? 30}
                 locked={false}
                 avoidRect={lockedRect}
+                isAuthed={isAuthed}
+                onRequestLogin={() => setLoginOpen(true)}
               />
             )}
           </>

@@ -63,15 +63,18 @@ function Pill({
 function MetricTab({
   active,
   onClick,
+  title,
   children,
 }: {
   active: boolean;
   onClick: () => void;
+  title?: string;
   children: React.ReactNode;
 }) {
   return (
     <button
       onClick={onClick}
+      title={title}
       style={{
         background: active ? TOKENS.panel2 : "transparent",
         border: "none",
@@ -340,12 +343,22 @@ export function Header({
             border: `1px solid ${TOKENS.border}`,
           }}
         >
-          {METRICS.map((m) => (
-            <MetricTab key={m.id} active={metric === m.id} onClick={() => setMetric(m.id)}>
-              {m.label}
-              {m.unit ? ` (${m.unit})` : ""}
-            </MetricTab>
-          ))}
+          {METRICS.map((m) => {
+            const isActive = metric === m.id;
+            const locked = !isAuthed && !isActive;
+            return (
+              <MetricTab
+                key={m.id}
+                active={isActive}
+                onClick={() => (isAuthed ? setMetric(m.id) : onRequestLogin())}
+                title={isAuthed ? undefined : "Sign in to switch metric"}
+              >
+                {m.label}
+                {m.unit ? ` (${m.unit})` : ""}
+                {locked && <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>}
+              </MetricTab>
+            );
+          })}
         </div>
 
         <div style={{ width: 1, height: 26, background: TOKENS.border }} />
