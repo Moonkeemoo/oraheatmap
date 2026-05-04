@@ -1,4 +1,4 @@
-import { pnlColor, signalsColor, volumeColor, winRateColor } from "@/lib/colors";
+import { pnlColor, signalsColor, volumeColor, whalesColor, winRateColor } from "@/lib/colors";
 import { TOKENS } from "@/lib/tokens";
 import type { HeatmapMetric } from "@/lib/types";
 
@@ -38,6 +38,21 @@ function stopsFor(metric: HeatmapMetric): { stops: Stop[]; label: string } {
         { c: signalsColor(0.6) },
         { c: signalsColor(0.85) },
         { c: signalsColor(1), label: "HIGH" },
+      ],
+    };
+  }
+  if (metric === "whales") {
+    return {
+      // "Convergence" reads more honestly than "Whale count" — the whole
+      // point of this lens is "how many independent top-corpus addresses
+      // have piled into this slot".
+      label: "Convergence",
+      stops: [
+        { c: whalesColor(0.05), label: "FEW" },
+        { c: whalesColor(0.3) },
+        { c: whalesColor(0.6) },
+        { c: whalesColor(0.85) },
+        { c: whalesColor(1), label: "MANY" },
       ],
     };
   }

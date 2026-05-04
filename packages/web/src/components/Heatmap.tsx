@@ -380,5 +380,11 @@ function metricAffectedBy(metric: HeatmapMetric, s: SignalEvent): boolean {
     case "pnl":
     case "winrate":
       return s.realizedPnl !== null && s.realizedPnl !== 0;
+    case "whales":
+      // Any signal could be the first from a new whale in this slot — we
+      // can't tell client-side without a duplicate-whale check, so flash
+      // optimistically. Worst case the cell highlights once even though
+      // the whale was already there; the next refetch corrects the count.
+      return true;
   }
 }

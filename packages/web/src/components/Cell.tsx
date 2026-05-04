@@ -19,6 +19,11 @@ function deltaForMetric(metric: HeatmapMetric, cell: HeatmapCell): number | null
       return d.pnl;
     case "winrate":
       return d.winRate; // already a delta of 0..1 fractions
+    case "whales":
+      // PATTERN delta doesn't carry a uniqueWhales delta yet — skip the
+      // arrow indicator. The cell still shows the current count via the
+      // main label; we just don't compare to historical baseline.
+      return null;
   }
 }
 

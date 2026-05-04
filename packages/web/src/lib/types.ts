@@ -19,7 +19,7 @@ export type PatternKind = "hour-of-day" | "day-of-week";
  *  one of the two pattern kinds. */
 export type HeatmapRange = LiveRange | PatternKind;
 
-export type HeatmapMetric = "signals" | "volume" | "pnl" | "winrate";
+export type HeatmapMetric = "signals" | "volume" | "pnl" | "winrate" | "whales";
 
 export type MarketSummary = {
   conditionId: string;

@@ -478,7 +478,14 @@ export function Grid({
     if (metric === "winrate") {
       return (c: HeatmapCell) => c.winRate ?? 0;
     }
-    const key = metric === "pnl" ? "pnl" : metric === "volume" ? "volume" : "count";
+    const key =
+      metric === "pnl"
+        ? "pnl"
+        : metric === "volume"
+          ? "volume"
+          : metric === "whales"
+            ? "uniqueWhales"
+            : "count";
     const flat: HeatmapCell[] = [];
     for (const cat of data.categories) flat.push(...(cellsByCat[cat] ?? []));
     return makeIntensityFn(flat, key);

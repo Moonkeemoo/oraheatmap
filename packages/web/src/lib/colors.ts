@@ -18,6 +18,14 @@ export function volumeColor(intensity: number): string {
   return `rgba(240, 180, 41, ${a.toFixed(3)})`;
 }
 
+/** Convergence / unique-whales colour — purple, distinct from the four
+ *  existing metric hues (green/red for pnl, blue for signals, gold for
+ *  volume) so the user instantly sees they're on a different lens. */
+export function whalesColor(intensity: number): string {
+  const a = 0.08 + Math.pow(intensity, 0.7) * 0.85;
+  return `rgba(167, 139, 250, ${a.toFixed(3)})`;
+}
+
 export function winRateColor(wr: number | null): string {
   if (wr === null || wr <= 0) return "transparent";
   const dist = Math.abs(wr - 0.5) * 2; // 0..1
@@ -32,7 +40,7 @@ export function winRateColor(wr: number | null): string {
  */
 export function makeIntensityFn(
   cells: ReadonlyArray<HeatmapCell>,
-  key: "count" | "volume" | "pnl",
+  key: "count" | "volume" | "pnl" | "uniqueWhales",
 ): (cell: HeatmapCell) => number {
   const vals = cells.map((c) => Math.abs(c[key])).filter((v) => v > 0);
   const max = vals.length ? Math.max(...vals) : 1;
@@ -52,6 +60,7 @@ export function getCellFill(
   if (metric === "volume") return volumeColor(intensityFn(cell));
   if (metric === "signals") return signalsColor(intensityFn(cell));
   if (metric === "winrate") return winRateColor(cell.winRate);
+  if (metric === "whales") return whalesColor(intensityFn(cell));
   return "transparent";
 }
 
@@ -63,6 +72,7 @@ export function getCellValue(metric: HeatmapMetric, cell: HeatmapCell): string {
   if (metric === "volume") return fmtCellValue(cell.volume);
   if (metric === "signals") return String(cell.count);
   if (metric === "winrate") return cell.winRate === null ? "—" : Math.round(cell.winRate * 100) + "%";
+  if (metric === "whales") return String(cell.uniqueWhales);
   return "";
 }
 
@@ -74,5 +84,6 @@ export function getValueColor(metric: HeatmapMetric, cell: HeatmapCell): string 
     if (cell.winRate === null) return "#7d8590";
     return cell.winRate >= 0.5 ? "#dcffe2" : "#ffe2e0";
   }
+  if (metric === "whales") return "#ede9ff";
   return "#e6edf3";
 }

@@ -74,6 +74,12 @@ function sortMarkets(markets: ReadonlyArray<MarketSummary>, metric: HeatmapMetri
         return c !== 0 ? c : cmpDesc(a.count, b.count);
       });
       break;
+    case "whales":
+      // MarketSummary doesn't carry per-market unique-whale count yet;
+      // signal count is the closest proxy ("more signals = likelier more
+      // unique whales"). Backend extension is queued.
+      copy.sort((a, b) => cmpDesc(a.count, b.count));
+      break;
   }
   return copy;
 }
@@ -82,6 +88,7 @@ function fmtMetric(metric: HeatmapMetric, m: MarketSummary): string {
   if (metric === "signals") return String(m.count);
   if (metric === "volume") return fmtMoneyShort(m.volume);
   if (metric === "pnl") return fmtMoney(m.pnl);
+  if (metric === "whales") return String(m.count); // proxy via signal count
   return m.winRate === null ? "—" : Math.round(m.winRate * 100) + "%";
 }
 
@@ -125,6 +132,9 @@ function Stat({ label, value, color }: { label: string; value: React.ReactNode; 
 
 function fmtDeltaInline(metric: HeatmapMetric, d: HeatmapCell["delta"]): { text: string; color: string } {
   if (!d) return { text: "—", color: TOKENS.textSec };
+  // PATTERN delta doesn't carry uniqueWhales — show no comparison for
+  // the whales metric.
+  if (metric === "whales") return { text: "—", color: TOKENS.textSec };
   const v =
     metric === "signals" ? d.count
     : metric === "volume" ? d.volume
@@ -144,6 +154,7 @@ function metricMin(metric: HeatmapMetric, cell: HeatmapCell): number {
   if (!cell.min) return 0;
   if (metric === "volume") return cell.min.volume;
   if (metric === "pnl") return cell.min.pnl;
+  // whales falls back to count — uniqueWhales not in min/max yet.
   return cell.min.count;
 }
 
