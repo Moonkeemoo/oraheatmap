@@ -1,6 +1,6 @@
-<svg viewBox="0 0 240 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ORALAB">
+<svg viewBox="0 0 240 60" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ORALAB">
   <title>ORALAB</title>
-  <g transform="translate(0,18) scale(0.64)">
+  <g transform="translate(0,8) scale(0.44)">
     <rect x="0" y="0" width="30" height="30" rx="2" fill="#3fb950"/>
     <rect x="35" y="0" width="30" height="30" rx="2" fill="#238636"/>
     <rect x="0" y="35" width="30" height="30" rx="2" fill="#f0b429"/>
@@ -10,9 +10,9 @@
     <rect x="70" y="70" width="30" height="30" rx="2" fill="#f0b429"/>
   </g>
   <text
-    x="84"
-    y="64"
-    style="font-family:'Space Grotesk',system-ui,sans-serif;font-size:48px;font-weight:700;letter-spacing:-1.4px"
-    fill="#f0b429"
+    x="56"
+    y="42"
+    style="font-family:'Space Grotesk',system-ui,sans-serif;font-size:38px;font-weight:700;letter-spacing:-1.2px"
+    fill="currentColor"
   >ORALAB</text>
 </svg>
