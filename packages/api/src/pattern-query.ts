@@ -185,7 +185,7 @@ async function queryHourOfDayRows(
       )
       SELECT
         slot, category,
-        MAX(slot_signals)::numeric FILTER (WHERE rn = 1) AS current_count,
+        MAX(slot_signals) FILTER (WHERE rn = 1) AS current_count,
         MAX(slot_volume)::numeric  FILTER (WHERE rn = 1) AS current_volume,
         MAX(slot_pnl)::numeric     FILTER (WHERE rn = 1) AS current_pnl,
         MAX(slot_wins)::numeric    FILTER (WHERE rn = 1) AS current_wins,
@@ -232,7 +232,7 @@ async function queryHourOfDayRows(
     )
     SELECT
       slot, category,
-      MAX(slot_signals)::numeric FILTER (WHERE rn = 1) AS current_count,
+      MAX(slot_signals) FILTER (WHERE rn = 1) AS current_count,
       MAX(slot_volume)::numeric  FILTER (WHERE rn = 1) AS current_volume,
       MAX(slot_pnl)::numeric     FILTER (WHERE rn = 1) AS current_pnl,
       MAX(slot_wins)::numeric    FILTER (WHERE rn = 1) AS current_wins,
@@ -292,7 +292,7 @@ async function queryDayOfWeekRows(
       )
       SELECT
         slot, category,
-        MAX(day_signals)::numeric FILTER (WHERE rn = 1) AS current_count,
+        MAX(day_signals) FILTER (WHERE rn = 1) AS current_count,
         MAX(day_volume)::numeric  FILTER (WHERE rn = 1) AS current_volume,
         MAX(day_pnl)::numeric     FILTER (WHERE rn = 1) AS current_pnl,
         MAX(day_wins)::numeric    FILTER (WHERE rn = 1) AS current_wins,
@@ -340,7 +340,7 @@ async function queryDayOfWeekRows(
     )
     SELECT
       slot, category,
-      MAX(day_signals)::numeric FILTER (WHERE rn = 1) AS current_count,
+      MAX(day_signals) FILTER (WHERE rn = 1) AS current_count,
       MAX(day_volume)::numeric  FILTER (WHERE rn = 1) AS current_volume,
       MAX(day_pnl)::numeric     FILTER (WHERE rn = 1) AS current_pnl,
       MAX(day_wins)::numeric    FILTER (WHERE rn = 1) AS current_wins,
