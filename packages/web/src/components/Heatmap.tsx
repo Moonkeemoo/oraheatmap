@@ -19,6 +19,7 @@ import { Breadcrumb } from "./Breadcrumb";
 import { Grid } from "./Grid";
 import { Header } from "./Header";
 import { LoginModal } from "./LoginModal";
+import { PasskeyPrompt } from "./PasskeyPrompt";
 import { StatsBar } from "./StatsBar";
 import { Tooltip, type TooltipAnchor, type TooltipRect } from "./Tooltip";
 import { WhaleDrawer } from "./WhaleDrawer";
@@ -342,6 +343,9 @@ export function Heatmap() {
         onClose={() => setWhaleProfileAddr(null)}
       />
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
+      {/* Floats in the bottom-right after a fresh sign-in if the user
+       *  doesn't have a passkey yet. Dismissed → never shown again. */}
+      <PasskeyPrompt />
     </div>
   );
 }
