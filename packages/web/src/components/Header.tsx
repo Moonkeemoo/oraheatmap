@@ -283,7 +283,7 @@ export function Header({
             >
               <span style={{ color: TOKENS.accent }}>OraLab</span>
               <span style={{ color: TOKENS.textSec }}>: </span>
-              Whale Signal Heatmap
+              Polymarket Signal Heatmap
             </h1>
           </div>
         </div>

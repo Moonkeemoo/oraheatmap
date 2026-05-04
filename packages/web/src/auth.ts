@@ -119,7 +119,7 @@ if (process.env["RESEND_API_KEY"] && process.env["EMAIL_FROM"]) {
 
 function textBody({ url, host }: { url: string; host: string }): string {
   return [
-    "Sign in to OraLab — Whale Signal Heatmap",
+    "Sign in to OraLab — Polymarket Signal Heatmap",
     "",
     `Click the link below to sign in to ${host}. The link expires in 24 hours and can only be used once.`,
     "",
@@ -146,7 +146,7 @@ function htmlBody({ url, host }: { url: string; host: string }): string {
             <tr>
               <td style="padding-bottom:20px;">
                 <div style="font-size:13px;letter-spacing:0.6px;color:#f0b429;font-weight:700;text-transform:uppercase;">OraLab</div>
-                <div style="font-size:11px;color:#7d8590;letter-spacing:0.4px;text-transform:uppercase;margin-top:4px;">Whale Signal Heatmap</div>
+                <div style="font-size:11px;color:#7d8590;letter-spacing:0.4px;text-transform:uppercase;margin-top:4px;">Polymarket Signal Heatmap</div>
               </td>
             </tr>
             <tr>

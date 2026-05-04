@@ -66,7 +66,7 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
       const message = new SiweMessage({
         domain: window.location.host,
         address,
-        statement: "Sign in to Whale Signal Heatmap",
+        statement: "Sign in to Polymarket Signal Heatmap",
         uri: window.location.origin,
         version: "1",
         chainId: 1,

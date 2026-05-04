@@ -3,7 +3,7 @@ import { SessionProvider } from "next-auth/react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Whale Signal Heatmap",
+  title: "Polymarket Signal Heatmap",
   description: "Real-time Polymarket whale activity heatmap",
 };
 
