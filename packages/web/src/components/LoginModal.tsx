@@ -229,10 +229,16 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
                 setBusy("passkey");
                 setError(null);
                 try {
-                  const optsRes = await fetch("/api/auth/webauthn-options/passkey", {
-                    credentials: "include",
-                  });
-                  if (!optsRes.ok) throw new Error("Couldn't get a challenge from the server.");
+                  const optsRes = await fetch(
+                    "/api/auth/webauthn-options/passkey?action=authenticate",
+                    { credentials: "include" },
+                  );
+                  if (!optsRes.ok) {
+                    const detail = await optsRes.text().catch(() => "");
+                    throw new Error(
+                      `Server said ${optsRes.status}${detail ? `: ${detail.slice(0, 120)}` : ""}`,
+                    );
+                  }
                   const opts = (await optsRes.json()) as {
                     action: "register" | "authenticate";
                     options: Parameters<typeof startAuthentication>[0]["optionsJSON"];

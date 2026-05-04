@@ -47,10 +47,16 @@ export function PasskeyPrompt() {
     setBusy(true);
     setMsg(null);
     try {
-      const optsRes = await fetch("/api/auth/webauthn-options/passkey", {
+      // Auth.js's webauthn-options endpoint defaults to action=authenticate.
+      // We need register options here — they bind the challenge to the
+      // current session so /callback/passkey accepts the new credential.
+      const optsRes = await fetch("/api/auth/webauthn-options/passkey?action=register", {
         credentials: "include",
       });
-      if (!optsRes.ok) throw new Error("Couldn't get a registration challenge.");
+      if (!optsRes.ok) {
+        const detail = await optsRes.text().catch(() => "");
+        throw new Error(`Server said ${optsRes.status}${detail ? `: ${detail.slice(0, 120)}` : ""}`);
+      }
       const { action, options } = (await optsRes.json()) as {
         action: "register" | "authenticate";
         options: Parameters<typeof startRegistration>[0]["optionsJSON"];
