@@ -222,4 +222,9 @@ export type SignalEvent = {
   realizedPnl: number | null;
   exitKind: "SELL" | "RESOLUTION" | null;
   txHash: string | null;
+  /** Server-tagged magnitude relative to the trade's scope distribution.
+   *  "huge" = top 1% in (category, subcategory, conditionId) scope (P99+),
+   *  "big"  = top 5% (P95–P99), null = ordinary or non-BUY. Drives the
+   *  /app live animation layer (callout pop, convergence badge). */
+  magnitude: "huge" | "big" | null;
 };

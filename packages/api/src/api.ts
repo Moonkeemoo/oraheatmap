@@ -21,6 +21,7 @@ import {
 import type { Ingestor } from "./ingestor";
 import { log } from "./log";
 import { type PatternKind, queryCellCycles, queryPattern } from "./pattern-query";
+import type { ScopeThresholds } from "./scope-thresholds";
 import type { SignalHub } from "./signal-hub";
 import { readAuthFromHeaders } from "./auth-jwt";
 import { SUBCATEGORY_LABELS, subcategoriesOf } from "./subcategorize";
@@ -38,6 +39,7 @@ export type ApiDeps = {
   gammaCacheSize: () => number;
   whaleCount: () => number;
   fetchMarketHistory: MarketHistoryFetcher;
+  scopeThresholds: ScopeThresholds;
 };
 
 const SSE_HEARTBEAT_MS = 25_000;
@@ -153,7 +155,8 @@ function shortenMarketLabel(label: string, subcategoryLabel: string | null): str
   return out.length > 0 ? out : label;
 }
 
-function signalToWire(s: Signal): Record<string, unknown> {
+function signalToWire(s: Signal, scopeThresholds: ScopeThresholds): Record<string, unknown> {
+  const sizeUsd = s.size * s.price;
   return {
     ts: s.ts.toISOString(),
     whaleAddr: s.whaleAddr,
@@ -168,10 +171,20 @@ function signalToWire(s: Signal): Record<string, unknown> {
     side: s.side,
     price: s.price,
     size: s.size,
-    sizeUsd: s.size * s.price,
+    sizeUsd,
     realizedPnl: s.realizedPnl,
     exitKind: s.exitKind,
     txHash: s.txHash,
+    /** "huge" = top 1% in scope (P99+), "big" = top 5% (P95+), null = ordinary.
+     *  Frontend uses this to gate the "fly-in callout" / convergence-badge
+     *  animations so the dashboard doesn't strobe at peak hours. */
+    magnitude: scopeThresholds.magnitudeFor({
+      category: s.category,
+      subcategory: s.subcategory,
+      conditionId: s.conditionId,
+      sizeUsd,
+      side: s.side,
+    }),
   };
 }
 
@@ -670,7 +683,7 @@ export function createApi(deps: ApiDeps) {
           safeEnqueue(`event: hello\ndata: ${JSON.stringify({ ts: new Date().toISOString() })}\n\n`);
 
           const unsubscribe = deps.hub.subscribe((signal) => {
-            safeEnqueue(`event: signal\ndata: ${JSON.stringify(signalToWire(signal))}\n\n`);
+            safeEnqueue(`event: signal\ndata: ${JSON.stringify(signalToWire(signal, deps.scopeThresholds))}\n\n`);
           });
 
           // Periodic comment-line heartbeat keeps proxies + browsers happy

@@ -61,6 +61,7 @@ export function Cell({
   flashSeq,
   showDelta,
   isLocked,
+  category,
   onHover,
   onClick,
 }: {
@@ -73,6 +74,10 @@ export function Cell({
   showDelta: boolean;
   /** This cell currently has the locked tooltip — render a persistent ring. */
   isLocked: boolean;
+  /** Row's category key — emitted as a data-attr so the live-activity
+   *  overlay can find this cell via `querySelector` when an SSE signal
+   *  arrives. Optional so existing callers compile. */
+  category?: string;
   onHover: (h: { cell: HeatmapCell; anchor: TooltipAnchor } | null) => void;
   onClick: (h: { cell: HeatmapCell; anchor: TooltipAnchor }) => void;
 }) {
@@ -130,6 +135,8 @@ export function Cell({
   return (
     <div
       ref={ref}
+      data-cell-category={category}
+      data-live-now={isNowCol ? "true" : undefined}
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
       onClick={onClickHandler}

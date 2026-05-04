@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useHeatmap } from "@/hooks/useHeatmap";
 import { useRowOrder } from "@/hooks/useRowOrder";
+import { useLiveActivity } from "@/hooks/useLiveActivity";
 import { useSse } from "@/hooks/useSse";
 import { applySignal } from "@/lib/heatmap-apply";
 import { buildScopeKey } from "@/lib/row-order";
@@ -21,6 +22,7 @@ import { Breadcrumb } from "./Breadcrumb";
 import { Footer } from "./Footer";
 import { Grid } from "./Grid";
 import { Header } from "./Header";
+import { LiveActivityOverlay } from "./LiveActivityOverlay";
 import { HeatmapSkeleton } from "./HeatmapSkeleton";
 import { LoginModal } from "./LoginModal";
 import { StatsBar } from "./StatsBar";
@@ -178,6 +180,14 @@ export function Heatmap() {
 
 
   const isLive = mode === "live";
+
+  // Magnitude-driven activity overlay — only meaningful in LIVE because
+  // PATTERN cells are 30-day aggregates, not a moving "now" frame. The hook
+  // throttles internally; we just feed it every SSE signal and read back
+  // (callout, convergences) for rendering.
+  const liveActivity = useLiveActivity({ enabled: isLive });
+  useSse((s) => liveActivity.ingest(s));
+
   const daysOfData = displayData?.dataSpan.daysOfData ?? 0;
   // PATTERN is always clickable. Sample size shows up in the subtitle
   // ("low sample" badge under 7d) so the user can interpret accordingly,
@@ -413,6 +423,12 @@ export function Heatmap() {
         onClose={() => setWhaleProfileAddr(null)}
       />
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
+      {isLive && (
+        <LiveActivityOverlay
+          callout={liveActivity.currentCallout}
+          convergences={liveActivity.convergences}
+        />
+      )}
     </div>
   );
 }
