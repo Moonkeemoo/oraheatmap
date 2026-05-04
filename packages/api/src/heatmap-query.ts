@@ -65,6 +65,16 @@ export type HeatmapCell = {
    *  client-side by the active metric and slices to top-5. Empty for ranges
    *  whose source is not `raw` (24h/12d/12w) — too expensive to scan. */
   markets: MarketSummary[];
+  /** Top whales by USD volume in this cell. Empty for the same heavy ranges
+   *  as `markets`. UI surfaces clickable rows that open the whale drawer. */
+  topWhales: WhaleSummary[];
+};
+
+export type WhaleSummary = {
+  addr: string;
+  signals: number;
+  volume: number;
+  pnl: number;
 };
 
 export type HeatmapTotals = {
@@ -132,6 +142,7 @@ const ZERO_CELL: HeatmapCell = Object.freeze({
   winRate: null,
   uniqueWhales: 0,
   markets: [],
+  topWhales: [],
 });
 
 function num(v: string | number | null | undefined): number {
@@ -184,6 +195,7 @@ export function assembleHeatmap(
   range: HeatmapRange,
   now: Date,
   options: AssembleOptions = {},
+  whaleRows: ReadonlyArray<WhaleCellRow> = [],
 ): HeatmapResponse {
   const cfg = RANGE_CONFIG[range];
   const slotCount = buckets.length;
@@ -196,7 +208,7 @@ export function assembleHeatmap(
   const cells = Object.fromEntries(
     rowKeys.map((k) => [
       k,
-      Array.from({ length: slotCount }, (): HeatmapCell => ({ ...ZERO_CELL, markets: [] })),
+      Array.from({ length: slotCount }, (): HeatmapCell => ({ ...ZERO_CELL, markets: [], topWhales: [] })),
     ]),
   ) as Record<string, HeatmapCell[]>;
 
@@ -272,6 +284,22 @@ export function assembleHeatmap(
       pnl: num(m.pnl_usd),
       winRate: decided > 0 ? wins / decided : null,
       uniqueWhales: num(m.unique_whales),
+    });
+  }
+
+  // Top whales per cell — same shape as markets, ordered by USD volume desc.
+  for (const w of whaleRows) {
+    const key = pickRowKey(w.category);
+    if (key === null) continue;
+    const idx = bucketIndex.get(w.bucket);
+    if (idx === undefined) continue;
+    const cell = cells[key]?.[idx];
+    if (!cell) continue;
+    cell.topWhales.push({
+      addr: w.whale_addr,
+      signals: num(w.signals),
+      volume: num(w.volume_usd),
+      pnl: num(w.pnl_usd),
     });
   }
 
@@ -521,6 +549,90 @@ export async function queryTopMarketsPerCell(
     SELECT
       to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
       category, condition_id, market_question, market_slug, signals, volume_usd, pnl_usd, win_count, loss_count, unique_whales
+    FROM ranked
+    WHERE rn <= ${perCellLimit}
+  `;
+  return rows;
+}
+
+/** Per-cell top whales — one row per (category, bucket, whale) ranked into
+ *  the top-N within the cell. Same shape contract as queryTopMarketsPerCell:
+ *  scans raw signals (no continuous aggregate carries whale_addr), capped
+ *  at 24h at the top level for cost control. Drill mode keeps it on for
+ *  every range since the WHERE category=X filter narrows the scan. */
+export type WhaleCellRow = {
+  bucket: string;
+  category: string;
+  whale_addr: string;
+  signals: string | number;
+  volume_usd: string | number;
+  pnl_usd: string | number | null;
+};
+
+export async function queryTopWhalesPerCell(
+  sql: Sql,
+  range: HeatmapRange,
+  perCellLimit: number,
+  drillCategory: Category | null = null,
+): Promise<ReadonlyArray<WhaleCellRow>> {
+  const cfg = RANGE_CONFIG[range];
+  const heavy = range === "12d" || range === "12w";
+  if (heavy && drillCategory === null) return [];
+
+  const bucketInterval = `${cfg.bucketMinutes} minutes`;
+  const windowInterval = `${cfg.windowMinutes} minutes`;
+
+  if (drillCategory !== null) {
+    const rows = await sql<WhaleCellRow[]>`
+      WITH per_whale AS (
+        SELECT
+          time_bucket(${bucketInterval}::interval, ts)                          AS bucket_ts,
+          subcategory                                                           AS category,
+          whale_addr,
+          COUNT(*)::bigint                                                      AS signals,
+          COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)            AS volume_usd,
+          COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd
+        FROM signals
+        WHERE ts >= NOW() - (${windowInterval}::interval)
+          AND category = ${drillCategory}
+          AND subcategory IS NOT NULL
+        GROUP BY bucket_ts, subcategory, whale_addr
+      ),
+      ranked AS (
+        SELECT *,
+          ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY volume_usd DESC, signals DESC) AS rn
+        FROM per_whale
+      )
+      SELECT
+        to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
+        category, whale_addr, signals, volume_usd, pnl_usd
+      FROM ranked
+      WHERE rn <= ${perCellLimit}
+    `;
+    return rows;
+  }
+
+  const rows = await sql<WhaleCellRow[]>`
+    WITH per_whale AS (
+      SELECT
+        time_bucket(${bucketInterval}::interval, ts)                          AS bucket_ts,
+        category,
+        whale_addr,
+        COUNT(*)::bigint                                                      AS signals,
+        COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)            AS volume_usd,
+        COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd
+      FROM signals
+      WHERE ts >= NOW() - (${windowInterval}::interval)
+      GROUP BY bucket_ts, category, whale_addr
+    ),
+    ranked AS (
+      SELECT *,
+        ROW_NUMBER() OVER (PARTITION BY category, bucket_ts ORDER BY volume_usd DESC, signals DESC) AS rn
+      FROM per_whale
+    )
+    SELECT
+      to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
+      category, whale_addr, signals, volume_usd, pnl_usd
     FROM ranked
     WHERE rn <= ${perCellLimit}
   `;

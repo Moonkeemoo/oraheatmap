@@ -10,6 +10,7 @@ import type {
   MarketSummary,
   Mode,
   PatternKind,
+  WhaleCellSummary,
 } from "@/lib/types";
 
 export type TooltipAnchor = {
@@ -150,6 +151,97 @@ function fmtDeltaInline(metric: HeatmapMetric, d: HeatmapCell["delta"]): { text:
   return { text: display, color };
 }
 
+/** Numeric value of a cell for the active metric — used by the sparkline. */
+function cellMetricValue(metric: HeatmapMetric, c: HeatmapCell): number {
+  switch (metric) {
+    case "signals":
+      return c.count;
+    case "volume":
+      return c.volume;
+    case "pnl":
+      return c.pnl;
+    case "winrate":
+      return c.winRate ?? 0;
+    case "whales":
+      return c.uniqueWhales;
+  }
+}
+
+/** Sparkline of a single row across all time slots in the chosen frame.
+ *  Highlights the active slot in TOKENS.accent. PNL bars centre on a
+ *  zero baseline (positive up, negative down); other metrics rest on the
+ *  bottom edge. Pure SVG — no chart deps. */
+function RowSparkline({
+  rowCells,
+  metric,
+  activeSlot,
+  height = 36,
+}: {
+  rowCells: ReadonlyArray<HeatmapCell>;
+  metric: HeatmapMetric;
+  activeSlot: number;
+  height?: number;
+}) {
+  if (rowCells.length === 0) return null;
+  const vals = rowCells.map((c) => cellMetricValue(metric, c));
+  const isPnl = metric === "pnl";
+  const maxAbs = Math.max(...vals.map(Math.abs), 1);
+  // Equal-width bars with a small gutter so the silhouette reads cleanly
+  // at 12 buckets in a ~310px tooltip width.
+  const n = vals.length;
+  const gap = 2;
+  return (
+    <svg
+      width="100%"
+      height={height}
+      viewBox={`0 0 ${n * 10} ${height}`}
+      preserveAspectRatio="none"
+      style={{ display: "block" }}
+    >
+      {vals.map((v, i) => {
+        const isActive = i === activeSlot;
+        const ratio = Math.min(1, Math.abs(v) / maxAbs);
+        const barH = isPnl ? (height / 2) * ratio : (height - 2) * ratio;
+        const y = isPnl
+          ? v >= 0
+            ? height / 2 - barH
+            : height / 2
+          : height - 1 - barH;
+        const x = i * 10 + gap / 2;
+        const w = 10 - gap;
+        const fill = isActive
+          ? TOKENS.accent
+          : isPnl
+            ? v >= 0
+              ? "rgba(63,185,80,0.55)"
+              : "rgba(248,81,73,0.55)"
+            : "rgba(125,133,144,0.45)";
+        return (
+          <rect
+            key={i}
+            x={x}
+            y={y}
+            width={w}
+            height={Math.max(1, barH)}
+            fill={fill}
+            rx={1}
+          />
+        );
+      })}
+      {isPnl && (
+        <line
+          x1={0}
+          x2={n * 10}
+          y1={height / 2}
+          y2={height / 2}
+          stroke="rgba(255,255,255,0.18)"
+          strokeWidth={0.5}
+        />
+      )}
+    </svg>
+  );
+}
+
 function metricMin(metric: HeatmapMetric, cell: HeatmapCell): number {
   if (!cell.min) return 0;
   if (metric === "volume") return cell.min.volume;
@@ -167,6 +259,7 @@ function metricMax(metric: HeatmapMetric, cell: HeatmapCell): number {
 
 export function Tooltip({
   cell,
+  rowCells,
   anchor,
   category,
   slotLabel,
@@ -180,8 +273,13 @@ export function Tooltip({
   isAuthed,
   onRequestLogin,
   onPlaced,
+  onWhaleClick,
 }: {
   cell: HeatmapCell;
+  /** All cells of the same row (category) in display order. Used to draw
+   *  the row sparkline showing how this category evolved across the chosen
+   *  timeframe. Pass an empty array to skip the sparkline. */
+  rowCells: ReadonlyArray<HeatmapCell>;
   anchor: TooltipAnchor;
   category: Category;
   slotLabel: string;
@@ -205,10 +303,27 @@ export function Tooltip({
   /** Open the login modal — used for the "Sign in to view markets" CTA in
    *  the locked tooltip. */
   onRequestLogin: () => void;
+  /** Open the whale drawer for the clicked address. Only fires from the
+   *  locked tooltip — the hover tooltip is pointer-transparent. */
+  onWhaleClick: (addr: string) => void;
 }) {
   const meta = categoryMeta(category);
   const isPattern = mode === "pattern";
   const sortedMarkets = isPattern ? [] : sortMarkets(cell.markets, metric).slice(0, TOP_N);
+  // Top whales in this cell — always sorted by USD volume desc (server-side).
+  // Hide in PATTERN mode (no per-cell whale aggregation in the pattern query).
+  const cellWhales: ReadonlyArray<WhaleCellSummary> =
+    isPattern ? [] : (cell.topWhales ?? []).slice(0, TOP_N);
+  // Slot index inside the active row — derived from cellId pattern "{cat}:{slot}"
+  // upstream. We get rowCells in display order, so the active slot is the
+  // last index for LIVE (NOW) ... actually we don't have direct access to
+  // slot here. The parent guarantees rowCells matches the display order; we
+  // find the slot by reference identity against `cell`.
+  const activeSlot = rowCells.findIndex((c) => c === cell);
+  // Sparkline only for LIVE — for PATTERN, the per-cycle bar chart will be
+  // a separate (planned) widget; row-across-hours sparkline is duplicative
+  // of the heatmap row itself.
+  const showSparkline = !isPattern && rowCells.length > 1 && activeSlot >= 0;
 
   const ref = useRef<HTMLDivElement | null>(null);
   const margin = 10;
@@ -216,8 +331,8 @@ export function Tooltip({
   const initialH = isPattern
     ? 230
     : sortedMarkets.length > 0
-      ? 240 + sortedMarkets.length * 26
-      : 140;
+      ? 240 + sortedMarkets.length * 26 + (showSparkline ? 50 : 0) + (cellWhales.length > 0 ? 30 + cellWhales.length * 24 : 0)
+      : 140 + (showSparkline ? 50 : 0) + (cellWhales.length > 0 ? 30 + cellWhales.length * 24 : 0);
 
   const initialPos = {
     left: clamp(anchor.x + anchor.w / 2 - initialW / 2, 8, anchor.parentW - initialW - 8),
@@ -381,6 +496,27 @@ export function Tooltip({
         />
       </div>
 
+      {showSparkline && (
+        <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
+          <div
+            style={{
+              fontSize: 9,
+              letterSpacing: 0.5,
+              color: TOKENS.textMuted,
+              textTransform: "uppercase",
+              marginBottom: 6,
+              fontWeight: 600,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <span>Row trend · {meta.label}</span>
+            <span style={{ color: TOKENS.textSec }}>{metric}</span>
+          </div>
+          <RowSparkline rowCells={rowCells} metric={metric} activeSlot={activeSlot} />
+        </div>
+      )}
+
       {isPattern && cell.delta && (
         <div
           style={{
@@ -433,6 +569,139 @@ export function Tooltip({
               <span>min {fmtCellShort(metric, metricMin(metric, cell))}</span>
               <span>max {fmtCellShort(metric, metricMax(metric, cell))}</span>
             </div>
+          )}
+        </div>
+      )}
+
+      {!isPattern && cellWhales.length > 0 && isAuthed && (
+        <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
+          <div
+            style={{
+              fontSize: 9,
+              letterSpacing: 0.5,
+              color: TOKENS.textMuted,
+              textTransform: "uppercase",
+              marginBottom: 6,
+              fontWeight: 600,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <span>Top whales</span>
+            <span style={{ color: TOKENS.textSec }}>by volume</span>
+          </div>
+          {cellWhales.map((w) => (
+            <button
+              key={w.addr}
+              type="button"
+              onClick={() => onWhaleClick(w.addr)}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "10px 1fr auto auto",
+                alignItems: "center",
+                gap: 8,
+                width: "100%",
+                background: "transparent",
+                border: "none",
+                color: TOKENS.text,
+                fontFamily: "inherit",
+                fontSize: 11,
+                lineHeight: 1.3,
+                padding: "4px 0",
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background = TOKENS.panel2;
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+              }}
+              title={`${w.alias} — open whale profile`}
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 8,
+                  background: w.color,
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  color: TOKENS.text,
+                  fontWeight: 600,
+                }}
+              >
+                {w.alias}
+              </span>
+              <span
+                style={{
+                  color: TOKENS.textSec,
+                  fontFamily: TOKENS.mono,
+                  fontSize: 10,
+                  fontVariantNumeric: "tabular-nums",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {w.signals}× sig
+              </span>
+              <span
+                style={{
+                  color: TOKENS.text,
+                  fontFamily: TOKENS.mono,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  fontVariantNumeric: "tabular-nums",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {w.volume > 0 ? fmtMoneyShort(w.volume) : "—"}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!isPattern && cellWhales.length > 0 && !isAuthed && (
+        <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
+          <div
+            style={{
+              fontSize: 9,
+              letterSpacing: 0.5,
+              color: TOKENS.textMuted,
+              textTransform: "uppercase",
+              marginBottom: 6,
+              fontWeight: 600,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <span>Top whales</span>
+            <span style={{ color: TOKENS.textSec }}>🔒 sign in</span>
+          </div>
+          {locked && (
+            <button
+              onClick={onRequestLogin}
+              style={{
+                background: TOKENS.panel2,
+                border: `1px solid ${TOKENS.borderHi}`,
+                color: TOKENS.text,
+                fontFamily: "inherit",
+                fontSize: 11,
+                fontWeight: 600,
+                padding: "8px 10px",
+                borderRadius: 6,
+                width: "100%",
+                cursor: "pointer",
+              }}
+            >
+              Sign in to see {cellWhales.length} top whale{cellWhales.length === 1 ? "" : "s"} →
+            </button>
           )}
         </div>
       )}

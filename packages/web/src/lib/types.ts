@@ -37,7 +37,7 @@ export type MarketSummary = {
 
 /** Cell shape unified across LIVE and PATTERN. PATTERN cells additionally
  *  carry `delta`, `sampleCount`, `min`, `max`. LIVE cells additionally
- *  carry `markets`. */
+ *  carry `markets` + `topWhales`. */
 export type HeatmapCell = {
   count: number;
   volume: number;
@@ -45,10 +45,22 @@ export type HeatmapCell = {
   winRate: number | null;
   uniqueWhales: number;
   markets: MarketSummary[];
+  /** Top whales (by USD volume desc) who traded in this cell. Empty in
+   *  PATTERN mode and on heavy ranges (12d/12w at top level). */
+  topWhales: WhaleCellSummary[];
   delta?: { count: number; volume: number; pnl: number; winRate: number | null };
   sampleCount?: number;
   min?: { count: number; volume: number; pnl: number };
   max?: { count: number; volume: number; pnl: number };
+};
+
+export type WhaleCellSummary = {
+  addr: string;
+  alias: string;
+  color: string;
+  signals: number;
+  volume: number;
+  pnl: number;
 };
 
 export type HeatmapTotals = {

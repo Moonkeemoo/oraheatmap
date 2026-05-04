@@ -15,6 +15,7 @@ import {
   queryHeatmapAggRows,
   queryTopMarketsPerCell,
   queryTopWhales,
+  queryTopWhalesPerCell,
   RANGE_CONFIG,
 } from "./heatmap-query";
 import type { Ingestor } from "./ingestor";
@@ -41,6 +42,9 @@ const SSE_HEARTBEAT_MS = 25_000;
  *  client-side by active metric and slices to top-5. Extras give the UI
  *  freedom to switch metrics without a refetch. */
 const TOP_MARKETS_PER_CELL = 10;
+/** Top whales fetched per (category, bucket) cell — surfaced in tooltip's
+ *  "Top whales" section, click to open the whale drawer. */
+const TOP_WHALES_PER_CELL = 5;
 /** Whales surfaced in the StatsBar "Top Whale" hover popover. */
 const TOP_WHALES_LIMIT = 10;
 /** Hard cap on rows in the L3 "markets in subcategory" heatmap — anything
@@ -329,7 +333,7 @@ export function createApi(deps: ApiDeps) {
         const range: HeatmapRange = query.range ?? "1h";
         const cfg = RANGE_CONFIG[range];
         const buckets = buildBuckets(now, cfg.bucketMinutes, cfg.slots);
-        const [aggRows, marketRows, topWhaleAddr, uniqueWhales, topWhaleRows] =
+        const [aggRows, marketRows, topWhaleAddr, uniqueWhales, topWhaleRows, perCellWhaleRows] =
           await Promise.all([
             queryHeatmapAggRows(
               deps.sql,
@@ -354,6 +358,12 @@ export function createApi(deps: ApiDeps) {
               range,
               isDrill ? drillCategory : null,
               TOP_WHALES_LIMIT,
+            ),
+            queryTopWhalesPerCell(
+              deps.sql,
+              range,
+              TOP_WHALES_PER_CELL,
+              isDrill ? drillCategory : null,
             ),
           ]);
 
@@ -401,10 +411,35 @@ export function createApi(deps: ApiDeps) {
           );
         }
 
-        const grid = assembleHeatmap(aggRows, marketRows, buckets, range, now, {
-          rowKeys,
-          drillCategory: isDrill ? drillCategory : null,
-        });
+        const grid = assembleHeatmap(
+          aggRows,
+          marketRows,
+          buckets,
+          range,
+          now,
+          {
+            rowKeys,
+            drillCategory: isDrill ? drillCategory : null,
+          },
+          perCellWhaleRows,
+        );
+        // Decorate every cell.topWhales with alias + color so the tooltip
+        // can render the chip without a per-row lookup. Aliases / colors
+        // are deterministic from address — same address always resolves
+        // to the same display. Cast through unknown because the published
+        // HeatmapCell.topWhales is readonly { addr, signals, volume, pnl }
+        // and we're augmenting it post-build with display fields.
+        for (const rowKey of Object.keys(grid.cells)) {
+          const row = grid.cells[rowKey] as unknown as Array<{
+            topWhales: Array<{ addr: string; alias?: string; color?: string }>;
+          }>;
+          for (const cell of row) {
+            for (const w of cell.topWhales) {
+              w.alias = whaleAlias(w.addr);
+              w.color = whaleColor(w.addr);
+            }
+          }
+        }
         const topWhale = topWhaleAddr
           ? { addr: topWhaleAddr, alias: whaleAlias(topWhaleAddr), color: whaleColor(topWhaleAddr) }
           : null;

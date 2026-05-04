@@ -318,6 +318,7 @@ export function Heatmap() {
               <Tooltip
                 key={`locked-${locked.cellId}`}
                 cell={locked.cell}
+                rowCells={displayData.cells[locked.category] ?? []}
                 anchor={locked.anchor}
                 category={locked.category as Category}
                 slotLabel={locked.slotLabel}
@@ -330,12 +331,14 @@ export function Heatmap() {
                 onPlaced={setLockedRect}
                 isAuthed={isAuthed}
                 onRequestLogin={() => setLoginOpen(true)}
+                onWhaleClick={(addr) => setWhaleProfileAddr(addr)}
               />
             )}
             {hover && hover.cellId !== locked?.cellId && (
               <Tooltip
                 key={`hover-${hover.cellId}`}
                 cell={hover.cell}
+                rowCells={displayData.cells[hover.category] ?? []}
                 anchor={hover.anchor}
                 category={hover.category as Category}
                 slotLabel={hover.slotLabel}
@@ -348,6 +351,7 @@ export function Heatmap() {
                 avoidRect={lockedRect}
                 isAuthed={isAuthed}
                 onRequestLogin={() => setLoginOpen(true)}
+                onWhaleClick={(addr) => setWhaleProfileAddr(addr)}
               />
             )}
           </>
