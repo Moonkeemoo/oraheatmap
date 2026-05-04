@@ -1,5 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { categoryMeta } from "@/lib/categories";
+import { parseVsMarket } from "@/lib/vs-market";
+import { TeamVsBadge } from "./TeamVsBadge";
 import { fmtMoney, fmtMoneyShort } from "@/lib/format";
 import { useCellCycles } from "@/hooks/useCellCycles";
 import { useMarketHistory } from "@/hooks/useMarketHistory";
@@ -726,7 +728,11 @@ export function Tooltip({
         // L3 header — Polymarket-style: icon + breadcrumb + full title.
         // Replaces the small "OTHER" category badge with the actual market.
         <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
-          <MarketIcon url={headerIcon ?? null} size={36} />
+          {parseVsMarket(headerTitle) ? (
+            <TeamVsBadge question={headerTitle} size={36} />
+          ) : (
+            <MarketIcon url={headerIcon ?? null} size={36} />
+          )}
           <div style={{ flex: 1, minWidth: 0 }}>
             {headerCrumb && (
               <div
@@ -1172,7 +1178,11 @@ export function Tooltip({
               <span style={{ color: TOKENS.textMuted, fontFamily: TOKENS.mono, fontSize: 10, fontWeight: 700 }}>
                 {i + 1}.
               </span>
-              <MarketIcon url={m.marketIcon} size={22} />
+              {parseVsMarket(m.marketQuestion) ? (
+                <TeamVsBadge question={m.marketQuestion} size={22} />
+              ) : (
+                <MarketIcon url={m.marketIcon} size={22} />
+              )}
               {(() => {
                 const label = m.marketQuestion ?? "(unknown market)";
                 const url = marketUrl(m.marketSlug);
