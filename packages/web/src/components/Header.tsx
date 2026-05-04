@@ -289,6 +289,7 @@ export function Header({
         </div>
         <UserChip
           name={(session?.user?.name as string) || null}
+          email={(session?.user?.email as string) || null}
           authed={isAuthed}
           onLogin={onRequestLogin}
           onLogout={() => signOut()}
@@ -384,11 +385,13 @@ export function Header({
 
 export function UserChip({
   name,
+  email,
   authed,
   onLogin,
   onLogout,
 }: {
   name: string | null;
+  email: string | null;
   authed: boolean;
   onLogin: () => void;
   onLogout: () => void;
@@ -418,13 +421,18 @@ export function UserChip({
       </button>
     );
   }
-  // Authed: show short label + click → log out (one click — KISS for now;
-  // will become a full menu when we add profile pages).
-  const display = name && name.startsWith("0x") ? `${name.slice(0, 6)}…${name.slice(-4)}` : (name ?? "user");
+  // Authed: prefer the display name; fall back to email; final fallback "guest".
+  // Wallet addresses get short-form (0xabcd…1234). Adds a green "live session"
+  // dot so the chip clearly reads as "you ARE signed in" instead of looking
+  // like another generic button.
+  const raw = name || email || "guest";
+  const display = raw.startsWith("0x") && raw.length >= 12
+    ? `${raw.slice(0, 6)}…${raw.slice(-4)}`
+    : raw;
   return (
     <button
       onClick={onLogout}
-      title={`Signed in as ${name ?? "user"} — click to sign out`}
+      title={`Signed in${email ? ` as ${email}` : name ? ` as ${name}` : ""} — click to sign out`}
       style={{
         background: TOKENS.panel,
         border: `1px solid ${TOKENS.borderHi}`,
@@ -437,11 +445,40 @@ export function UserChip({
         borderRadius: 6,
         cursor: "pointer",
         transition: "filter .12s",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        maxWidth: 240,
       }}
       onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.filter = "brightness(1.2)")}
       onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.filter = "none")}
     >
-      {display} ✕
+      <span
+        // Live-session indicator — the green dot reads as "you're online /
+        // signed in" at a glance, much clearer than the bare label that
+        // looked like another button.
+        style={{
+          width: 7,
+          height: 7,
+          borderRadius: 7,
+          background: TOKENS.pos,
+          boxShadow: `0 0 6px ${TOKENS.pos}`,
+          flexShrink: 0,
+        }}
+      />
+      <span
+        style={{
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          fontFamily: raw.startsWith("0x") ? TOKENS.mono : TOKENS.font,
+        }}
+      >
+        {display}
+      </span>
+      <span style={{ color: TOKENS.textMuted, fontSize: 10, flexShrink: 0 }} aria-label="sign out">
+        ✕
+      </span>
     </button>
   );
 }

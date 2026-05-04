@@ -72,16 +72,120 @@ const providers: NextAuthConfig["providers"] = [
 
 // Email magic link — only added when Resend/email transport is configured.
 if (process.env["RESEND_API_KEY"] && process.env["EMAIL_FROM"]) {
-  // Dynamic import keeps this provider out of the bundle when env keys
-  // aren't set so we don't drag SMTP code into prod for nothing.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Resend = require("next-auth/providers/resend").default as typeof import("next-auth/providers/resend").default;
+  // Wrap "noreply@oralab.xyz" → '"OraLab" <noreply@oralab.xyz>' so inboxes
+  // surface a friendly sender name (huge for spam-folder avoidance and trust).
+  const rawFrom = process.env["EMAIL_FROM"]!;
+  const friendlyFrom = rawFrom.includes("<") ? rawFrom : `"OraLab" <${rawFrom}>`;
   providers.push(
     Resend({
       apiKey: process.env["RESEND_API_KEY"],
-      from: process.env["EMAIL_FROM"],
+      from: friendlyFrom,
+      // Override the default sendVerificationRequest with a branded HTML
+      // template (and matching plain-text fallback). Generic Auth.js template
+      // looked spammy — our own copy + dark theme tracks the dashboard's
+      // styling and gives Gmail/Apple Mail more trust signals.
+      async sendVerificationRequest({ identifier: email, url }) {
+        const host = new URL(url).host;
+        const res = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env["RESEND_API_KEY"]}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            from: friendlyFrom,
+            to: email,
+            subject: `Sign in to OraLab`,
+            text: textBody({ url, host }),
+            html: htmlBody({ url, host }),
+            // Encourages mail clients to NOT mark routine sign-in mails as
+            // junk after the first interaction — recommended by RFC 8058.
+            headers: {
+              "List-Unsubscribe": `<mailto:noreply@${host}?subject=unsubscribe>`,
+              "X-Entity-Ref-ID": email,
+            },
+          }),
+        });
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          throw new Error(`Resend failed (${res.status}): ${detail.slice(0, 200)}`);
+        }
+      },
     }),
   );
+}
+
+function textBody({ url, host }: { url: string; host: string }): string {
+  return [
+    "Sign in to OraLab — Whale Signal Heatmap",
+    "",
+    `Click the link below to sign in to ${host}. The link expires in 24 hours and can only be used once.`,
+    "",
+    url,
+    "",
+    "Didn't request this? You can safely ignore this email — your inbox just received a sign-in code that nobody can use without your inbox.",
+  ].join("\n");
+}
+
+function htmlBody({ url, host }: { url: string; host: string }): string {
+  // Inline styles for max email-client compatibility (Outlook etc.).
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>Sign in to OraLab</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0d1117;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#e6edf3;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0d1117;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#161b22;border:1px solid #30363d;border-radius:12px;padding:32px;">
+            <tr>
+              <td style="padding-bottom:20px;">
+                <div style="font-size:13px;letter-spacing:0.6px;color:#f0b429;font-weight:700;text-transform:uppercase;">OraLab</div>
+                <div style="font-size:11px;color:#7d8590;letter-spacing:0.4px;text-transform:uppercase;margin-top:4px;">Whale Signal Heatmap</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding-bottom:18px;font-size:18px;font-weight:600;color:#e6edf3;">
+                Sign in to your account
+              </td>
+            </tr>
+            <tr>
+              <td style="padding-bottom:24px;font-size:14px;color:#c9d1d9;line-height:1.55;">
+                Tap the button below to sign in to <strong style="color:#e6edf3;">${host}</strong>.
+                The link expires in <strong style="color:#e6edf3;">24 hours</strong> and can only be used once.
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding-bottom:24px;">
+                <a href="${url}" target="_blank" rel="noopener"
+                   style="display:inline-block;padding:14px 28px;background:#f0b429;color:#1a1410;font-weight:700;font-size:14px;letter-spacing:0.4px;text-decoration:none;border-radius:8px;">
+                  Sign in to OraLab
+                </a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding-bottom:18px;font-size:12px;color:#7d8590;line-height:1.5;">
+                Or paste this link into your browser:<br />
+                <a href="${url}" target="_blank" rel="noopener" style="color:#58a6ff;word-break:break-all;">${url}</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="border-top:1px solid #30363d;padding-top:16px;font-size:11px;color:#6e7681;line-height:1.5;">
+                Didn't request this? You can safely ignore this email —
+                this sign-in link is useless without access to your inbox.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
 }
 
 // Twitter (X) OAuth — only when client id/secret are present.
@@ -198,6 +302,7 @@ export const authConfig: NextAuthConfig = {
       if (user) {
         token.sub = user.id ?? token.sub;
         token.name = user.name ?? token.name;
+        token.email = (user as { email?: string | null }).email ?? token.email;
         token.picture = (user as { image?: string | null }).image ?? token.picture;
       }
       if (account) {
@@ -209,6 +314,7 @@ export const authConfig: NextAuthConfig = {
       if (token && session.user) {
         session.user.id = (token.sub as string) ?? "";
         session.user.name = (token.name as string) ?? null;
+        session.user.email = (token.email as string) ?? session.user.email;
         session.user.image = (token.picture as string) ?? null;
         (session as { provider?: string }).provider = token["provider"] as string | undefined;
       }
