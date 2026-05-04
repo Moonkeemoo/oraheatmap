@@ -187,7 +187,13 @@ export function Cell({
         >
           <span style={{ fontSize: 12, fontWeight: 700, color: valColor }}>{value}</span>
           {showDelta && !isEmpty && (
-            <span style={{ fontSize: 9, fontWeight: 700, color: TOKENS.textMuted }}>
+            // Parens text reads against coloured cell backgrounds (yellow,
+            // dim green, dim red), so TOKENS.textMuted (a flat gray) gets
+            // crushed. A translucent white holds contrast across every
+            // background tint while still feeling secondary to the primary
+            // value — matched 0.72 opacity by eye on the worst-case yellow
+            // PATTERN cell.
+            <span style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>
               ({fmtAvg(metric, avg)})
             </span>
           )}
