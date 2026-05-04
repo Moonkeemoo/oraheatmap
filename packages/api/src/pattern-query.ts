@@ -27,6 +27,10 @@ export type PatternCellValues = {
 export type PatternCell = PatternCellValues & {
   /** Recent-half minus older-half. winRate delta is null when either side has no decided exits. */
   delta: PatternCellValues;
+  /** Average across the FULL lookback window (recent + older halves combined).
+   *  Each half's avg with null tolerance — used by the tooltip parens so they
+   *  show a meaningful baseline even when one half is empty. */
+  full: PatternCellValues;
   /** Number of (day or week) observations contributing to the recent half. */
   sampleCount: number;
   /** Min/max raw observation values across the WHOLE lookback (recent + older). */
@@ -55,10 +59,31 @@ function emptyCell(): PatternCell {
   return {
     ...ZERO_VALUES,
     delta: { ...ZERO_VALUES },
+    full: { ...ZERO_VALUES },
     sampleCount: 0,
     min: { count: 0, volume: 0, pnl: 0 },
     max: { count: 0, volume: 0, pnl: 0 },
   };
+}
+
+/** Combine two half-window averages into a full-window average with null
+ *  tolerance — if one half is empty (NULL from the SQL aggregate), the
+ *  other half stands in alone. */
+function avgOf(a: number | null, b: number | null): number {
+  if (a !== null && b !== null) return (a + b) / 2;
+  return a ?? b ?? 0;
+}
+
+function avgWinRate(a: number | null, b: number | null): number | null {
+  if (a !== null && b !== null) return (a + b) / 2;
+  return a ?? b ?? null;
+}
+
+function numOrNull(v: string | number | null | undefined): number | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 function num(v: string | number | null | undefined): number {
@@ -411,6 +436,20 @@ export function assemblePattern(
       volume: recentVolume - olderVolume,
       pnl: recentPnl - olderPnl,
       winRate: recentWR !== null && olderWR !== null ? recentWR - olderWR : null,
+    };
+    // Full-window averages — null-tolerant so a single-half cell still gets
+    // a sensible baseline (the half that has data).
+    const recentCountN = numOrNull(r.recent_count);
+    const olderCountN  = numOrNull(r.older_count);
+    const recentVolN   = numOrNull(r.recent_volume);
+    const olderVolN    = numOrNull(r.older_volume);
+    const recentPnlN   = numOrNull(r.recent_pnl);
+    const olderPnlN    = numOrNull(r.older_pnl);
+    cell.full = {
+      count: avgOf(recentCountN, olderCountN),
+      volume: avgOf(recentVolN, olderVolN),
+      pnl: avgOf(recentPnlN, olderPnlN),
+      winRate: avgWinRate(recentWR, olderWR),
     };
     cell.sampleCount = num(r.recent_sample_count);
     cell.min = {

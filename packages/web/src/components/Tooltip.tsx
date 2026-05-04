@@ -271,6 +271,24 @@ function rowIndexToServerSlot(kind: PatternKind, rowIndex: number): number {
  *  Each bar = one cycle (day for HOUR pattern, week for DOW pattern).
  *  PNL bars centre on a zero baseline. The faint horizontal line marks the
  *  mean across cycles so the user can eyeball the spread. */
+function pickHistogramFill(metric: HeatmapMetric, v: number): string {
+  if (v === 0) return "rgba(125,133,144,0.22)";
+  switch (metric) {
+    case "pnl":
+      return v > 0 ? "rgba(63,185,80,0.7)" : "rgba(248,81,73,0.7)";
+    case "volume":
+      return "rgba(240,180,41,0.7)";
+    case "signals":
+      return "rgba(88,166,255,0.7)";
+    case "winrate":
+      // Centered at 50%: above is green, below is red. Caller passes raw
+      // winrate (0..1) as v, so subtract 0.5 to get sign.
+      return v >= 0.5 ? "rgba(63,185,80,0.7)" : "rgba(248,81,73,0.7)";
+    case "whales":
+      return "rgba(167,139,250,0.7)";
+  }
+}
+
 function CycleHistogram({
   samples,
   metric,
@@ -316,11 +334,14 @@ function CycleHistogram({
           : height - 1 - barH;
         const x = i * slot + gap / 2;
         const w = slot - gap;
-        const fill = isPnl
-          ? v > 0 ? "rgba(63,185,80,0.7)"
-          : v < 0 ? "rgba(248,81,73,0.7)"
-          : "rgba(125,133,144,0.25)"
-          : v > 0 ? "rgba(167,139,250,0.7)" : "rgba(125,133,144,0.18)";
+        // Bar colour mirrors the heatmap palette for the active metric so
+        // the histogram visually inherits which lens the user is on:
+        //   pnl     → green (positive) / red (negative)
+        //   volume  → gold
+        //   trades  → blue
+        //   winrate → green for >50%, red for <50% (centered like pnl)
+        //   whales  → purple
+        const fill = pickHistogramFill(metric, v);
         return (
           <rect key={i} x={x} y={y} width={w} height={Math.max(1, barH)} fill={fill} rx={1} />
         );

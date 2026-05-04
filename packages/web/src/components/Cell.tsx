@@ -29,15 +29,22 @@ function deltaForMetric(metric: HeatmapMetric, cell: HeatmapCell): number | null
   }
 }
 
-/** Full-lookback average for the active metric. Cell carries the
- *  *recent half* value and a delta = recent − older, so the full average
- *  reduces to recent − delta/2. NULL when delta is missing (e.g. winrate
- *  with no decided trades in the older half). */
+/** Full-lookback average for the active metric. Backend exposes `cell.full`
+ *  with null-tolerant per-half combining, so we read it directly. Falls back
+ *  to recent value when `full` isn't on the cell (LIVE mode, older API
+ *  responses) or when the metric isn't aggregated in PATTERN. */
 function avgForMetric(metric: HeatmapMetric, cell: HeatmapCell): number | null {
-  const recent = recentForMetric(metric, cell);
-  const delta = deltaForMetric(metric, cell);
-  if (recent === null || delta === null) return null;
-  return recent - delta / 2;
+  const f = cell.full;
+  if (f) {
+    switch (metric) {
+      case "signals": return f.count;
+      case "volume":  return f.volume;
+      case "pnl":     return f.pnl;
+      case "winrate": return f.winRate;
+      case "whales":  return null; // not aggregated in PATTERN
+    }
+  }
+  return recentForMetric(metric, cell);
 }
 
 function fmtAvg(metric: HeatmapMetric, avg: number | null): string {
