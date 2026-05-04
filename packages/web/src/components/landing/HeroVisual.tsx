@@ -12,24 +12,40 @@ import { TOKENS } from "@/lib/tokens";
  * authentic to anyone who's seen the dashboard. No external deps.
  */
 
-const ROWS: ReadonlyArray<{ label: string; color: string }> = [
-  { label: "POLITICS", color: "#58a6ff" },
-  { label: "SPORTS",   color: "#3fb950" },
-  { label: "CRYPTO",   color: "#f0b429" },
-  { label: "FINANCE",  color: "#a78bfa" },
-  { label: "TECH",     color: "#ff7b72" },
-  { label: "WORLD",    color: "#56d4dd" },
-  { label: "CULTURE",  color: "#bc8cff" },
-  { label: "CLIMATE",  color: "#7ee787" },
+const ROWS: ReadonlyArray<{ label: string; tilt: number }> = [
+  // tilt ∈ [-1, 1] — bias toward positive or negative PnL for that category.
+  // Story: politics ripping, finance bleeding, crypto mixed, etc. Picked so
+  // the grid visually tells a "smart money is rotating" story.
+  { label: "POLITICS", tilt:  0.55 },
+  { label: "SPORTS",   tilt: -0.35 },
+  { label: "CRYPTO",   tilt:  0.20 },
+  { label: "FINANCE",  tilt: -0.50 },
+  { label: "TECH",     tilt:  0.15 },
+  { label: "WORLD",    tilt:  0.40 },
+  { label: "CULTURE",  tilt: -0.20 },
+  { label: "CLIMATE",  tilt:  0.05 },
 ];
 const COLS = 16;
 
-function seedIntensity(row: number, col: number): number {
-  // Deterministic pseudo-random so SSR + client hydration match. Strong on
-  // recent (right) columns, weaker on older (left).
+/** Signed cell value in [-1, 1] — used to pick green/red and intensity. */
+function seedSigned(row: number, col: number): number {
+  const tilt = ROWS[row]!.tilt;
+  // Recency weight — recent cells (right) more saturated than older (left).
   const recency = (col + 1) / COLS;
-  const phase = Math.sin(row * 1.7 + col * 0.6) * 0.5 + 0.5;
-  return Math.min(1, recency * 0.7 + phase * 0.45);
+  // Per-cell phase noise so the row isn't a flat shade.
+  const phase = Math.sin(row * 1.7 + col * 0.6) * 0.4;
+  // Combine: tilt sets sign+baseline, phase adds variation, recency boosts.
+  return Math.max(-1, Math.min(1, (tilt + phase) * (0.55 + recency * 0.45)));
+}
+
+/** Map a signed value to (color, alpha) using the dashboard's PnL palette. */
+function pnlColor(signed: number): { color: string; alpha: number } {
+  const a = Math.abs(signed);
+  // Below this threshold cells read as "no data" — fade to a faint gray.
+  if (a < 0.06) return { color: "#30363d", alpha: 0.35 };
+  const color = signed > 0 ? "#3fb950" : "#f85149";
+  // 0.22 floor so even small-magnitude cells are visible against panel bg.
+  return { color, alpha: 0.22 + a * 0.7 };
 }
 
 export function HeroVisual() {
@@ -43,15 +59,10 @@ export function HeroVisual() {
   }, []);
 
   const cells = useMemo(() => {
-    const arr: { row: number; col: number; intensity: number; color: string }[] = [];
+    const arr: { row: number; col: number; signed: number }[] = [];
     for (let r = 0; r < ROWS.length; r++) {
       for (let c = 0; c < COLS; c++) {
-        arr.push({
-          row: r,
-          col: c,
-          intensity: seedIntensity(r, c),
-          color: ROWS[r]!.color,
-        });
+        arr.push({ row: r, col: c, signed: seedSigned(r, c) });
       }
     }
     return arr;
@@ -99,7 +110,7 @@ export function HeroVisual() {
               textTransform: "uppercase",
             }}
           >
-            LIVE · 24h · volume
+            LIVE · 24h · PnL
           </span>
           <span
             style={{
@@ -151,16 +162,18 @@ function RowFragment({
 }: {
   row: number;
   tick: number;
-  cells: ReadonlyArray<{ row: number; col: number; intensity: number; color: string }>;
+  cells: ReadonlyArray<{ row: number; col: number; signed: number }>;
 }) {
   const r = ROWS[row]!;
   const rowCells = cells.filter((c) => c.row === row);
+  // Row label — neutral chip with the category name. Replaces the prior
+  // colored badge so rows aren't visually competing with the PnL palette.
   return (
     <>
       <div
         style={{
-          background: r.color,
-          color: "#fff",
+          background: TOKENS.panel2,
+          color: TOKENS.textSec,
           fontSize: 9,
           fontWeight: 700,
           letterSpacing: 0.6,
@@ -169,23 +182,25 @@ function RowFragment({
           display: "flex",
           alignItems: "center",
           height: 28,
-          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.18)",
+          border: `1px solid ${TOKENS.border}`,
         }}
       >
         {r.label}
       </div>
       {rowCells.map((cell) => {
-        // Per-cell pulse: cells with higher intensity flicker more.
+        // Per-cell pulse: stronger-magnitude cells flicker more.
+        const mag = Math.abs(cell.signed);
         const pulse = (Math.sin((tick + row * 3 + cell.col * 5) * 0.7) + 1) / 2;
-        const alpha = Math.min(1, 0.18 + cell.intensity * 0.65 + pulse * cell.intensity * 0.18);
+        const { color, alpha } = pnlColor(cell.signed);
+        const adjusted = Math.min(1, alpha + pulse * mag * 0.12);
         return (
           <div
             key={cell.col}
             style={{
               height: 28,
               borderRadius: 3,
-              background: cell.color,
-              opacity: alpha,
+              background: color,
+              opacity: adjusted,
               transition: "opacity .35s ease-out",
             }}
           />

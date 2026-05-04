@@ -34,9 +34,9 @@ export function Features() {
             visual={<PatternMock />}
           />
           <FeatureRow
-            eyebrow="Whale profiles · v1.4"
-            title="90-day balance curves per whale."
-            body="Click any wallet → side panel with cumulative realized PnL, open positions with mark-to-market, recent trades, and win rate over decided exits — not over total trades. Aliases pulled from Polymarket's leaderboard."
+            eyebrow="Whale deep-dive · v1.4"
+            title="The full story behind every whale."
+            body="Click any wallet — side panel with 90-day cumulative PnL, category mix, open positions with mark-to-market, recent trades, win rate over decided exits, and Polymarket leaderboard alias with X handle and verified badge. Not just a chart — the full deep-dive."
             visual={<WhaleProfileMock />}
           />
           <FeatureRow
@@ -45,6 +45,12 @@ export function Features() {
             title="Category → subcategory → market."
             body="Click Crypto → see Bitcoin, Solana, ETH separately. Click Bitcoin → see the actual markets — each row is one market with top whales and probability charts in the tooltip."
             visual={<DrillMock />}
+          />
+          <FeatureRow
+            eyebrow="Tooltip detail · v1.2.1"
+            title="Detailed breakdown for every time segment."
+            body="Hover any cell — get top markets driving the volume, top whales pushing it, full stats (signals, volume, PnL, unique whales), a mini cycle histogram showing how this hour usually looks, and probability charts for individual markets at the deepest drill level. Click to lock the tooltip and compare cells side-by-side."
+            visual={<TooltipMock />}
           />
         </div>
       </div>
@@ -348,11 +354,20 @@ function WhaleProfileMock() {
   const max = Math.max(...points);
   const min = Math.min(...points, 0);
   const W = 280;
-  const H = 80;
+  const H = 60;
   const xOf = (i: number): number => (i / (points.length - 1)) * W;
   const yOf = (v: number): number => H - ((v - min) / (max - min)) * H;
   const path = points.map((v, i) => `${i === 0 ? "M" : "L"}${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}`).join(" ");
   const area = `${path} L${W},${H} L0,${H} Z`;
+
+  // Category mix breakdown — proportions read believable for a politics-
+  // and-crypto-focused trader.
+  const mix: ReadonlyArray<{ cat: string; pct: number; color: string }> = [
+    { cat: "Politics", pct: 0.42, color: "#58a6ff" },
+    { cat: "Crypto",   pct: 0.28, color: "#f0b429" },
+    { cat: "Sports",   pct: 0.18, color: "#3fb950" },
+    { cat: "Other",    pct: 0.12, color: "#7d8590" },
+  ];
 
   return (
     <MockShell>
@@ -360,15 +375,15 @@ function WhaleProfileMock() {
       <div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 10, borderBottom: `1px solid ${TOKENS.border}` }}>
         <div
           style={{
-            width: 36,
-            height: 36,
-            borderRadius: 36,
+            width: 32,
+            height: 32,
+            borderRadius: 32,
             background: "linear-gradient(135deg, #f0b429, #f85149)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             color: "#1a1410",
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: 700,
             fontFamily: TOKENS.mono,
           }}
@@ -376,33 +391,211 @@ function WhaleProfileMock() {
           T4
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: TOKENS.text }}>Theo4 ✓</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: TOKENS.text, display: "flex", gap: 4, alignItems: "center" }}>
+            Theo4 <span style={{ color: TOKENS.accent, fontSize: 10 }}>✓</span>
+            <span style={{ color: TOKENS.link, fontSize: 10, fontFamily: TOKENS.mono, marginLeft: 6, fontWeight: 500 }}>@theo4</span>
+          </div>
           <div style={{ fontSize: 10, color: TOKENS.textMuted, fontFamily: TOKENS.mono }}>0xa1b2…f9c3</div>
         </div>
       </div>
       {/* stat row */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, padding: "10px 0" }}>
         {[
-          { label: "Signals", value: "412", color: TOKENS.text },
+          { label: "Signals", value: "412",   color: TOKENS.text },
           { label: "Volume",  value: "$2.1M", color: TOKENS.text },
           { label: "PnL",     value: "+$84k", color: TOKENS.pos },
           { label: "Win",     value: "62%",   color: TOKENS.pos },
         ].map((s) => (
           <div key={s.label}>
             <div style={{ fontSize: 8, letterSpacing: 0.5, textTransform: "uppercase", color: TOKENS.textMuted, fontWeight: 700 }}>{s.label}</div>
-            <div style={{ fontSize: 14, color: s.color, fontWeight: 700, marginTop: 2, fontFamily: TOKENS.mono }}>{s.value}</div>
+            <div style={{ fontSize: 13, color: s.color, fontWeight: 700, marginTop: 2, fontFamily: TOKENS.mono }}>{s.value}</div>
           </div>
         ))}
       </div>
       {/* balance chart */}
-      <div style={{ fontSize: 8, letterSpacing: 0.5, textTransform: "uppercase", color: TOKENS.textMuted, fontWeight: 700, marginTop: 4, marginBottom: 4 }}>
+      <div style={{ fontSize: 8, letterSpacing: 0.5, textTransform: "uppercase", color: TOKENS.textMuted, fontWeight: 700, marginBottom: 4 }}>
         Balance growth · 90 days
       </div>
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }}>
+        <line
+          x1={0}
+          x2={W}
+          y1={yOf(0)}
+          y2={yOf(0)}
+          stroke="rgba(255,255,255,0.18)"
+          strokeWidth={0.5}
+          strokeDasharray="2 2"
+        />
         <path d={area} fill="rgba(63,185,80,0.18)" />
         <path d={path} fill="none" stroke={TOKENS.pos} strokeWidth={1.6} strokeLinejoin="round" />
         <circle cx={xOf(points.length - 1)} cy={yOf(points[points.length - 1]!)} r={2.5} fill={TOKENS.pos} />
       </svg>
+      {/* category mix */}
+      <div style={{ fontSize: 8, letterSpacing: 0.5, textTransform: "uppercase", color: TOKENS.textMuted, fontWeight: 700, marginTop: 12, marginBottom: 6 }}>
+        Category mix · by volume
+      </div>
+      <div
+        style={{
+          display: "flex",
+          width: "100%",
+          height: 5,
+          borderRadius: 3,
+          overflow: "hidden",
+          marginBottom: 6,
+        }}
+      >
+        {mix.map((m) => (
+          <div key={m.cat} style={{ width: `${m.pct * 100}%`, background: m.color }} />
+        ))}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", fontSize: 10, color: TOKENS.textSec }}>
+        {mix.map((m) => (
+          <span key={m.cat} style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+            <span style={{ width: 6, height: 6, borderRadius: 6, background: m.color }} />
+            {m.cat} {Math.round(m.pct * 100)}%
+          </span>
+        ))}
+      </div>
+      {/* open positions strip */}
+      <div
+        style={{
+          marginTop: 12,
+          paddingTop: 10,
+          borderTop: `1px solid ${TOKENS.border}`,
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: 10,
+          color: TOKENS.textMuted,
+          fontFamily: TOKENS.mono,
+        }}
+      >
+        <span><strong style={{ color: TOKENS.text }}>5</strong> open positions</span>
+        <span><strong style={{ color: TOKENS.text }}>41</strong> trades · 7d</span>
+        <span><strong style={{ color: TOKENS.pos }}>+$12.4k</strong> · 24h</span>
+      </div>
+    </MockShell>
+  );
+}
+
+function TooltipMock() {
+  // Compact version of the real Tooltip component — top markets, top whales,
+  // a mini sparkline, and a stat header. Mirrors the actual lock-on-click
+  // dashboard tooltip enough to be recognisable to anyone who's used the app.
+  const sparkPoints = [12, 18, 9, 22, 28, 19, 35, 31, 44, 38, 52, 49];
+  const W = 110;
+  const H = 28;
+  const max = Math.max(...sparkPoints);
+  const min = Math.min(...sparkPoints);
+  const sxOf = (i: number): number => (i / (sparkPoints.length - 1)) * W;
+  const syOf = (v: number): number => H - ((v - min) / (max - min || 1)) * H;
+  const sparkPath = sparkPoints
+    .map((v, i) => `${i === 0 ? "M" : "L"}${sxOf(i).toFixed(1)},${syOf(v).toFixed(1)}`)
+    .join(" ");
+
+  return (
+    <MockShell>
+      {/* hovered cell badge */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          fontSize: 9,
+          letterSpacing: 0.4,
+          textTransform: "uppercase",
+          color: TOKENS.textMuted,
+          fontWeight: 700,
+          paddingBottom: 8,
+          borderBottom: `1px solid ${TOKENS.border}`,
+        }}
+      >
+        <span style={{ color: "#f0b429" }}>● CRYPTO · 14:00 UTC</span>
+        <span style={{ color: TOKENS.textMuted }}>🔒 click to lock</span>
+      </div>
+
+      {/* big stat */}
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginTop: 10 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: TOKENS.text, fontFamily: '"Space Grotesk", -apple-system, sans-serif', letterSpacing: -0.5, lineHeight: 1 }}>
+            $2.4M
+          </div>
+          <div style={{ fontSize: 10, color: TOKENS.textMuted, fontFamily: TOKENS.mono, marginTop: 2 }}>
+            47 trades · 12 unique whales
+          </div>
+        </div>
+        <svg width={W} height={H} style={{ display: "block" }}>
+          <path d={sparkPath} fill="none" stroke={TOKENS.accent} strokeWidth={1.4} strokeLinejoin="round" />
+        </svg>
+      </div>
+
+      {/* mini cycle histogram */}
+      <div style={{ marginTop: 12, fontSize: 8, letterSpacing: 0.5, textTransform: "uppercase", color: TOKENS.textMuted, fontWeight: 700, marginBottom: 4 }}>
+        How this hour usually looks · 30-day
+      </div>
+      <div style={{ display: "flex", gap: 2, height: 18, alignItems: "flex-end" }}>
+        {[0.3, 0.45, 0.6, 0.4, 0.7, 0.85, 1.0, 0.92, 0.78, 0.55, 0.42, 0.3].map((h, i) => (
+          <div
+            key={i}
+            style={{
+              flex: 1,
+              height: `${h * 100}%`,
+              background: i === 6 ? TOKENS.accent : "rgba(240,180,41,0.35)",
+              borderRadius: 2,
+            }}
+          />
+        ))}
+      </div>
+
+      {/* top whales */}
+      <div style={{ marginTop: 12, fontSize: 8, letterSpacing: 0.5, textTransform: "uppercase", color: TOKENS.textMuted, fontWeight: 700, marginBottom: 6 }}>
+        Top whales in this cell
+      </div>
+      {[
+        { name: "Theo4 ✓",     pnl: "+$22k",  vol: "$140k", color: "#f0b429" },
+        { name: "@PrincessOfCo", pnl: "+$18k", vol: "$98k",  color: "#58a6ff" },
+        { name: "GammaGod",    pnl: "+$11k",  vol: "$74k",  color: "#3fb950" },
+      ].map((w) => (
+        <div
+          key={w.name}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "16px 1fr auto auto",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 11,
+            paddingBottom: 5,
+          }}
+        >
+          <span style={{ width: 12, height: 12, borderRadius: 12, background: w.color }} />
+          <span style={{ color: TOKENS.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.name}</span>
+          <span style={{ fontFamily: TOKENS.mono, fontSize: 10, color: TOKENS.textMuted }}>{w.vol}</span>
+          <span style={{ fontFamily: TOKENS.mono, fontSize: 11, color: TOKENS.pos, fontWeight: 700 }}>{w.pnl}</span>
+        </div>
+      ))}
+
+      {/* top markets */}
+      <div style={{ marginTop: 6, paddingTop: 8, borderTop: `1px solid ${TOKENS.border}`, fontSize: 8, letterSpacing: 0.5, textTransform: "uppercase", color: TOKENS.textMuted, fontWeight: 700, marginBottom: 6 }}>
+        Top markets
+      </div>
+      {[
+        { q: "Bitcoin Up or Down · 2:30PM ET",       v: "$1.1M" },
+        { q: "Will BTC close above $112k on May 30?", v: "$680k" },
+      ].map((m) => (
+        <div
+          key={m.q}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 11,
+            paddingBottom: 4,
+          }}
+        >
+          <span style={{ color: TOKENS.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.q}</span>
+          <span style={{ fontFamily: TOKENS.mono, fontSize: 10, color: TOKENS.textSec }}>{m.v}</span>
+        </div>
+      ))}
     </MockShell>
   );
 }
