@@ -27,12 +27,27 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
 
   useEffect(() => {
     if (!open) return;
+    // Defensive default — show every provider we have UI for. The probe
+    // narrows it to the ones the backend actually has configured. If the
+    // probe fails (network, weird response), keep the full set rather than
+    // collapsing to "MetaMask only", which reads as "everything is broken".
+    const ALL = new Set(["siwe", "resend", "github", "discord", "telegram"]);
+    setProviders(ALL);
     fetch("/api/auth/providers", { credentials: "include" })
       .then((r) => r.json())
-      .then((data: Record<string, { id: string }>) => {
-        setProviders(new Set(Object.keys(data ?? {})));
+      .then((data: Record<string, { id: string }> | unknown) => {
+        if (data && typeof data === "object") {
+          const keys = Object.keys(data as Record<string, unknown>);
+          // Only narrow if the response looks like the providers map
+          // (Auth.js sometimes 400s with an error body — don't collapse
+          // the modal in that case).
+          const known = keys.filter((k) => ALL.has(k));
+          if (known.length > 0) setProviders(new Set(known));
+        }
       })
-      .catch(() => setProviders(new Set(["siwe"])));
+      .catch(() => {
+        // keep the optimistic ALL set
+      });
   }, [open]);
 
   useEffect(() => {
