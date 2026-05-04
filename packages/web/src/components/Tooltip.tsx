@@ -74,7 +74,10 @@ function sortWhales(whales: ReadonlyArray<WhaleCellSummary>, metric: HeatmapMetr
       copy.sort((a, b) => cmpDesc(a.volume, b.volume));
       break;
     case "pnl":
-      copy.sort((a, b) => cmpDesc(Math.abs(a.pnl), Math.abs(b.pnl)));
+      // "Earned the most" — raw PNL desc, not absolute value. The biggest
+      // loser used to top this list because abs(-28k) > abs(+11k); now the
+      // best earner sits at the top, losers fall to the bottom.
+      copy.sort((a, b) => cmpDesc(a.pnl, b.pnl));
       break;
     case "winrate":
       copy.sort((a, b) => {
@@ -119,7 +122,9 @@ function sortMarkets(markets: ReadonlyArray<MarketSummary>, metric: HeatmapMetri
       copy.sort((a, b) => cmpDesc(a.volume, b.volume));
       break;
     case "pnl":
-      copy.sort((a, b) => cmpDesc(Math.abs(a.pnl), Math.abs(b.pnl)));
+      // Raw PNL desc — top earners on top (was abs-value, which surfaced
+      // biggest losers alongside biggest winners).
+      copy.sort((a, b) => cmpDesc(a.pnl, b.pnl));
       break;
     case "winrate":
       copy.sort((a, b) => {
