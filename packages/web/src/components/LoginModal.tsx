@@ -4,7 +4,15 @@ import { useEffect, useState, type ReactNode } from "react";
 import { signIn } from "next-auth/react";
 import { SiweMessage } from "siwe";
 import { TOKENS } from "@/lib/tokens";
-import { MailIcon, MetaMaskIcon, TelegramIcon, XIcon } from "./ProviderIcons";
+import {
+  DiscordIcon,
+  GithubIcon,
+  MailIcon,
+  MetaMaskIcon,
+  PasskeyIcon,
+  TelegramIcon,
+  XIcon,
+} from "./ProviderIcons";
 
 /**
  * Multi-provider login modal. Layout: email at top (most universal),
@@ -206,6 +214,19 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
         )}
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {has("passkey") && (
+            <ProviderButton
+              onClick={() => signIn("passkey", { redirect: false }).then((r) => {
+                if (r?.error) setError(r.error);
+                else onClose();
+              })}
+              disabled={busy !== null}
+              loading={busy === "passkey"}
+              icon={<PasskeyIcon />}
+            >
+              Sign in with Passkey
+            </ProviderButton>
+          )}
           {has("siwe") && (
             <ProviderButton
               onClick={loginSiwe}
@@ -214,6 +235,26 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
               icon={<MetaMaskIcon />}
             >
               Connect with MetaMask
+            </ProviderButton>
+          )}
+          {has("github") && (
+            <ProviderButton
+              onClick={() => signIn("github")}
+              disabled={busy !== null}
+              loading={busy === "github"}
+              icon={<GithubIcon />}
+            >
+              Continue with GitHub
+            </ProviderButton>
+          )}
+          {has("discord") && (
+            <ProviderButton
+              onClick={() => signIn("discord")}
+              disabled={busy !== null}
+              loading={busy === "discord"}
+              icon={<DiscordIcon />}
+            >
+              Continue with Discord
             </ProviderButton>
           )}
           {has("twitter") && (

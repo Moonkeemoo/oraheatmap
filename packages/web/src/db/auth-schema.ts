@@ -9,7 +9,7 @@
  * @auth/drizzle-adapter expects so we don't have to wire a custom mapping.
  */
 
-import { integer, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, integer, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
 
 export const users = pgTable("auth_users", {
   id: text("id").primaryKey(),
@@ -58,5 +58,24 @@ export const verificationTokens = pgTable(
   },
   (t) => ({
     pk: primaryKey({ columns: [t.identifier, t.token] }),
+  }),
+);
+
+export const authenticators = pgTable(
+  "auth_authenticators",
+  {
+    credentialID: text("credential_id").notNull().unique(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    providerAccountId: text("provider_account_id").notNull(),
+    credentialPublicKey: text("credential_public_key").notNull(),
+    counter: integer("counter").notNull(),
+    credentialDeviceType: text("credential_device_type").notNull(),
+    credentialBackedUp: boolean("credential_backed_up").notNull(),
+    transports: text("transports"),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.credentialID] }),
   }),
 );

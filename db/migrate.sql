@@ -211,3 +211,17 @@ CREATE TABLE IF NOT EXISTS auth_verification_tokens (
   expires     TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (identifier, token)
 );
+
+-- Passkey / WebAuthn credentials. Each row is one passkey registered by
+-- a user for this site (a user can have many passkeys — one per device).
+CREATE TABLE IF NOT EXISTS auth_authenticators (
+  credential_id          TEXT NOT NULL UNIQUE,
+  user_id                TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+  provider_account_id    TEXT NOT NULL,
+  credential_public_key  TEXT NOT NULL,
+  counter                INTEGER NOT NULL,
+  credential_device_type TEXT NOT NULL,
+  credential_backed_up   BOOLEAN NOT NULL,
+  transports             TEXT,
+  PRIMARY KEY (user_id, credential_id)
+);

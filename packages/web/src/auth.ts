@@ -4,7 +4,7 @@ import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { SignJWT, jwtVerify } from "jose";
 import { SiweMessage } from "siwe";
 import { getDb } from "@/db";
-import { accounts, sessions, users, verificationTokens } from "@/db/auth-schema";
+import { accounts, authenticators, sessions, users, verificationTokens } from "@/db/auth-schema";
 
 /**
  * Auth.js (NextAuth v5) configuration for the heatmap web app.
@@ -218,6 +218,39 @@ if (process.env["TWITTER_CLIENT_ID"] && process.env["TWITTER_CLIENT_SECRET"]) {
   );
 }
 
+// GitHub OAuth — Auth.js native provider, free.
+if (process.env["GITHUB_CLIENT_ID"] && process.env["GITHUB_CLIENT_SECRET"]) {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const GitHub = require("next-auth/providers/github").default as typeof import("next-auth/providers/github").default;
+  providers.push(
+    GitHub({
+      clientId: process.env["GITHUB_CLIENT_ID"],
+      clientSecret: process.env["GITHUB_CLIENT_SECRET"],
+    }),
+  );
+}
+
+// Discord OAuth — Auth.js native provider, free.
+if (process.env["DISCORD_CLIENT_ID"] && process.env["DISCORD_CLIENT_SECRET"]) {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const Discord = require("next-auth/providers/discord").default as typeof import("next-auth/providers/discord").default;
+  providers.push(
+    Discord({
+      clientId: process.env["DISCORD_CLIENT_ID"],
+      clientSecret: process.env["DISCORD_CLIENT_SECRET"],
+    }),
+  );
+}
+
+// Passkey (WebAuthn) — no env keys needed; only requires HTTPS (or localhost).
+// Auth.js v5 ships an experimental Passkey provider that wires directly into
+// the existing Drizzle adapter (writes to auth_authenticators table).
+if (process.env["DATABASE_URL"]) {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const Passkey = require("next-auth/providers/passkey").default as typeof import("next-auth/providers/passkey").default;
+  providers.push(Passkey({}));
+}
+
 // Telegram Login Widget — verified hash check via custom Credentials provider.
 if (process.env["TG_LOGIN_BOT_TOKEN"]) {
   providers.push(
@@ -271,6 +304,7 @@ const drizzleAdapter = process.env["DATABASE_URL"]
       accountsTable: accounts,
       sessionsTable: sessions,
       verificationTokensTable: verificationTokens,
+      authenticatorsTable: authenticators,
     })
   : undefined;
 
@@ -278,6 +312,8 @@ export const authConfig: NextAuthConfig = {
   providers,
   adapter: drizzleAdapter,
   trustHost: true,
+  // Required for the Passkey provider (still flagged experimental in v5).
+  experimental: { enableWebAuthn: true },
   session: { strategy: "jwt", maxAge: TOKEN_TTL_SECONDS },
   // HS256 JWS so the Elysia API can verify with the same secret + jose.
   jwt: {

@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.2",
+    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/server": "^13.3.0",
     "drizzle-orm": "^0.36.0",
     "jose": "^6.2.3",
     "next": "^15.0.0",
