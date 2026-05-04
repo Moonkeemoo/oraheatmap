@@ -323,6 +323,7 @@ export function createApi(deps: ApiDeps) {
             subcategoryLabels: patternSubcategoryLabels,
             marketSlugs: null,
             marketIcons: null,
+            marketQuestions: null,
             resolvedRows: [],
             topWhales: null,
             buckets: pattern.buckets,
@@ -380,6 +381,7 @@ export function createApi(deps: ApiDeps) {
         let rowLabels: Record<string, string> | null = null;
         let marketSlugs: Record<string, string | null> | null = null;
         let marketIcons: Record<string, string | null> | null = null;
+        let marketQuestions: Record<string, string | null> | null = null;
         let resolvedRows: ReadonlyArray<string> = [];
         if (isDrillL3) {
           const totals = new Map<string, number>();
@@ -411,6 +413,12 @@ export function createApi(deps: ApiDeps) {
           );
           marketIcons = Object.fromEntries(
             sortedConditionIds.map((cid) => [cid, meta[cid]?.icon ?? null]),
+          );
+          // Original (un-shortened) market questions — tooltip uses this for
+          // the L3 header where we have room for the full text. rowLabels
+          // above stays the shortened version for the cramped row badges.
+          marketQuestions = Object.fromEntries(
+            sortedConditionIds.map((cid) => [cid, meta[cid]?.question ?? null]),
           );
           resolvedRows = sortedConditionIds.filter((cid) => resolvedSet.has(cid));
         } else if (isDrill) {
@@ -486,6 +494,7 @@ export function createApi(deps: ApiDeps) {
           // public URL on the row label. NULL at L1/L2.
           marketSlugs,
           marketIcons,
+          marketQuestions,
           resolvedRows,
           topWhales,
           totals: {

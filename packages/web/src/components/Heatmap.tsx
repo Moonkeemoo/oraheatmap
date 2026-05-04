@@ -337,6 +337,21 @@ export function Heatmap() {
                 onRequestLogin={() => setLoginOpen(true)}
                 onWhaleClick={(addr) => setWhaleProfileAddr(addr)}
                 drillSubcategory={displayData.drillSubcategory}
+                headerIcon={
+                  displayData.drillSubcategory
+                    ? displayData.marketIcons?.[locked.category] ?? null
+                    : null
+                }
+                headerTitle={
+                  displayData.drillSubcategory
+                    ? displayData.marketQuestions?.[locked.category] ?? null
+                    : null
+                }
+                headerCrumb={
+                  displayData.drillSubcategory
+                    ? `${displayData.drillCategory} · ${displayData.drillSubcategoryLabel ?? ""}`
+                    : null
+                }
                 onUnlock={() => {
                   setLocked(null);
                   setLockedRect(null);
@@ -362,6 +377,21 @@ export function Heatmap() {
                 onRequestLogin={() => setLoginOpen(true)}
                 onWhaleClick={(addr) => setWhaleProfileAddr(addr)}
                 drillSubcategory={displayData.drillSubcategory}
+                headerIcon={
+                  displayData.drillSubcategory
+                    ? displayData.marketIcons?.[hover.category] ?? null
+                    : null
+                }
+                headerTitle={
+                  displayData.drillSubcategory
+                    ? displayData.marketQuestions?.[hover.category] ?? null
+                    : null
+                }
+                headerCrumb={
+                  displayData.drillSubcategory
+                    ? `${displayData.drillCategory} · ${displayData.drillSubcategoryLabel ?? ""}`
+                    : null
+                }
               />
             )}
           </>

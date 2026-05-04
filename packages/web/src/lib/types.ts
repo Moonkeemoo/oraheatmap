@@ -114,6 +114,9 @@ export type HeatmapResponse = {
    *  when the slug wasn't captured at ingest time. */
   marketSlugs: Record<string, string | null> | null;
   marketIcons: Record<string, string | null> | null;
+  /** Full original market questions at L3 — tooltip header uses these
+   *  rather than the shortened row labels. NULL at L1/L2. */
+  marketQuestions: Record<string, string | null> | null;
   /** L3 only: subset of row keys whose markets have already resolved.
    *  Frontend fades these rows. Empty at L1/L2. */
   resolvedRows: ReadonlyArray<string>;

@@ -404,6 +404,9 @@ export function Tooltip({
   onWhaleClick,
   drillSubcategory,
   onUnlock,
+  headerIcon,
+  headerTitle,
+  headerCrumb,
 }: {
   cell: HeatmapCell;
   /** All cells of the same row (category) in display order. Used to draw
@@ -439,6 +442,12 @@ export function Tooltip({
   /** Drill subcategory at L2 in PATTERN — when set, the cycle histogram
    *  filters by subcategory column instead of category. NULL at L1. */
   drillSubcategory?: string | null;
+  /** Polymarket icon URL for the L3 header. NULL at L1/L2. */
+  headerIcon?: string | null;
+  /** Full (un-shortened) market question for the L3 header. NULL at L1/L2. */
+  headerTitle?: string | null;
+  /** Breadcrumb shown above the title at L3 — e.g. "Sports · NBA". */
+  headerCrumb?: string | null;
   /** Called when the user clicks anywhere on the locked tooltip's empty
    *  area (not on an interactive child). Lets users dismiss the lock
    *  without having to find the cell underneath the tooltip. */
@@ -626,30 +635,79 @@ export function Tooltip({
             }
           : undefined
       }>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <span
-          style={{
-            background: meta.color,
-            color: "#fff",
-            fontSize: 9,
-            fontWeight: 700,
-            letterSpacing: 0.4,
-            padding: "3px 6px",
-            borderRadius: 3,
-            textTransform: "uppercase",
-          }}
-        >
-          {meta.label}
-        </span>
-        <span style={{ color: TOKENS.textSec, fontSize: 11, fontFamily: TOKENS.mono }}>
-          {slotLabel} · {rangeUnit(range, mode, patternKind)}
-          {isPattern && (
-            <span style={{ marginLeft: 6, color: TOKENS.textMuted }}>
-              · avg over {lookbackDays}d
-            </span>
-          )}
-        </span>
-      </div>
+      {isL3 && headerTitle ? (
+        // L3 header — Polymarket-style: icon + breadcrumb + full title.
+        // Replaces the small "OTHER" category badge with the actual market.
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
+          <MarketIcon url={headerIcon ?? null} size={36} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {headerCrumb && (
+              <div
+                style={{
+                  fontSize: 9,
+                  letterSpacing: 0.5,
+                  color: TOKENS.textMuted,
+                  textTransform: "uppercase",
+                  fontWeight: 600,
+                  marginBottom: 3,
+                }}
+              >
+                {headerCrumb}
+              </div>
+            )}
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                color: TOKENS.text,
+                lineHeight: 1.25,
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+              title={headerTitle}
+            >
+              {headerTitle}
+            </div>
+            <div
+              style={{
+                fontSize: 10,
+                color: TOKENS.textSec,
+                fontFamily: TOKENS.mono,
+                marginTop: 3,
+              }}
+            >
+              {slotLabel} · {rangeUnit(range, mode, patternKind)}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span
+            style={{
+              background: meta.color,
+              color: "#fff",
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: 0.4,
+              padding: "3px 6px",
+              borderRadius: 3,
+              textTransform: "uppercase",
+            }}
+          >
+            {meta.label}
+          </span>
+          <span style={{ color: TOKENS.textSec, fontSize: 11, fontFamily: TOKENS.mono }}>
+            {slotLabel} · {rangeUnit(range, mode, patternKind)}
+            {isPattern && (
+              <span style={{ marginLeft: 6, color: TOKENS.textMuted }}>
+                · avg over {lookbackDays}d
+              </span>
+            )}
+          </span>
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
         <Stat label={isPattern ? "AVG SIGNALS" : "SIGNALS"} value={Math.round(cell.count)} />
