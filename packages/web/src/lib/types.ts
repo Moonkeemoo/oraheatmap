@@ -72,6 +72,11 @@ export type WhaleCellSummary = {
   /** wins / (wins+losses) for trades that closed in this cell. NULL when
    *  no exits — typical for live markets. */
   winRate: number | null;
+  /** Raw wins/losses so the WIN RATE row can show sample size — "5/5
+   *  100%" reads honestly, plain "100%" alongside "155× tr" was
+   *  misleading because most of those 155 trades were unmatched BUYs. */
+  wins: number;
+  losses: number;
 };
 
 export type HeatmapTotals = {

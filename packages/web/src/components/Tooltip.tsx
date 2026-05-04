@@ -1015,8 +1015,13 @@ export function Tooltip({
               >
                 {w.alias}
               </span>
-              {/* Secondary stat — usually trade count; for the trades metric
-                  we'd duplicate the primary, so show volume instead. */}
+              {/* Secondary stat — context for the primary:
+                  - signals (TRADES) → volume as secondary
+                  - winrate           → decided exits count "5× ex" so the
+                    user reads the sample size behind the percent
+                  - everything else  → total trade count "155× tr"
+                  Stops "155× tr 100%" from suggesting all 155 were wins
+                  when only the few exits were decided. */}
               <span
                 style={{
                   color: TOKENS.textSec,
@@ -1028,7 +1033,9 @@ export function Tooltip({
               >
                 {metric === "signals"
                   ? w.volume > 0 ? fmtMoneyShort(w.volume) : "—"
-                  : `${w.signals}× tr`}
+                  : metric === "winrate"
+                    ? `${(w.wins ?? 0) + (w.losses ?? 0)}× ex`
+                    : `${w.signals}× tr`}
               </span>
               <span
                 style={{

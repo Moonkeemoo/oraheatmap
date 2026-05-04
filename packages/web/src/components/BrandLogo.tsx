@@ -34,9 +34,13 @@ const SIZES: Record<Size, {
   oralabSize: number;
   descriptorSize: number;
   rowGap: number;
+  oralabLetterSpacing: string;
 }> = {
-  hero:    { icon: 64, gap: 16, oralabSize: 32, descriptorSize: 11, rowGap: 2 },
-  compact: { icon: 24, gap: 8,  oralabSize: 16, descriptorSize: 8,  rowGap: 1 },
+  // Lowercase "oralab" — visual height of the wordmark roughly matches
+  // the icon. Bigger font-size than uppercase ORALAB needed because
+  // x-height is ~50% of font-size in Space Grotesk.
+  hero:    { icon: 60, gap: 16, oralabSize: 54, descriptorSize: 14, rowGap: 4, oralabLetterSpacing: "-0.04em" },
+  compact: { icon: 24, gap: 8,  oralabSize: 22, descriptorSize: 8,  rowGap: 2, oralabLetterSpacing: "-0.04em" },
 };
 
 function GridIcon({ size }: { size: number }) {
@@ -85,18 +89,27 @@ export function BrandLogo({
           gap: s.rowGap,
           fontFamily: "'Space Grotesk', system-ui, sans-serif",
           fontWeight: 700,
-          letterSpacing: "-0.02em",
-          textTransform: "uppercase",
         }}
       >
-        <span style={{ fontSize: s.oralabSize, lineHeight: 1, color: "currentColor" }}>
-          ORALAB
+        {/* Wordmark stays lowercase. Descriptor is UPPERCASE — keeps the
+            "tag underneath the brand" hierarchy clean. */}
+        <span
+          style={{
+            fontSize: s.oralabSize,
+            lineHeight: 1,
+            letterSpacing: s.oralabLetterSpacing,
+            color: "currentColor",
+          }}
+        >
+          oralab
         </span>
         {showDescriptor && (
           <span
             style={{
               fontSize: s.descriptorSize,
               lineHeight: 1,
+              letterSpacing: "-0.02em",
+              textTransform: "uppercase",
               color: "currentColor",
               opacity: 0.5,
             }}

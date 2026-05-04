@@ -81,7 +81,7 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
       const message = new SiweMessage({
         domain: window.location.host,
         address,
-        statement: "Sign in to ORALAB",
+        statement: "Sign in to oralab",
         uri: window.location.origin,
         version: "1",
         chainId: 1,

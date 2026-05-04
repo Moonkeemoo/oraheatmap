@@ -4,7 +4,7 @@ import "@fontsource/space-grotesk/700.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ORALAB · Polymarket Heatmap",
+  title: "oralab · Polymarket Heatmap",
   description: "Real-time Polymarket whale activity heatmap",
   icons: {
     icon: "/favicon.svg",

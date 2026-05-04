@@ -80,6 +80,11 @@ export type WhaleSummary = {
   /** wins / (wins + losses) for trades that closed in this cell. NULL when
    *  no closed trades — typical for active markets. */
   winRate: number | null;
+  /** Raw wins/losses counts so the UI can show sample size next to the
+   *  winRate ("5/5 100%" reads honestly; "155× tr 100%" was misleading
+   *  because most of those trades were unmatched BUYs). */
+  wins: number;
+  losses: number;
 };
 
 export type HeatmapTotals = {
@@ -311,6 +316,8 @@ export function assembleHeatmap(
       volume: num(w.volume_usd),
       pnl: num(w.pnl_usd),
       winRate: decided > 0 ? wins / decided : null,
+      wins,
+      losses,
     });
   }
 

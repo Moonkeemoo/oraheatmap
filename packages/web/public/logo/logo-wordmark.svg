@@ -1,5 +1,5 @@
-<svg viewBox="0 0 240 60" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ORALAB">
-  <title>ORALAB</title>
+<svg viewBox="0 0 240 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="oralab">
+  <title>oralab</title>
   <g transform="translate(0,8) scale(0.44)">
     <rect x="0" y="0" width="30" height="30" rx="2" fill="#3fb950"/>
     <rect x="35" y="0" width="30" height="30" rx="2" fill="#238636"/>
@@ -11,8 +11,8 @@
   </g>
   <text
     x="56"
-    y="42"
-    style="font-family:'Space Grotesk',system-ui,sans-serif;font-size:38px;font-weight:700;letter-spacing:-1.2px"
+    y="44"
+    style="font-family:'Space Grotesk',system-ui,sans-serif;font-size:48px;font-weight:700;letter-spacing:-1.9px"
     fill="currentColor"
-  >ORALAB</text>
+  >oralab</text>
 </svg>

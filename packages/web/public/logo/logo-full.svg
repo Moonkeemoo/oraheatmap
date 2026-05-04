@@ -1,5 +1,5 @@
-<svg viewBox="0 0 320 80" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ORALAB Polymarket Heatmap">
-  <title>ORALAB · Polymarket Heatmap</title>
+<svg viewBox="0 0 320 86" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="oralab Polymarket Heatmap">
+  <title>oralab · Polymarket Heatmap</title>
   <g transform="translate(0,10) scale(0.6)">
     <rect x="0" y="0" width="30" height="30" rx="2" fill="#3fb950"/>
     <rect x="35" y="0" width="30" height="30" rx="2" fill="#238636"/>
@@ -11,13 +11,13 @@
   </g>
   <text
     x="76"
-    y="46"
-    style="font-family:'Space Grotesk',system-ui,sans-serif;font-size:42px;font-weight:700;letter-spacing:-1.3px"
+    y="50"
+    style="font-family:'Space Grotesk',system-ui,sans-serif;font-size:54px;font-weight:700;letter-spacing:-2.2px"
     fill="currentColor"
-  >ORALAB</text>
+  >oralab</text>
   <text
     x="76"
-    y="68"
+    y="72"
     style="font-family:'Space Grotesk',system-ui,sans-serif;font-size:14px;font-weight:700;letter-spacing:-0.3px"
     fill="currentColor"
     fill-opacity="0.5"
