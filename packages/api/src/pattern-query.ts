@@ -173,7 +173,7 @@ async function queryHourOfDayRows(
           COUNT(*) FILTER (WHERE realized_pnl < 0)                           AS slot_losses,
           COUNT(DISTINCT whale_addr)                                         AS slot_uw
         FROM signals
-        WHERE ts >= NOW() - (${`${lookbackDays} days`}::interval)
+        WHERE ts >= NOW() - (${`${lookbackDays} days`}::interval) AND ts <= NOW()
           AND category = ${drillCategory}
           AND subcategory IS NOT NULL
         GROUP BY day, slot, subcategory
@@ -222,7 +222,7 @@ async function queryHourOfDayRows(
         SUM(loss_count)       AS slot_losses,
         SUM(unique_whales)    AS slot_uw
       FROM signals_hourly
-      WHERE bucket >= NOW() - (${`${lookbackDays} days`}::interval)
+      WHERE bucket >= NOW() - (${`${lookbackDays} days`}::interval) AND bucket <= NOW()
       GROUP BY day, slot, category
     ),
     ranked AS (
@@ -280,7 +280,7 @@ async function queryDayOfWeekRows(
           COUNT(*) FILTER (WHERE realized_pnl < 0)                           AS day_losses,
           COUNT(DISTINCT whale_addr)                                         AS day_uw
         FROM signals
-        WHERE ts >= NOW() - (${`${lookbackDays} days`}::interval)
+        WHERE ts >= NOW() - (${`${lookbackDays} days`}::interval) AND ts <= NOW()
           AND category = ${drillCategory}
           AND subcategory IS NOT NULL
         GROUP BY day, slot, subcategory
@@ -330,7 +330,7 @@ async function queryDayOfWeekRows(
         SUM(loss_count)       AS day_losses,
         SUM(unique_whales)    AS day_uw
       FROM signals_hourly
-      WHERE bucket >= NOW() - (${`${lookbackDays} days`}::interval)
+      WHERE bucket >= NOW() - (${`${lookbackDays} days`}::interval) AND bucket <= NOW()
       GROUP BY day, slot, category
     ),
     ranked AS (
@@ -550,7 +550,7 @@ export async function queryCellCycles(
           COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint AS wins,
           COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint AS losses
         FROM signals
-        WHERE ts >= NOW() - (${lookbackInterval}::interval)
+        WHERE ts >= NOW() - (${lookbackInterval}::interval) AND ts <= NOW()
           AND ${sql(filterCol)} = ${filterVal}
           AND (EXTRACT(hour FROM ts AT TIME ZONE 'UTC')::int / 2) = ${args.slot}
         GROUP BY 1
@@ -604,7 +604,7 @@ export async function queryCellCycles(
         COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint AS wins,
         COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint AS losses
       FROM signals
-      WHERE ts >= NOW() - (${lookbackInterval}::interval)
+      WHERE ts >= NOW() - (${lookbackInterval}::interval) AND ts <= NOW()
         AND ${sql(filterCol)} = ${filterVal}
         AND EXTRACT(dow FROM ts AT TIME ZONE 'UTC')::int = ${args.slot}
       GROUP BY 1

@@ -398,7 +398,7 @@ export async function queryHeatmapAggRows(
           COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS loss_count,
           COUNT(DISTINCT whale_addr)::bigint                            AS unique_whales
         FROM signals
-        WHERE ts >= NOW() - (${windowInterval}::interval)
+        WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
           AND category = ${drillCategory}
           AND subcategory = ${drillSubcategory}
           AND condition_id IS NOT NULL
@@ -420,7 +420,7 @@ export async function queryHeatmapAggRows(
           COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS loss_count,
           COUNT(DISTINCT whale_addr)::bigint                            AS unique_whales
         FROM signals
-        WHERE ts >= NOW() - (${windowInterval}::interval)
+        WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
           AND category = ${drillCategory}
           AND subcategory IS NOT NULL
         GROUP BY bucket, subcategory
@@ -440,7 +440,7 @@ export async function queryHeatmapAggRows(
         COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS loss_count,
         COUNT(DISTINCT whale_addr)::bigint                            AS unique_whales
       FROM signals
-      WHERE ts >= NOW() - (${windowInterval}::interval)
+      WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
       GROUP BY bucket, category
       ORDER BY bucket
     `;
@@ -462,7 +462,7 @@ export async function queryHeatmapAggRows(
       COALESCE(SUM(loss_count), 0)::bigint             AS loss_count,
       COALESCE(SUM(unique_whales), 0)::bigint          AS unique_whales
     FROM signals_hourly
-    WHERE bucket >= NOW() - (${windowInterval}::interval)
+    WHERE bucket >= NOW() - (${windowInterval}::interval) AND bucket <= NOW()
     GROUP BY 1, category
     ORDER BY 1
   `;
@@ -514,7 +514,7 @@ export async function queryTopMarketsPerCell(
           COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                      AS loss_count,
           COUNT(DISTINCT whale_addr)::bigint                                    AS unique_whales
         FROM signals
-        WHERE ts >= NOW() - (${windowInterval}::interval)
+        WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
           AND category = ${drillCategory}
           AND subcategory IS NOT NULL
           AND condition_id IS NOT NULL
@@ -550,7 +550,7 @@ export async function queryTopMarketsPerCell(
         COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                      AS loss_count,
         COUNT(DISTINCT whale_addr)::bigint                                    AS unique_whales
       FROM signals
-      WHERE ts >= NOW() - (${windowInterval}::interval)
+      WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
         AND condition_id IS NOT NULL
       GROUP BY bucket_ts, category, condition_id
     ),
@@ -614,7 +614,7 @@ export async function queryTopWhalesPerCell(
           COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint                      AS wins,
           COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                      AS losses
         FROM signals
-        WHERE ts >= NOW() - (${windowInterval}::interval)
+        WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
           AND category = ${drillCategory}
           AND subcategory = ${drillSubcategory}
           AND condition_id IS NOT NULL
@@ -647,7 +647,7 @@ export async function queryTopWhalesPerCell(
           COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint                      AS wins,
           COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                      AS losses
         FROM signals
-        WHERE ts >= NOW() - (${windowInterval}::interval)
+        WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
           AND category = ${drillCategory}
           AND subcategory IS NOT NULL
         GROUP BY bucket_ts, subcategory, whale_addr
@@ -678,7 +678,7 @@ export async function queryTopWhalesPerCell(
         COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint                      AS wins,
         COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                      AS losses
       FROM signals
-      WHERE ts >= NOW() - (${windowInterval}::interval)
+      WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
       GROUP BY bucket_ts, category, whale_addr
     ),
     ranked AS (
@@ -755,7 +755,7 @@ export async function fetchTopWhale(
   const rows = await sql<{ whale_addr: string }[]>`
     SELECT whale_addr
     FROM signals
-    WHERE ts >= NOW() - (${windowInterval}::interval)
+    WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
       AND side = 'BUY'
     GROUP BY whale_addr
     ORDER BY COALESCE(SUM(size * price), 0) DESC
@@ -792,7 +792,7 @@ export async function queryTopWhales(
         COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)             AS volume_usd,
         COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd
       FROM signals
-      WHERE ts >= NOW() - (${windowInterval}::interval)
+      WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
         AND category = ${drillCategory}
         AND whale_addr ~ '^0x[0-9a-f]{40}$'
       GROUP BY whale_addr
@@ -806,7 +806,7 @@ export async function queryTopWhales(
       COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)             AS volume_usd,
       COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd
     FROM signals
-    WHERE ts >= NOW() - (${windowInterval}::interval)
+    WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
       AND whale_addr ~ '^0x[0-9a-f]{40}$'
     GROUP BY whale_addr
     ORDER BY volume_usd DESC, signals DESC
@@ -844,7 +844,7 @@ export async function fetchUniqueWhalesInWindow(
   const rows = await sql<{ n: string | number }[]>`
     SELECT COUNT(DISTINCT whale_addr) AS n
     FROM signals
-    WHERE ts >= NOW() - (${windowInterval}::interval)
+    WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
   `;
   return num(rows[0]?.n);
 }
