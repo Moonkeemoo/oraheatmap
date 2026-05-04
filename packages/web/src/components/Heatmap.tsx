@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSession } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { useHeatmap } from "@/hooks/useHeatmap";
 import { useSse } from "@/hooks/useSse";
 import { applySignal } from "@/lib/heatmap-apply";
@@ -17,7 +17,7 @@ import type {
 } from "@/lib/types";
 import { Breadcrumb } from "./Breadcrumb";
 import { Grid } from "./Grid";
-import { Header } from "./Header";
+import { Header, UserChip } from "./Header";
 import { LoginModal } from "./LoginModal";
 import { StatsBar } from "./StatsBar";
 import { Tooltip, type TooltipAnchor, type TooltipRect } from "./Tooltip";
@@ -82,7 +82,7 @@ export function Heatmap() {
   const [drillCategory, setDrillCategory] = useState<Category | null>(null);
   const [drillSubcategory, setDrillSubcategory] = useState<string | null>(null);
   const [loginOpen, setLoginOpen] = useState(false);
-  const { status: authStatus } = useSession();
+  const { data: session, status: authStatus } = useSession();
   const isAuthed = authStatus === "authenticated";
   const [hover, setHover] = useState<HoverState | null>(null);
   const [locked, setLocked] = useState<HoverState | null>(null);
@@ -340,6 +340,23 @@ export function Heatmap() {
         onClose={() => setWhaleProfileAddr(null)}
       />
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
+      {/* Sign-in chip pinned to the top-right corner so it never moves with
+       *  the header layout reflow on narrower viewports. */}
+      <div
+        style={{
+          position: "fixed",
+          top: 14,
+          right: 18,
+          zIndex: 45,
+        }}
+      >
+        <UserChip
+          name={(session?.user?.name as string) || null}
+          authed={isAuthed}
+          onLogin={() => setLoginOpen(true)}
+          onLogout={() => signOut()}
+        />
+      </div>
     </div>
   );
 }

@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { signIn } from "next-auth/react";
 import { SiweMessage } from "siwe";
 import { TOKENS } from "@/lib/tokens";
+import { MailIcon, MetaMaskIcon, TelegramIcon, XIcon } from "./ProviderIcons";
 
 /**
- * Multi-provider login modal. Shows whatever providers are wired up.
- * SIWE works out of the box; Email/Twitter/Telegram show only when their
- * env keys are configured (the API exposes that via /api/auth/providers).
+ * Multi-provider login modal. Layout: email at top (most universal),
+ * provider buttons below in a consistent style. All buttons share the
+ * same dark-pill look so the modal reads as one unified menu — including
+ * Telegram, which uses our own button instead of the official blue widget.
  */
 export function LoginModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [providers, setProviders] = useState<Set<string>>(new Set());
@@ -16,8 +18,6 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
   const [error, setError] = useState<string | null>(null);
   const [emailInput, setEmailInput] = useState("");
 
-  // Probe Auth.js for the configured provider list — anything not in there
-  // is hidden in the UI so we never show a button that would 404.
   useEffect(() => {
     if (!open) return;
     fetch("/api/auth/providers", { credentials: "include" })
@@ -25,13 +25,9 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
       .then((data: Record<string, { id: string }>) => {
         setProviders(new Set(Object.keys(data ?? {})));
       })
-      .catch(() => {
-        // Fail-open: assume only siwe is wired so the user has SOME way in.
-        setProviders(new Set(["siwe"]));
-      });
+      .catch(() => setProviders(new Set(["siwe"])));
   }, [open]);
 
-  // ESC closes
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent): void => {
@@ -42,17 +38,15 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
   }, [open, onClose]);
 
   if (!open) return null;
-
   const has = (id: string): boolean => providers.has(id);
 
   async function loginSiwe(): Promise<void> {
     setBusy("siwe");
     setError(null);
     try {
-      // 1. Make sure a wallet is reachable.
       const eth = (window as unknown as { ethereum?: { request: (req: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum;
       if (!eth) {
-        setError("No browser wallet detected. Install MetaMask, Rabby, or similar.");
+        setError("MetaMask (or another browser wallet) not detected. Install one and try again.");
         return;
       }
       const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
@@ -61,9 +55,7 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
         setError("Wallet did not return an address.");
         return;
       }
-      // 2. Pull a fresh nonce from our endpoint.
       const nonce = await fetch("/api/auth/siwe/nonce").then((r) => r.text());
-      // 3. Build the SIWE message and ask the wallet to sign it.
       const message = new SiweMessage({
         domain: window.location.host,
         address,
@@ -79,8 +71,6 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
         method: "personal_sign",
         params: [prepared, address],
       })) as string;
-      // 4. Hand both to Auth.js — its credentials provider verifies and
-      //    sets the session cookie. redirect:false so we stay on the page.
       const result = await signIn("siwe", { message: prepared, signature, redirect: false });
       if (result?.error) setError(result.error);
       else onClose();
@@ -96,9 +86,6 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
     setBusy("email");
     setError(null);
     try {
-      // Auth.js Email provider sends the magic link; on success it redirects
-      // to /api/auth/verify-request. We pass redirect:false to stay on page
-      // and surface a success message instead.
       const result = await signIn("resend", { email: emailInput, redirect: false });
       if (result?.error) setError(result.error);
       else setError("✉ Check your inbox for the magic link.");
@@ -138,7 +125,7 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
           color: TOKENS.text,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
           <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, letterSpacing: 0.4 }}>Sign in</h2>
           <button
             onClick={onClose}
@@ -159,14 +146,74 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
           </button>
         </div>
         <div style={{ fontSize: 11, color: TOKENS.textMuted, marginBottom: 16, lineHeight: 1.4 }}>
-          Sign in to unlock filters, modes, and category drill-down. Pick any
-          method — they all map to the same account if you reuse them later.
+          Pick any method — they all map to the same account if you reuse them later.
         </div>
+
+        {/* Email is the universal entry point — surfaced first. */}
+        {has("resend") && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                type="email"
+                placeholder="you@example.com"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void loginEmail(); }}
+                disabled={busy !== null}
+                style={{
+                  flex: 1,
+                  background: TOKENS.bg,
+                  border: `1px solid ${TOKENS.border}`,
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  color: TOKENS.text,
+                  fontFamily: "inherit",
+                  fontSize: 12,
+                  outline: "none",
+                }}
+              />
+              <ProviderButton
+                onClick={loginEmail}
+                disabled={busy !== null || !emailInput}
+                loading={busy === "email"}
+                icon={<MailIcon />}
+                compact
+              >
+                Send link
+              </ProviderButton>
+            </div>
+          </div>
+        )}
+
+        {/* Divider only when there's email AND at least one button below. */}
+        {has("resend") && (has("siwe") || has("twitter") || has("telegram")) && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              fontSize: 9,
+              letterSpacing: 0.6,
+              color: TOKENS.textMuted,
+              textTransform: "uppercase",
+              margin: "4px 0 12px",
+            }}
+          >
+            <div style={{ flex: 1, height: 1, background: TOKENS.border }} />
+            or
+            <div style={{ flex: 1, height: 1, background: TOKENS.border }} />
+          </div>
+        )}
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {has("siwe") && (
-            <ProviderButton onClick={loginSiwe} disabled={busy !== null} loading={busy === "siwe"}>
-              Connect Wallet (SIWE)
+            <ProviderButton
+              onClick={loginSiwe}
+              disabled={busy !== null}
+              loading={busy === "siwe"}
+              icon={<MetaMaskIcon />}
+            >
+              Connect with MetaMask
             </ProviderButton>
           )}
           {has("twitter") && (
@@ -174,40 +221,19 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
               onClick={() => signIn("twitter")}
               disabled={busy !== null}
               loading={busy === "twitter"}
+              icon={<XIcon />}
             >
               Continue with X
             </ProviderButton>
           )}
           {has("telegram") && (
             <TelegramLoginButton
-              onError={(msg) => setError(msg)}
+              disabled={busy !== null}
+              busy={busy === "telegram"}
+              setBusy={(b) => setBusy(b ? "telegram" : null)}
+              setError={setError}
               onSuccess={onClose}
-              onBusy={(b) => setBusy(b ? "telegram" : null)}
             />
-          )}
-          {has("resend") && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
-              <input
-                type="email"
-                placeholder="you@example.com"
-                value={emailInput}
-                onChange={(e) => setEmailInput(e.target.value)}
-                disabled={busy !== null}
-                style={{
-                  background: TOKENS.bg,
-                  border: `1px solid ${TOKENS.border}`,
-                  borderRadius: 6,
-                  padding: "8px 10px",
-                  color: TOKENS.text,
-                  fontFamily: "inherit",
-                  fontSize: 12,
-                  outline: "none",
-                }}
-              />
-              <ProviderButton onClick={loginEmail} disabled={busy !== null || !emailInput} loading={busy === "email"}>
-                Send magic link
-              </ProviderButton>
-            </div>
           )}
         </div>
 
@@ -221,80 +247,104 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
   );
 }
 
-/** Embeds the official Telegram Login Widget — when the user authorizes via
- *  Telegram, the widget calls our global callback with the signed payload,
- *  which we forward to Auth.js's "telegram" Credentials provider. The provider
- *  re-verifies the HMAC server-side using TG_LOGIN_BOT_TOKEN before issuing
- *  the session cookie. */
+/** Custom Telegram login button — same visual style as the wallet/X buttons.
+ *  Uses the official Telegram.Login.auth() popup API (provided by the
+ *  telegram-widget.js script) so we get the verified payload without
+ *  embedding their styled blue widget directly. */
 function TelegramLoginButton({
-  onError,
+  disabled,
+  busy,
+  setBusy,
+  setError,
   onSuccess,
-  onBusy,
 }: {
-  onError: (msg: string) => void;
+  disabled: boolean;
+  busy: boolean;
+  setBusy: (b: boolean) => void;
+  setError: (msg: string | null) => void;
   onSuccess: () => void;
-  onBusy: (busy: boolean) => void;
 }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const botUsername = process.env["NEXT_PUBLIC_TG_LOGIN_BOT_USERNAME"] ?? "";
+  const [scriptReady, setScriptReady] = useState(false);
+  const botId = process.env["NEXT_PUBLIC_TG_LOGIN_BOT_ID"];
 
+  // Load the widget script once (gives us window.Telegram.Login.auth).
   useEffect(() => {
-    if (!botUsername) return;
-    const container = containerRef.current;
-    if (!container) return;
+    type TgLogin = {
+      Login?: {
+        auth: (
+          opts: { bot_id: string; request_access?: string },
+          cb: (data: Record<string, string> | false) => void,
+        ) => void;
+      };
+    };
+    const w = window as unknown as { Telegram?: TgLogin };
+    if (w.Telegram?.Login?.auth) {
+      setScriptReady(true);
+      return;
+    }
+    const existing = document.getElementById("tg-widget-script");
+    if (existing) {
+      existing.addEventListener("load", () => setScriptReady(true), { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.id = "tg-widget-script";
+    script.src = "https://telegram.org/js/telegram-widget.js?22";
+    script.async = true;
+    script.onload = () => setScriptReady(true);
+    document.head.appendChild(script);
+  }, []);
 
-    // Global callback the widget will invoke. Defined fresh each mount so
-    // the closure captures current props.
-    const cbName = "__tgLoginCallback";
-    (window as unknown as Record<string, unknown>)[cbName] = async (
-      user: Record<string, string>,
-    ): Promise<void> => {
-      onBusy(true);
+  function login(): void {
+    if (!botId) {
+      setError("Telegram bot id not configured (NEXT_PUBLIC_TG_LOGIN_BOT_ID).");
+      return;
+    }
+    type TgLogin = {
+      Login?: {
+        auth: (
+          opts: { bot_id: string; request_access?: string },
+          cb: (data: Record<string, string> | false) => void,
+        ) => void;
+      };
+    };
+    const tg = (window as unknown as { Telegram?: TgLogin }).Telegram?.Login;
+    if (!tg) {
+      setError("Telegram script not ready yet — try again in a moment.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    tg.auth({ bot_id: botId, request_access: "write" }, async (data) => {
+      if (!data) {
+        setBusy(false);
+        setError("Telegram login was cancelled.");
+        return;
+      }
       try {
         const result = await signIn("telegram", {
-          payload: JSON.stringify(user),
+          payload: JSON.stringify(data),
           redirect: false,
         });
-        if (result?.error) onError(result.error);
+        if (result?.error) setError(result.error);
         else onSuccess();
       } catch (err) {
-        onError((err as Error).message);
+        setError((err as Error).message);
       } finally {
-        onBusy(false);
+        setBusy(false);
       }
-    };
+    });
+  }
 
-    // Inject the official widget script. It builds itself in-place inside
-    // the container (it's a <script> that injects an <iframe>).
-    const script = document.createElement("script");
-    script.async = true;
-    script.src = "https://telegram.org/js/telegram-widget.js?22";
-    script.setAttribute("data-telegram-login", botUsername);
-    script.setAttribute("data-size", "large");
-    script.setAttribute("data-onauth", `${cbName}(user)`);
-    script.setAttribute("data-request-access", "write");
-    script.setAttribute("data-radius", "6");
-    container.appendChild(script);
-
-    return () => {
-      delete (window as unknown as Record<string, unknown>)[cbName];
-      // Strip the injected iframe + script so HMR / re-open doesn't dupe it.
-      while (container.firstChild) container.removeChild(container.firstChild);
-    };
-  }, [botUsername, onBusy, onError, onSuccess]);
-
-  if (!botUsername) return null;
   return (
-    <div
-      ref={containerRef}
-      style={{
-        // Container holds the Telegram-rendered button. No bg/padding here
-        // because the widget brings its own styling.
-        display: "flex",
-        justifyContent: "stretch",
-        minHeight: 40,
-      }}
-    />
+    <ProviderButton
+      onClick={login}
+      disabled={disabled || !scriptReady || !botId}
+      loading={busy}
+      icon={<TelegramIcon />}
+    >
+      Continue with Telegram
+    </ProviderButton>
   );
 }
 
@@ -302,30 +352,39 @@ function ProviderButton({
   onClick,
   disabled,
   loading,
+  icon,
+  compact,
   children,
 }: {
   onClick: () => void;
   disabled: boolean;
   loading: boolean;
-  children: React.ReactNode;
+  icon?: ReactNode;
+  compact?: boolean;
+  children: ReactNode;
 }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       style={{
-        background: loading ? TOKENS.panel2 : TOKENS.panel2,
+        background: TOKENS.panel2,
         border: `1px solid ${TOKENS.borderHi}`,
         color: TOKENS.text,
         fontFamily: "inherit",
         fontSize: 12,
         fontWeight: 600,
-        padding: "10px 14px",
-        borderRadius: 6,
+        padding: compact ? "0 14px" : "10px 14px",
+        height: compact ? 38 : undefined,
+        borderRadius: 8,
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled && !loading ? 0.5 : 1,
         transition: "filter .12s",
         textAlign: "left",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        whiteSpace: "nowrap",
       }}
       onMouseEnter={(e) => {
         if (!disabled) (e.currentTarget as HTMLButtonElement).style.filter = "brightness(1.2)";
@@ -334,7 +393,12 @@ function ProviderButton({
         if (!disabled) (e.currentTarget as HTMLButtonElement).style.filter = "none";
       }}
     >
-      {loading ? "…" : children}
+      {icon && (
+        <span style={{ display: "inline-flex", alignItems: "center", flexShrink: 0 }}>
+          {icon}
+        </span>
+      )}
+      <span style={{ flex: 1 }}>{loading ? "…" : children}</span>
     </button>
   );
 }

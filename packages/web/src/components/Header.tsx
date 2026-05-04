@@ -1,4 +1,4 @@
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { TOKENS } from "@/lib/tokens";
 import type { HeatmapMetric, LiveRange, Mode, PatternKind } from "@/lib/types";
 import { LiveDot } from "./LiveDot";
@@ -198,8 +198,8 @@ export function Header({
   /** Open the login modal — used to gate range/mode/kind toggles. */
   onRequestLogin: () => void;
 }) {
-  const { data: session, status } = useSession();
-  const isAuthed = status === "authenticated" && !!session?.user;
+  const { status } = useSession();
+  const isAuthed = status === "authenticated";
   // Wrap a control's onClick — when not authed, intercept and open login instead.
   const gate = <T extends unknown[]>(fn: (...args: T) => void): ((...args: T) => void) => {
     return (...args: T) => {
@@ -361,19 +361,12 @@ export function Header({
           })}
         </div>
 
-        <div style={{ width: 1, height: 26, background: TOKENS.border }} />
-        <UserChip
-          name={(session?.user?.name as string) || null}
-          authed={isAuthed}
-          onLogin={onRequestLogin}
-          onLogout={() => signOut()}
-        />
       </div>
     </div>
   );
 }
 
-function UserChip({
+export function UserChip({
   name,
   authed,
   onLogin,
