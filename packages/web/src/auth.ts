@@ -200,9 +200,9 @@ function htmlBody({ url, host }: { url: string; host: string }): string {
               </td>
             </tr>
             <tr>
-              <td style="padding-bottom:18px;font-size:12px;color:#7d8590;line-height:1.5;">
-                Or paste this link into your browser:<br />
-                <a href="${url}" target="_blank" rel="noopener" style="color:#58a6ff;word-break:break-all;">${url}</a>
+              <td style="padding-bottom:14px;font-size:11px;color:#6e7681;line-height:1.5;">
+                Button doesn't work?
+                <a href="${url}" target="_blank" rel="noopener" style="color:#7d8590;text-decoration:underline;">Use this link instead</a>.
               </td>
             </tr>
             <tr>
