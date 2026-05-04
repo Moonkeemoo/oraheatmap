@@ -61,6 +61,54 @@ function cmpDesc(a: number | null, b: number | null): number {
   return bv - av;
 }
 
+/** Sort the per-cell whale list to match the active heatmap metric — same
+ *  contract as sortMarkets. WIN RATE: only whales that actually closed
+ *  trades (winRate non-null) are eligible; else fall back to volume. */
+function sortWhales(whales: ReadonlyArray<WhaleCellSummary>, metric: HeatmapMetric): WhaleCellSummary[] {
+  const copy = whales.slice();
+  switch (metric) {
+    case "signals":
+      copy.sort((a, b) => cmpDesc(a.signals, b.signals));
+      break;
+    case "volume":
+      copy.sort((a, b) => cmpDesc(a.volume, b.volume));
+      break;
+    case "pnl":
+      copy.sort((a, b) => cmpDesc(Math.abs(a.pnl), Math.abs(b.pnl)));
+      break;
+    case "winrate":
+      copy.sort((a, b) => {
+        const c = cmpDesc(a.winRate, b.winRate);
+        return c !== 0 ? c : cmpDesc(a.signals, b.signals);
+      });
+      break;
+    case "whales":
+      // No per-whale "convergence" — keep the volume sort that gave us
+      // the rows in the first place.
+      copy.sort((a, b) => cmpDesc(a.volume, b.volume));
+      break;
+  }
+  return copy;
+}
+
+/** What to display next to a whale row for the active metric. */
+function fmtWhaleMetric(metric: HeatmapMetric, w: WhaleCellSummary): string {
+  if (metric === "signals") return String(w.signals);
+  if (metric === "volume") return w.volume > 0 ? fmtMoneyShort(w.volume) : "—";
+  if (metric === "pnl") return fmtMoney(w.pnl);
+  if (metric === "winrate") return w.winRate === null ? "—" : Math.round(w.winRate * 100) + "%";
+  return w.volume > 0 ? fmtMoneyShort(w.volume) : "—"; // whales metric → volume proxy
+}
+
+function whaleMetricColor(metric: HeatmapMetric, w: WhaleCellSummary): string {
+  if (metric === "pnl") return w.pnl >= 0 ? TOKENS.pos : TOKENS.neg;
+  if (metric === "winrate") {
+    if (w.winRate === null) return TOKENS.textSec;
+    return w.winRate >= 0.5 ? TOKENS.pos : TOKENS.neg;
+  }
+  return TOKENS.text;
+}
+
 function sortMarkets(markets: ReadonlyArray<MarketSummary>, metric: HeatmapMetric): MarketSummary[] {
   const copy = markets.slice();
   switch (metric) {
@@ -474,10 +522,11 @@ export function Tooltip({
       }
     : null;
   const cycles = useCellCycles(cyclesArgs, cyclesEnabled);
-  // Top whales in this cell — always sorted by USD volume desc (server-side).
-  // Hide in PATTERN mode (no per-cell whale aggregation in the pattern query).
+  // Top whales in this cell — re-sorted by the active metric so the rows
+  // match what the heatmap is showing. Hidden in PATTERN mode (no per-cell
+  // whale aggregation in the pattern query).
   const cellWhales: ReadonlyArray<WhaleCellSummary> =
-    isPattern ? [] : (cell.topWhales ?? []).slice(0, TOP_N);
+    isPattern ? [] : sortWhales(cell.topWhales ?? [], metric).slice(0, TOP_N);
   // Slot index inside the active row — derived from cellId pattern "{cat}:{slot}"
   // upstream. We get rowCells in display order, so the active slot is the
   // last index for LIVE (NOW) ... actually we don't have direct access to
@@ -711,7 +760,7 @@ export function Tooltip({
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
-        <Stat label={isPattern ? "AVG SIGNALS" : "SIGNALS"} value={Math.round(cell.count)} />
+        <Stat label={isPattern ? "AVG TRADES" : "TRADES"} value={Math.round(cell.count)} />
         <Stat
           label={isPattern ? "AVG PNL" : "PNL"}
           value={fmtMoney(cell.pnl)}
@@ -773,7 +822,7 @@ export function Tooltip({
             }}
           >
             <span>Row trend · {meta.label}</span>
-            <span style={{ color: TOKENS.textSec }}>{metric}</span>
+            <span style={{ color: TOKENS.textSec }}>{metric === "signals" ? "trades" : metric}</span>
           </div>
           <RowSparkline rowCells={rowCells} metric={metric} activeSlot={activeSlot} />
         </div>
@@ -809,7 +858,7 @@ export function Tooltip({
             return (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                 <span style={{ fontSize: 11, color: TOKENS.textSec }}>
-                  Δ {metric}
+                  Δ {metric === "signals" ? "trades" : metric}
                 </span>
                 <span style={{ fontSize: 14, color: d.color, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
                   {d.text}
@@ -850,7 +899,7 @@ export function Tooltip({
             }}
           >
             <span>Past cycles · {patternKind === "hour-of-day" ? "30 days" : "26 weeks"}</span>
-            <span style={{ color: TOKENS.textSec }}>{metric}</span>
+            <span style={{ color: TOKENS.textSec }}>{metric === "signals" ? "trades" : metric}</span>
           </div>
           {cycles.loading && (
             <div style={{ fontSize: 11, color: TOKENS.textSec, padding: "8px 0" }}>loading…</div>
@@ -886,7 +935,7 @@ export function Tooltip({
             }}
           >
             <span>Top whales</span>
-            <span style={{ color: TOKENS.textSec }}>by volume</span>
+            <span style={{ color: TOKENS.textSec }}>by {metric === "signals" ? "trades" : metric}</span>
           </div>
           {cellWhales.map((w) => (
             <button
@@ -929,6 +978,8 @@ export function Tooltip({
               >
                 {w.alias}
               </span>
+              {/* Secondary stat — usually trade count; for the trades metric
+                  we'd duplicate the primary, so show volume instead. */}
               <span
                 style={{
                   color: TOKENS.textSec,
@@ -938,11 +989,13 @@ export function Tooltip({
                   whiteSpace: "nowrap",
                 }}
               >
-                {w.signals}× sig
+                {metric === "signals"
+                  ? w.volume > 0 ? fmtMoneyShort(w.volume) : "—"
+                  : `${w.signals}× tr`}
               </span>
               <span
                 style={{
-                  color: TOKENS.text,
+                  color: whaleMetricColor(metric, w),
                   fontFamily: TOKENS.mono,
                   fontSize: 11,
                   fontWeight: 700,
@@ -950,7 +1003,7 @@ export function Tooltip({
                   whiteSpace: "nowrap",
                 }}
               >
-                {w.volume > 0 ? fmtMoneyShort(w.volume) : "—"}
+                {fmtWhaleMetric(metric, w)}
               </span>
             </button>
           ))}
@@ -1057,7 +1110,7 @@ export function Tooltip({
             }}
           >
             <span>Top markets</span>
-            <span style={{ color: TOKENS.textSec }}>by {metric}</span>
+            <span style={{ color: TOKENS.textSec }}>by {metric === "signals" ? "trades" : metric}</span>
           </div>
           {sortedMarkets.map((m, i) => (
             <div

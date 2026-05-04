@@ -12,7 +12,7 @@ const PATTERN_KINDS: ReadonlyArray<{ kind: PatternKind; label: string }> = [
 const METRICS: ReadonlyArray<{ id: HeatmapMetric; label: string; unit: string }> = [
   { id: "pnl", label: "PNL", unit: "$" },
   { id: "volume", label: "VOLUME", unit: "$" },
-  { id: "signals", label: "СИГНАЛИ", unit: "" },
+  { id: "signals", label: "TRADES", unit: "" },
   // "WHALES" = unique whale addresses per cell — the convergence indicator.
   // Higher = more independent top-corpus whales agree on this slot.
   { id: "whales", label: "WHALES", unit: "" },

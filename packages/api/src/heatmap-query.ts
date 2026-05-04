@@ -77,6 +77,9 @@ export type WhaleSummary = {
   signals: number;
   volume: number;
   pnl: number;
+  /** wins / (wins + losses) for trades that closed in this cell. NULL when
+   *  no closed trades — typical for active markets. */
+  winRate: number | null;
 };
 
 export type HeatmapTotals = {
@@ -299,11 +302,15 @@ export function assembleHeatmap(
     if (idx === undefined) continue;
     const cell = cells[key]?.[idx];
     if (!cell) continue;
+    const wins = num(w.wins);
+    const losses = num(w.losses);
+    const decided = wins + losses;
     cell.topWhales.push({
       addr: w.whale_addr,
       signals: num(w.signals),
       volume: num(w.volume_usd),
       pnl: num(w.pnl_usd),
+      winRate: decided > 0 ? wins / decided : null,
     });
   }
 
@@ -573,6 +580,8 @@ export type WhaleCellRow = {
   signals: string | number;
   volume_usd: string | number;
   pnl_usd: string | number | null;
+  wins: string | number;
+  losses: string | number;
 };
 
 export async function queryTopWhalesPerCell(
@@ -601,7 +610,9 @@ export async function queryTopWhalesPerCell(
           whale_addr,
           COUNT(*)::bigint                                                      AS signals,
           COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)            AS volume_usd,
-          COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd
+          COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd,
+          COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint                      AS wins,
+          COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                      AS losses
         FROM signals
         WHERE ts >= NOW() - (${windowInterval}::interval)
           AND category = ${drillCategory}
@@ -616,7 +627,7 @@ export async function queryTopWhalesPerCell(
       )
       SELECT
         to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
-        category, whale_addr, signals, volume_usd, pnl_usd
+        category, whale_addr, signals, volume_usd, pnl_usd, wins, losses
       FROM ranked
       WHERE rn <= ${perCellLimit}
     `;
@@ -632,7 +643,9 @@ export async function queryTopWhalesPerCell(
           whale_addr,
           COUNT(*)::bigint                                                      AS signals,
           COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)            AS volume_usd,
-          COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd
+          COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd,
+          COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint                      AS wins,
+          COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                      AS losses
         FROM signals
         WHERE ts >= NOW() - (${windowInterval}::interval)
           AND category = ${drillCategory}
@@ -646,7 +659,7 @@ export async function queryTopWhalesPerCell(
       )
       SELECT
         to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
-        category, whale_addr, signals, volume_usd, pnl_usd
+        category, whale_addr, signals, volume_usd, pnl_usd, wins, losses
       FROM ranked
       WHERE rn <= ${perCellLimit}
     `;
@@ -673,7 +686,7 @@ export async function queryTopWhalesPerCell(
     )
     SELECT
       to_char(bucket_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
-      category, whale_addr, signals, volume_usd, pnl_usd
+      category, whale_addr, signals, volume_usd, pnl_usd, wins, losses
     FROM ranked
     WHERE rn <= ${perCellLimit}
   `;

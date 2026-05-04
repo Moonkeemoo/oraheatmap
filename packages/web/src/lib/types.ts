@@ -66,6 +66,9 @@ export type WhaleCellSummary = {
   signals: number;
   volume: number;
   pnl: number;
+  /** wins / (wins+losses) for trades that closed in this cell. NULL when
+   *  no exits — typical for live markets. */
+  winRate: number | null;
 };
 
 export type HeatmapTotals = {

@@ -509,7 +509,7 @@ export function StatsBar({
             const pnlColor = w.pnl > 0 ? TOKENS.pos : w.pnl < 0 ? TOKENS.neg : TOKENS.textSec;
             const primary = args.sortBy === "volume" ? fmtMoneyShort(w.volume) : w.signals.toLocaleString();
             const secondary = args.sortBy === "volume"
-              ? `${w.signals.toLocaleString()} sig`
+              ? `${w.signals.toLocaleString()} tr`
               : fmtMoneyShort(w.volume);
             return (
               <div

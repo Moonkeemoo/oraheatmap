@@ -31,7 +31,7 @@ function stopsFor(metric: HeatmapMetric): { stops: Stop[]; label: string } {
   }
   if (metric === "signals") {
     return {
-      label: "Density",
+      label: "Trades",
       stops: [
         { c: signalsColor(0.05), label: "LOW" },
         { c: signalsColor(0.3) },
