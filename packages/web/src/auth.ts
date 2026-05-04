@@ -140,11 +140,13 @@ if (process.env["TG_LOGIN_BOT_TOKEN"]) {
 
 // Drizzle adapter is required for the Email magic-link provider (stores
 // the one-time token + user). Twitter (OAuth) also writes account rows
-// here. SIWE / Telegram (Credentials) ignore it — JWT only. Lazy-init so
-// pages that don't touch DB (e.g. /api/auth/providers) don't open a
-// connection unnecessarily.
+// here. SIWE / Telegram (Credentials) ignore it — JWT only.
+//
+// Wrapped in a Proxy so the underlying DB connection is opened on FIRST
+// METHOD CALL, not at module-eval. Otherwise `next build` (which evaluates
+// route modules without runtime env) crashes when DATABASE_URL is unset.
 let cachedAdapter: ReturnType<typeof DrizzleAdapter> | null = null;
-function adapter(): ReturnType<typeof DrizzleAdapter> {
+function realAdapter(): ReturnType<typeof DrizzleAdapter> {
   if (cachedAdapter) return cachedAdapter;
   const { db } = getDb();
   cachedAdapter = DrizzleAdapter(db, {
@@ -155,10 +157,16 @@ function adapter(): ReturnType<typeof DrizzleAdapter> {
   });
   return cachedAdapter;
 }
+const lazyAdapter = new Proxy({} as ReturnType<typeof DrizzleAdapter>, {
+  get(_target, prop) {
+    const v = realAdapter()[prop as keyof ReturnType<typeof DrizzleAdapter>];
+    return typeof v === "function" ? v.bind(realAdapter()) : v;
+  },
+});
 
 export const authConfig: NextAuthConfig = {
   providers,
-  adapter: adapter(),
+  adapter: lazyAdapter,
   trustHost: true,
   session: { strategy: "jwt", maxAge: TOKEN_TTL_SECONDS },
   // HS256 JWS so the Elysia API can verify with the same secret + jose.
