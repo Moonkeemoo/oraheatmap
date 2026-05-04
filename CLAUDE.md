@@ -152,9 +152,60 @@ Don't refactor `heatmap-query.ts` to be mode-aware in MVP — add `pattern-query
 | **v1.4** | **Whale profiles** (click whale → side panel: positions, recent trades, per-cat PnL, alias + Polymarket link) | ✅ shipped |
 | **v1.5** | **Auth foundation** — Auth.js v5, soft-gate on filters/modes/drill, 5 providers (SIWE/MetaMask, Email magic link via Resend, GitHub, Discord, Telegram). Email auto-links GitHub + Discord by verified email. SIWE and Telegram remain standalone accounts (no shared identifier with email — see v1.6). Default view 24h × volume; metric tabs locked too. Top-markets list in cell tooltip gated. | ✅ shipped |
 | **v1.6** | **Account linking / unify multiple sign-ins** — currently a user who logs in with MetaMask AND email AND Telegram ends up with 3 separate `auth_users` rows. Profile page exposing connected providers + "Link this method to my account" flow that adds a row to `auth_accounts` instead of creating a new user. Optional admin tool to consolidate already-split accounts. Re-evaluate Passkey provider when Auth.js v5 ships stable WebAuthn. | not started |
-| **v1.7 — Crypto monetization (web)** | **Paid tier on web via on-chain payment** — USDC on Polygon (gas <$0.01, same chain as Polymarket so users already hold it). Receive-address contract with `Paid(user, amount, expires)` event; backend listener writes `paid_until` to `auth_users`. Frontend "Upgrade" button uses wagmi/viem to call `transfer()` on USDC contract, then polls `/api/me` for plan flip. Tier unlocks the same gates as auth (drill, PATTERN, all metrics + ranges, top-markets in tooltip) but extends them beyond the soft-gate freebies — final gate matrix decided closer to ship. ~99% take-rate, no chargebacks. Web-only; TG users will pay via Stars/TON in v2.0. | not started |
+| **v1.7 — Crypto monetization (web)** | **Paid Pro tier on web via on-chain payment** — USDC on Polygon (gas <$0.01, same chain as Polymarket so users already hold it). Receive-address contract with `Paid(user, amount, expires)` event; backend listener writes `paid_until` to `auth_users`. Frontend "Upgrade" button uses wagmi/viem to call `transfer()` on USDC contract, then polls `/api/me` for plan flip. ~99% take-rate, no chargebacks. Web-only; TG users will pay via Stars/TON in v2.0. **Tier structure + pricing decided 2026-05-04, see below**: three tiers (Free anon · Free auth · Pro) with monthly/annual SKUs. | not started |
 | **v2.0 — Telegram bundle** | **Mobile-responsive UI** (Heatmap cramps below 768px today) · **Telegram WebApp** wrapper (full UI inside TG, identity from initData) · **TG alerts** for large signals · **Monetization** with two payment rails inside the mini-app: **Telegram Stars** (1-tap in-app via `payments.sendStarsForm`, ~55–65% net after Apple/Google + TG cut, best conversion — the default for non-crypto users) and **Telegram TON** (via TonConnect SDK, 2-tap, ~99% net, no app-store cut — surface as "Pay with TON" for power users). Web users keep the existing crypto/SIWE rail untouched. Designed and shipped together — alerts need TG push, monetization fits TG-native flows, mobile work is on critical path for in-TG UX. | not started |
 | **v2.1+** | Trade execution via CLOB v2 (belongs to oralab) · mark-to-market PnL on open positions · weekly cron for `refresh-corpus.ts` · DKIM/DMARC tightening (`p=quarantine`) once email volume justifies | not started |
+
+## Monetization plan (recorded 2026-05-04, not yet implemented)
+
+Three-tier structure picked on 2026-05-04 brainstorm. Holds for v1.7 (crypto)
+and v2.0 (TG Stars + TON). Apply the SAME gate matrix across all payment rails.
+
+### Tier matrix
+
+| Feature | Free (anon) | Free (auth) | **Pro ($9/mo or $79/yr)** |
+|---|---|---|---|
+| LIVE 24h × volume L1 | ✅ | ✅ | ✅ |
+| All ranges (1h/24h/12d/12w) | ❌ | ✅ | ✅ |
+| All metrics (PNL, VOLUME, СИГНАЛИ, WIN RATE) | ❌ | ✅ | ✅ |
+| PATTERN mode (HOUR + DOW) | ❌ | ✅ | ✅ |
+| Drill **L1 → L2** (subcategories) | ❌ | ✅ | ✅ |
+| Drag-to-reorder (persisted) | ❌ | ✅ | ✅ |
+| Top markets in tooltip | ❌ | ✅ | ✅ |
+| SSE live ticker | ❌ | ✅ | ✅ |
+| Whale drawer (basic) | ❌ | ✅ | ✅ |
+| **Drill L3 (per-market)** | ❌ | ❌ | ✅ |
+| **Top whales in cell** + click-to-drawer | ❌ | ❌ | ✅ |
+| **Market probability chart** in L3 tooltip | ❌ | ❌ | ✅ |
+| **PATTERN cycle histogram** (locked tooltip) | ❌ | ❌ | ✅ |
+| **WHALES metric** (convergence) | ❌ | ❌ | ✅ |
+| Telegram alerts on N+ whale convergence | n/a | n/a | ✅ (v2.0) |
+| Hot Picks / Receipts page | n/a | n/a | ✅ (TBD) |
+| Realized-PnL leaderboard on our window | n/a | n/a | ✅ (TBD) |
+
+### Always-free (brand / trust / retention hooks — never gate)
+
+- **Public whale leaderboard** (when built) — shareable on X, drives signups
+- **Receipts page** (last week's signals + how they resolved) — trust hook for Pro conversion; gating it kills credibility
+- **Live ticker SSE** — sticky retention; cheap server-side
+
+### Pricing rationale
+
+- **$9/mo or $79/yr** (~$6.58/mo annual = save 27%)
+- Anchored vs Polymarket position size ($50–200 typical) → "less than one trade"
+- Telegram DEX-whale-tracker bots charge $25–50; we're newer/less battle-tested → priced below
+- $9 reads as a "real tool" (vs $4.99 = "weekend project"), psychologically right size
+- One paid tier, not multi-Pro tiers — cleaner mental model. Add tiers only when free Pro upgrades hit a real ceiling
+
+### Conversion levers when shipping
+
+- **7-day Pro trial** for new auth users — must-have, see SaaS norm
+- Annual paid users get a "Founder" badge on chip (small ego nudge)
+- "Sign in to see N top whales / probability chart / PATTERN history" CTAs already wired in tooltip — same pattern extends to "Upgrade to see L3 drill"
+
+### Open question deferred
+
+L3 drill fully Pro vs. soft-Pro (L3 structure visible, but per-cell whales + chart locked). Decide closer to ship date based on Free-auth retention data — if users plateau at L2 we know L3 is the right gate. If they bounce because L2 feels shallow, soften L3 access and gate the deep-insight widgets only.
 
 ## Ideas backlog (not scheduled)
 
