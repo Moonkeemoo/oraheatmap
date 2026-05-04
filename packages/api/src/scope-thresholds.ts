@@ -122,16 +122,21 @@ export async function createScopeThresholds(
   function lookup(
     category: string,
     subcategory: string | null,
-    conditionId: string | null,
+    _conditionId: string | null,
     metric: "volume" | "pnl",
   ): Threshold["volume"] | null {
-    const candidates: ReadonlyArray<[string, string | null, string | null]> = [
-      [category, subcategory, conditionId],
-      [category, subcategory, null],
-      [category, null, null],
+    // Walk L2 → L1 only. L3 (per-condition_id) was too granular: some
+    // markets (Bitcoin Up/Down 5-min, Solana Up/Down 5-min) have P99 in
+    // the low-hundred USD range because they're dominated by tiny bot
+    // trades. A $300 BUY there got tagged "huge" and read as garbage
+    // copy ("BIG BUY · Crypto · $291"). L1 / L2 thresholds match how a
+    // trader thinks about scale.
+    const candidates: ReadonlyArray<[string, string | null]> = [
+      [category, subcategory],
+      [category, null],
     ];
-    for (const [c, s, cid] of candidates) {
-      const t = map.get(keyOf(c, s, cid));
+    for (const [c, s] of candidates) {
+      const t = map.get(keyOf(c, s, null));
       if (!t) continue;
       const slot = metric === "volume" ? t.volume : t.pnl;
       if (slot && slot.sampleN >= MIN_SAMPLE_N) return slot;

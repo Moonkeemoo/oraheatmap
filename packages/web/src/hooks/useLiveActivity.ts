@@ -26,11 +26,19 @@ import type { HeatmapMetric, SignalEvent } from "@/lib/types";
  * cell within 60s with magnitude>=big in the active metric → badge.
  */
 
-const PLAQUE_DURATION_MS = 3000;
+const PLAQUE_DURATION_MS = 3500;
 const PLAQUE_GLOBAL_RATE_PER_MIN = 8;
 const QUEUE_MAX = 3;
 const CONVERGE_WINDOW_MS = 60_000;
 const CONVERGE_MIN_WHALES = 5;
+/** Absolute floors below which a "huge" magnitude tag isn't really
+ *  interesting to a trader's eye. Polymarket has many micro-markets
+ *  (Bitcoin Up/Down 5-min, etc.) where the L3 P99 is ~$200; a $291 BUY
+ *  there is technically top 1% but reads as "BIG BUY $291" which is
+ *  laughable copy. The floor is applied AFTER the percentile tag, not
+ *  instead of it — both must clear. */
+const PLAQUE_MIN_USD_VOLUME = 1000;
+const PLAQUE_MIN_USD_PNL = 100;
 
 export type Plaque = {
   id: number;
@@ -134,8 +142,13 @@ export function useLiveActivity({
     convergeMapRef.current.set(s.category, list);
 
     // Plaque — only "huge" pops the floating plaque, and even then only
-    // under the global rate cap.
+    // under the global rate cap + absolute floor (the percentile tag in
+    // L3 scope can mark a $200 Bitcoin Up/Down trade as "huge", which
+    // reads as garbage copy).
     if (tag.mag !== "huge") return;
+    const absUsd = tag.kind === "pnl" ? Math.abs(s.realizedPnl ?? 0) : s.sizeUsd;
+    const floor = tag.kind === "pnl" ? PLAQUE_MIN_USD_PNL : PLAQUE_MIN_USD_VOLUME;
+    if (absUsd < floor) return;
     if (recentTimestampsRef.current.length >= PLAQUE_GLOBAL_RATE_PER_MIN) return;
 
     // Side type narrowing — magnitudes.pnl can fire on SELL/SETTLEMENT,
