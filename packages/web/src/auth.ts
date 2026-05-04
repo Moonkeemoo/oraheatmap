@@ -117,7 +117,17 @@ if (process.env["RESEND_API_KEY"] && process.env["EMAIL_FROM"]) {
   );
 }
 
+/** Absolute base for in-email links. The email client can't resolve
+ *  relative `/privacy` URLs and the icon needs an absolute src. Falls
+ *  back to the request host when NEXT_PUBLIC_API_URL is missing. */
+function emailBaseUrl(host: string): string {
+  const fromEnv = process.env["NEXT_PUBLIC_API_URL"];
+  if (fromEnv && /^https?:\/\//.test(fromEnv)) return fromEnv.replace(/\/$/, "");
+  return `https://${host}`;
+}
+
 function textBody({ url, host }: { url: string; host: string }): string {
+  const base = emailBaseUrl(host);
   return [
     "Sign in to oralab — Polymarket Heatmap",
     "",
@@ -125,12 +135,21 @@ function textBody({ url, host }: { url: string; host: string }): string {
     "",
     url,
     "",
-    "Didn't request this? You can safely ignore this email — your inbox just received a sign-in code that nobody can use without your inbox.",
+    "Didn't request this? You can safely ignore this email — this sign-in link is useless without access to your inbox.",
+    "",
+    "—",
+    `oralab · Polymarket Heatmap · ${base}`,
+    `Privacy: ${base}/privacy`,
+    `Terms:   ${base}/terms`,
+    "Not affiliated with Polymarket.",
   ].join("\n");
 }
 
 function htmlBody({ url, host }: { url: string; host: string }): string {
+  const base = emailBaseUrl(host);
   // Inline styles for max email-client compatibility (Outlook etc.).
+  // Icon hosted on /logo/logo-128.png so Gmail/Outlook can render it (they
+  // strip inline SVG). Wordmark + descriptor follow BrandLogo styling.
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -144,9 +163,21 @@ function htmlBody({ url, host }: { url: string; host: string }): string {
         <td align="center">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#161b22;border:1px solid #30363d;border-radius:12px;padding:32px;">
             <tr>
-              <td style="padding-bottom:20px;">
-                <div style="font-size:18px;letter-spacing:-0.04em;color:#e6edf3;font-weight:700;font-family:'Space Grotesk',-apple-system,sans-serif;">oralab</div>
-                <div style="font-size:11px;color:#7d8590;letter-spacing:-0.02em;text-transform:uppercase;margin-top:4px;font-family:'Space Grotesk',-apple-system,sans-serif;font-weight:700;">Polymarket Heatmap</div>
+              <td style="padding-bottom:24px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td style="vertical-align:middle;padding-right:12px;">
+                      <a href="${base}" target="_blank" rel="noopener" style="text-decoration:none;">
+                        <img src="${base}/logo/logo-128.png" width="36" height="36" alt="oralab"
+                             style="display:block;border:0;border-radius:6px;" />
+                      </a>
+                    </td>
+                    <td style="vertical-align:middle;">
+                      <div style="font-size:22px;letter-spacing:-0.04em;color:#e6edf3;font-weight:700;font-family:'Space Grotesk',-apple-system,sans-serif;line-height:1;">oralab</div>
+                      <div style="font-size:10px;color:#7d8590;letter-spacing:0.06em;text-transform:uppercase;margin-top:4px;font-family:-apple-system,sans-serif;font-weight:700;">Polymarket Heatmap</div>
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
             <tr>
@@ -178,6 +209,15 @@ function htmlBody({ url, host }: { url: string; host: string }): string {
               <td style="border-top:1px solid #30363d;padding-top:16px;font-size:11px;color:#6e7681;line-height:1.5;">
                 Didn't request this? You can safely ignore this email —
                 this sign-in link is useless without access to your inbox.
+              </td>
+            </tr>
+            <tr>
+              <td style="padding-top:14px;font-size:11px;color:#6e7681;line-height:1.6;text-align:center;">
+                <a href="${base}/privacy" target="_blank" rel="noopener" style="color:#7d8590;text-decoration:underline;">Privacy</a>
+                &nbsp;·&nbsp;
+                <a href="${base}/terms" target="_blank" rel="noopener" style="color:#7d8590;text-decoration:underline;">Terms</a>
+                <br />
+                <span style="color:#6e7681;">© ${new Date().getFullYear()} oralab · Not affiliated with Polymarket</span>
               </td>
             </tr>
           </table>
