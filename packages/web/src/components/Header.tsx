@@ -1,6 +1,7 @@
 import { signOut, useSession } from "next-auth/react";
 import { TOKENS } from "@/lib/tokens";
 import type { HeatmapMetric, LiveRange, Mode, PatternKind } from "@/lib/types";
+import { BrandLogo } from "./BrandLogo";
 import { LiveDot } from "./LiveDot";
 import { ScaleLegend } from "./ScaleLegend";
 
@@ -260,56 +261,35 @@ export function Header({
         <div
           style={{
             display: "flex",
-            alignItems: "stretch",
-            gap: 16,
+            flexDirection: "column",
+            alignItems: "flex-end",
+            gap: 4,
             minWidth: 0,
-            // Right-side title: text first, accent bar mirrors to the right
-            // edge of the screen so the brand reads as a single right-anchored
-            // block (vs. having the bar floating in the middle of the row).
-            flexDirection: "row-reverse",
+            color: TOKENS.text,
           }}
         >
-          <div style={{ width: 3, background: TOKENS.accent, borderRadius: 2, alignSelf: "stretch" }} />
-          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", minWidth: 0, alignItems: "flex-end" }}>
-            <div
-              style={{
-                fontSize: 10,
-                color: TOKENS.textSec,
-                letterSpacing: 0.7,
-                textTransform: "uppercase",
-                fontWeight: 600,
-                marginBottom: 4,
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-              }}
-            >
-              {isLive && range === "1h" && <LiveDot />}
-              <span style={{ color: tagColor }}>{tag}</span>
-              <span style={{ color: TOKENS.borderHi }}>·</span>
-              <span>{subtitle}</span>
-              <span style={{ color: TOKENS.borderHi }}>·</span>
-              <span>{trackedCount.toLocaleString()} whales tracked</span>
-            </div>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: 20,
-                fontWeight: 800,
-                letterSpacing: 0.6,
-                textTransform: "uppercase",
-                color: TOKENS.text,
-                lineHeight: 1,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                textAlign: "right",
-              }}
-            >
-              <span style={{ color: TOKENS.accent }}>OraLab</span>
-              <span style={{ color: TOKENS.textSec }}>: </span>
-              Polymarket Signal Heatmap
-            </h1>
+          {/* Hero brand mark — currentColor inherits the column's `color`,
+              so on dark bg it reads white; descriptor at fill-opacity 0.5
+              picks up the muted shade automatically. */}
+          <BrandLogo size="hero" />
+          <div
+            style={{
+              fontSize: 10,
+              color: TOKENS.textSec,
+              letterSpacing: 0.7,
+              textTransform: "uppercase",
+              fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            {isLive && range === "1h" && <LiveDot />}
+            <span style={{ color: tagColor }}>{tag}</span>
+            <span style={{ color: TOKENS.borderHi }}>·</span>
+            <span>{subtitle}</span>
+            <span style={{ color: TOKENS.borderHi }}>·</span>
+            <span>{trackedCount.toLocaleString()} whales tracked</span>
           </div>
         </div>
       </div>

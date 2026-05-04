@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
 import { SessionProvider } from "next-auth/react";
+import "@fontsource/space-grotesk/700.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Polymarket Signal Heatmap",
+  title: "ORALAB · Polymarket Heatmap",
   description: "Real-time Polymarket whale activity heatmap",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

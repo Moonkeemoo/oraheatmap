@@ -77,7 +77,7 @@ if (process.env["RESEND_API_KEY"] && process.env["EMAIL_FROM"]) {
   // Wrap "noreply@oralab.xyz" → '"OraLab" <noreply@oralab.xyz>' so inboxes
   // surface a friendly sender name (huge for spam-folder avoidance and trust).
   const rawFrom = process.env["EMAIL_FROM"]!;
-  const friendlyFrom = rawFrom.includes("<") ? rawFrom : `"OraLab" <${rawFrom}>`;
+  const friendlyFrom = rawFrom.includes("<") ? rawFrom : `"ORALAB" <${rawFrom}>`;
   providers.push(
     Resend({
       apiKey: process.env["RESEND_API_KEY"],
@@ -97,7 +97,7 @@ if (process.env["RESEND_API_KEY"] && process.env["EMAIL_FROM"]) {
           body: JSON.stringify({
             from: friendlyFrom,
             to: email,
-            subject: `Sign in to OraLab`,
+            subject: `Sign in to ORALAB`,
             text: textBody({ url, host }),
             html: htmlBody({ url, host }),
             // Encourages mail clients to NOT mark routine sign-in mails as
@@ -119,7 +119,7 @@ if (process.env["RESEND_API_KEY"] && process.env["EMAIL_FROM"]) {
 
 function textBody({ url, host }: { url: string; host: string }): string {
   return [
-    "Sign in to OraLab — Polymarket Signal Heatmap",
+    "Sign in to ORALAB — Polymarket Heatmap",
     "",
     `Click the link below to sign in to ${host}. The link expires in 24 hours and can only be used once.`,
     "",
@@ -136,7 +136,7 @@ function htmlBody({ url, host }: { url: string; host: string }): string {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
-    <title>Sign in to OraLab</title>
+    <title>Sign in to ORALAB</title>
   </head>
   <body style="margin:0;padding:0;background:#0d1117;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#e6edf3;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0d1117;padding:32px 16px;">
@@ -145,8 +145,8 @@ function htmlBody({ url, host }: { url: string; host: string }): string {
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#161b22;border:1px solid #30363d;border-radius:12px;padding:32px;">
             <tr>
               <td style="padding-bottom:20px;">
-                <div style="font-size:13px;letter-spacing:0.6px;color:#f0b429;font-weight:700;text-transform:uppercase;">OraLab</div>
-                <div style="font-size:11px;color:#7d8590;letter-spacing:0.4px;text-transform:uppercase;margin-top:4px;">Polymarket Signal Heatmap</div>
+                <div style="font-size:13px;letter-spacing:-0.02em;color:#e6edf3;font-weight:700;text-transform:uppercase;font-family:'Space Grotesk',-apple-system,sans-serif;">ORALAB</div>
+                <div style="font-size:11px;color:#7d8590;letter-spacing:-0.02em;text-transform:uppercase;margin-top:4px;font-family:'Space Grotesk',-apple-system,sans-serif;font-weight:700;">Polymarket Heatmap</div>
               </td>
             </tr>
             <tr>
@@ -164,7 +164,7 @@ function htmlBody({ url, host }: { url: string; host: string }): string {
               <td align="center" style="padding-bottom:24px;">
                 <a href="${url}" target="_blank" rel="noopener"
                    style="display:inline-block;padding:14px 28px;background:#f0b429;color:#1a1410;font-weight:700;font-size:14px;letter-spacing:0.4px;text-decoration:none;border-radius:8px;">
-                  Sign in to OraLab
+                  Sign in to ORALAB
                 </a>
               </td>
             </tr>
