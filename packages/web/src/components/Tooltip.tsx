@@ -249,18 +249,22 @@ function MarketIcon({ url, size = 22 }: { url: string | null; size?: number }) {
   );
 }
 
-/** Translate the heatmap's display slot index back to the UTC-encoded slot
- *  used by the backend (matches the hour-of-day / dow encoding in pattern-query.ts).
- *  HOUR: display slot N (local 2h) → server slot (N + shift) % 12 (UTC 2h)
- *  DOW : display slot N (Mon..Sun) → server slot DOW_DISPLAY_ORDER[N] (0=Sun..6=Sat) */
+/** Translate the row-cell index (position in the RAW server-ordered
+ *  `data.cells[cat]` array, NOT the rotated display order) into the slot
+ *  encoding the cell-cycles backend expects.
+ *
+ *  HOUR pattern — server cells are already keyed by UTC 2-hour slot 0..11,
+ *  so the index IS the UTC slot. The rotation Grid applies for display
+ *  doesn't change ref identity, so `findIndex` against the raw array
+ *  recovers the server slot directly. (Earlier code shifted again here,
+ *  which was a double-rotation.)
+ *
+ *  DOW pattern — server cells are ordered Mon..Sun (DOW_DISPLAY_ORDER), so
+ *  index N at the frontend = Postgres dow DOW_DISPLAY_ORDER[N] (0=Sun). */
 const DOW_DISPLAY_ORDER: ReadonlyArray<number> = [1, 2, 3, 4, 5, 6, 0];
-function displaySlotToUtcSlot(kind: PatternKind, displaySlot: number): number {
-  if (kind === "hour-of-day") {
-    const tzOffset = -new Date().getTimezoneOffset() / 60;
-    const shift = ((Math.round(-tzOffset / 2) % 12) + 12) % 12;
-    return (displaySlot + shift) % 12;
-  }
-  return DOW_DISPLAY_ORDER[displaySlot] ?? 0;
+function rowIndexToServerSlot(kind: PatternKind, rowIndex: number): number {
+  if (kind === "hour-of-day") return rowIndex;
+  return DOW_DISPLAY_ORDER[rowIndex] ?? 0;
 }
 
 /** Histogram of past-cycle values for a single (category × slot) cell.
@@ -523,7 +527,7 @@ export function Tooltip({
         kind: patternKind,
         category,
         subcategory: drillSubcategory ?? null,
-        slot: displaySlotToUtcSlot(patternKind, Math.max(0, rowCells.findIndex((c) => c === cell))),
+        slot: rowIndexToServerSlot(patternKind, Math.max(0, rowCells.findIndex((c) => c === cell))),
       }
     : null;
   const cycles = useCellCycles(cyclesArgs, cyclesEnabled);
