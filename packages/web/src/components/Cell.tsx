@@ -59,27 +59,28 @@ export function Cell({
   intensityFn,
   isNowCol,
   flashSeq,
+  heat,
   showDelta,
   isLocked,
   onHover,
   onClick,
-  tracerKey,
 }: {
   cell: HeatmapCell;
   metric: HeatmapMetric;
   intensityFn: (c: HeatmapCell) => number;
   isNowCol: boolean;
   flashSeq: number;
+  /** Continuous "burst level" derived from recent SSE arrivals on this
+   *  cell — bumps by 1 per signal, decays exponentially over ~2s.
+   *  Drives the live glow aura + scale, so a single signal pings briefly
+   *  and a burst (5+ in a second) holds the cell visibly hot for a beat. */
+  heat: number;
   /** Render the parenthetical delta next to the main value (PATTERN mode only). */
   showDelta: boolean;
   /** This cell currently has the locked tooltip — render a persistent ring. */
   isLocked: boolean;
   onHover: (h: { cell: HeatmapCell; anchor: TooltipAnchor } | null) => void;
   onClick: (h: { cell: HeatmapCell; anchor: TooltipAnchor }) => void;
-  /** Stable cell identity in the form `${rowKey}:${originalSlotIdx}` —
-   *  used as a DOM hook so the TracerLayer can find this cell to draw
-   *  a flying streak when an SSE signal lands on it. */
-  tracerKey?: string;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [hovered, setHovered] = useState(false);
@@ -132,10 +133,45 @@ export function Cell({
     if (anchor) onClick({ cell, anchor });
   };
 
+  // Heat-driven aura — cell visibly "heats up" with sustained activity.
+  // Heat clamped to a sane range so a 50-signal burst doesn't render a
+  // city-block-sized glow.
+  const heatNorm = Math.min(heat, 6);
+  const heatActive = heatNorm > 0.05;
+  // Tone the aura by current PnL direction so a hot bleeding cell looks
+  // bleeding, a hot rallying cell looks rallying. Falls back to accent
+  // for empty / neutral cells.
+  const heatColor = !isEmpty
+    ? cell.pnl > 0
+      ? TOKENS.pos
+      : cell.pnl < 0
+        ? TOKENS.neg
+        : TOKENS.accent
+    : TOKENS.accent;
+  // Scale + box-shadow grow with heat. Hover scale (1.1) overrides at
+  // peak heat the cell can squeeze to ~1.06, plenty without breaking
+  // grid alignment in long rows.
+  const heatScale = heatActive ? 1 + Math.min(0.06, heatNorm * 0.012) : 1;
+  const auraInnerBlur = 2 + heatNorm * 4; // px
+  const auraOuterBlur = 4 + heatNorm * 10;
+  const auraInnerAlpha = Math.min(0.95, 0.25 + heatNorm * 0.18);
+  const auraOuterAlpha = Math.min(0.55, 0.08 + heatNorm * 0.12);
+  // Combined shadow: inner ring (sharp) + outer halo (soft) + drop.
+  const heatShadow = heatActive
+    ? `0 0 0 1.5px ${heatColor}${alphaHex(auraInnerAlpha)}, 0 0 ${auraInnerBlur}px ${heatColor}${alphaHex(auraInnerAlpha)}, 0 0 ${auraOuterBlur}px ${heatColor}${alphaHex(auraOuterAlpha)}, 0 8px 22px rgba(0,0,0,0.45)`
+    : null;
+
+  const finalScale = hovered && !isEmpty ? 1.1 : heatScale;
+  const finalShadow =
+    isLocked && !isEmpty
+      ? `0 8px 22px rgba(0,0,0,0.55), 0 0 0 2px ${TOKENS.accent}${heatActive ? `, 0 0 ${auraOuterBlur}px ${heatColor}${alphaHex(auraOuterAlpha)}` : ""}`
+      : hovered && !isEmpty
+        ? `0 8px 22px rgba(0,0,0,0.55), 0 0 0 1px ${TOKENS.borderHi}`
+        : heatShadow ?? "none";
+
   return (
     <div
       ref={ref}
-      data-tracer-cell={tracerKey}
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
       onClick={onClickHandler}
@@ -151,21 +187,33 @@ export function Cell({
         alignItems: "center",
         justifyContent: "center",
         cursor: isEmpty ? "default" : "pointer",
-        transform: hovered && !isEmpty ? "scale(1.1)" : "scale(1)",
-        transition: "transform .14s cubic-bezier(.2,.7,.3,1), box-shadow .14s, background .3s",
-        boxShadow:
-          isLocked && !isEmpty
-            ? `0 8px 22px rgba(0,0,0,0.55), 0 0 0 2px ${TOKENS.accent}`
-            : hovered && !isEmpty
-              ? `0 8px 22px rgba(0,0,0,0.55), 0 0 0 1px ${TOKENS.borderHi}`
-              : "none",
+        transform: `scale(${finalScale})`,
+        transition: "transform .18s cubic-bezier(.2,.7,.3,1), box-shadow .25s ease-out, background .3s",
+        boxShadow: finalShadow,
         position: "relative",
-        zIndex: isLocked ? 6 : hovered ? 5 : 1,
+        zIndex: isLocked ? 6 : hovered ? 5 : heatActive ? 4 : 1,
         animation: "cellLand .35s cubic-bezier(.2,.7,.3,1) both",
         outline: isNowCol && !isEmpty ? `1px solid rgba(63,185,80,0.28)` : "none",
         outlineOffset: -1,
       }}
     >
+      {/* Heat aura — semi-transparent inner gradient that brightens the
+          cell tint when activity is sustained. Pure overlay so the value
+          text on top stays readable. */}
+      {heatActive && !isEmpty && (
+        <span
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: 7,
+            pointerEvents: "none",
+            background: `radial-gradient(circle at 50% 50%, ${heatColor}${alphaHex(Math.min(0.45, heatNorm * 0.12))} 0%, transparent 70%)`,
+            mixBlendMode: "screen",
+            transition: "opacity .25s ease-out",
+          }}
+        />
+      )}
       {flashSeq > 0 && (
         <span
           key={`flash-${flashSeq}`}
@@ -207,4 +255,10 @@ export function Cell({
       )}
     </div>
   );
+}
+
+/** 0..1 → 2-char lowercase hex alpha suffix for `#rrggbb${aa}` strings. */
+function alphaHex(a: number): string {
+  const v = Math.max(0, Math.min(255, Math.round(a * 255)));
+  return v.toString(16).padStart(2, "0");
 }

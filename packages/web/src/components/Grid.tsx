@@ -26,8 +26,7 @@ import { marketUrl } from "@/lib/polymarket-url";
 import { TOKENS } from "@/lib/tokens";
 import type { Category, HeatmapBucket, HeatmapCell, HeatmapMetric, HeatmapResponse } from "@/lib/types";
 import { Cell } from "./Cell";
-import type { FlashByCell } from "./Heatmap";
-import { TracerLayer, type TracerEvent } from "./TracerLayer";
+import type { FlashByCell, HeatByCell } from "./Heatmap";
 import type { TooltipAnchor } from "./Tooltip";
 
 /** Lighten a hex color by mixing it with white. amount=0 → original, 1 → white. */
@@ -410,8 +409,7 @@ export function Grid({
   onRowClick,
   lockedCellId,
   flashByCell,
-  tracerEvents,
-  onTracerDone,
+  heatByCell,
   gridKey,
   savedOrder,
   onReorder,
@@ -425,11 +423,11 @@ export function Grid({
   onRowClick?: (rowKey: string) => void;
   lockedCellId: string | null;
   flashByCell: FlashByCell;
-  /** Live signal events that should fire a tracer line on the matching
-   *  cell. Same key shape as flashByCell. Handed back via onTracerDone
-   *  when the animation finishes so Heatmap can prune them. */
-  tracerEvents: ReadonlyArray<TracerEvent>;
-  onTracerDone: (id: number) => void;
+  /** Per-cell live "heat" — bumps by 1 per signal, decays exponentially
+   *  on a Heatmap-side timer. Drives the cell's glow aura + scale, so
+   *  busy cells stay visibly hot during a burst instead of just blinking
+   *  once per signal. Same key shape as flashByCell. */
+  heatByCell: HeatByCell;
   gridKey: string;
   /** User's saved order for this scope. undefined when no preference saved
    *  yet — Grid falls back to data.categories' natural order. */
@@ -571,6 +569,7 @@ export function Grid({
           const isNowCol = slot === nowSlotIndex;
           const originalIdx = (slot + localShiftIdx) % num;
           const flashSeq = flashByCell[`${cat}:${originalIdx}`] ?? 0;
+          const heat = heatByCell[`${cat}:${originalIdx}`] ?? 0;
           const cellId = `${cat}:${slot}`;
           const slotLabel = formatSlotLabel(
             buckets[slot]!,
@@ -587,9 +586,9 @@ export function Grid({
               intensityFn={intensityFn}
               isNowCol={isNowCol}
               flashSeq={flashSeq}
+              heat={heat}
               showDelta={isPattern}
               isLocked={lockedCellId === cellId}
-              tracerKey={`${cat}:${originalIdx}`}
               onHover={
                 options.isDragOverlay
                   ? () => {}
@@ -700,11 +699,6 @@ export function Grid({
             </SortableRow>
           ))}
         </SortableContext>
-
-        {/* Live-signal tracer overlay — sits on top of the grid as a
-            sibling absolute layer so it's free to draw streaks across
-            row boundaries without disturbing layout. */}
-        <TracerLayer events={tracerEvents} onDone={onTracerDone} />
       </div>
 
       {/* Drag overlay — renders the actively dragged row as a fused card.

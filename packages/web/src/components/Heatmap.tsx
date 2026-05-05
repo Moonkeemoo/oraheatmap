@@ -28,7 +28,6 @@ import { HeatmapSkeleton } from "./HeatmapSkeleton";
 import { LoginModal } from "./LoginModal";
 import { StatsBar } from "./StatsBar";
 import { Tooltip, type TooltipAnchor } from "./Tooltip";
-import type { TracerEvent } from "./TracerLayer";
 import { WhaleDrawer } from "./WhaleDrawer";
 
 type HoverState = {
@@ -45,11 +44,20 @@ type HoverState = {
  *  flashes. */
 export type FlashByCell = Record<string, number>;
 
+/** Per-cell exponentially-decaying heat. Each SSE signal bumps the
+ *  matching cell by +1 and a 250ms tick multiplies all entries by
+ *  HEAT_DECAY (≈ 1s half-life). The cell's heat value is what drives
+ *  the glow-aura intensity. */
+export type HeatByCell = Record<string, number>;
+
 const DOW_DISPLAY_ORDER: ReadonlyArray<number> = [1, 2, 3, 4, 5, 6, 0]; // Mon..Sun, Sun last
 
-/** Monotonic id source for tracer events. Module-level so we don't
- *  collide across remounts — re-keyed React doesn't reset this. */
-let nextTracerId = 1;
+/** Per-tick decay factor. With a 250ms tick interval, 0.83⁴ ≈ 0.47 →
+ *  half-life around 1s. Burst of 5 signals decays back below visible
+ *  threshold (0.05) in ~3.5s, single signal in ~1.5s. */
+const HEAT_DECAY = 0.83;
+const HEAT_TICK_MS = 250;
+const HEAT_VISIBLE_FLOOR = 0.05;
 
 /** Map a signal timestamp to the bucket index AS IT APPEARS IN SERVER RESPONSE.
  *  Grid handles local-TZ rotation separately for display. LIVE: last index (NOW).
@@ -147,8 +155,31 @@ export function Heatmap() {
     : null;
   const cellFeed = useCellFeed({ scope: cellFeedScope, enabled: panelCell !== null });
   const [flashByCell, setFlashByCell] = useState<FlashByCell>({});
-  const [tracerEvents, setTracerEvents] = useState<ReadonlyArray<TracerEvent>>([]);
+  const [heatByCell, setHeatByCell] = useState<HeatByCell>({});
   const [pendingSignals, setPendingSignals] = useState<SignalEvent[]>([]);
+
+  // Decay timer — drives cells back to "cold" once SSE quiets down.
+  // Drops keys whose heat fell below the visible floor so the object
+  // doesn't accumulate stale entries while the user keeps the tab open.
+  useEffect(() => {
+    const id = setInterval(() => {
+      setHeatByCell((prev) => {
+        let changed = false;
+        const next: HeatByCell = {};
+        for (const [k, v] of Object.entries(prev)) {
+          const decayed = v * HEAT_DECAY;
+          if (decayed >= HEAT_VISIBLE_FLOOR) {
+            next[k] = decayed;
+            if (decayed !== v) changed = true;
+          } else {
+            changed = true; // dropped key
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, HEAT_TICK_MS);
+    return () => clearInterval(id);
+  }, []);
   const rowOrder = useRowOrder();
 
   const { data: fetchedData, loading, error } = useHeatmap({
@@ -242,17 +273,8 @@ export function Heatmap() {
     }
     const key = `${rowKey}:${slotIdx}`;
     setFlashByCell((prev) => ({ ...prev, [key]: (prev[key] ?? 0) + 1 }));
-    // Tracer streak — fires once per signal. Auto-pruned via onDone
-    // from TracerLayer when the animation finishes (~750ms).
-    setTracerEvents((prev) => [
-      ...prev,
-      { id: nextTracerId++, cellKey: key, side: s.side },
-    ]);
+    setHeatByCell((prev) => ({ ...prev, [key]: (prev[key] ?? 0) + 1 }));
   });
-
-  const handleTracerDone = (id: number): void => {
-    setTracerEvents((prev) => prev.filter((t) => t.id !== id));
-  };
 
   // Reset hover + lock on mode/range/kind/drill switches (anchors + cell IDs
   // are stale across grid shape changes).
@@ -401,8 +423,7 @@ export function Heatmap() {
                   }
                   lockedCellId={panelCell?.cellId ?? null}
                   flashByCell={flashByCell}
-                  tracerEvents={tracerEvents}
-                  onTracerDone={handleTracerDone}
+                  heatByCell={heatByCell}
                   gridKey={`${mode}-${range}-${patternKind}-${drillCategory ?? "top"}`}
                   savedOrder={rowOrder.get(scopeKey)}
                   onReorder={(next) => rowOrder.set(scopeKey, next)}
