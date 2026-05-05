@@ -40,7 +40,7 @@ body {
      amplitude scales with current heat. Defaults match the old quiet-
      cell tap so any caller without overrides still works. */
   0%   { box-shadow: 0 0 0 0 var(--ring-color, rgba(255,255,255,0.55)); }
-  100% { box-shadow: 0 0 0 var(--ring-spread, 12px) rgba(0,0,0,0); }
+  100% { box-shadow: 0 0 0 var(--ring-spread, 6px) rgba(0,0,0,0); }
 }
 @keyframes nowSweep {
   0%, 100% { opacity: 0.55; }

@@ -149,8 +149,10 @@ export function Cell({
         ? TOKENS.neg
         : TOKENS.accent
     : TOKENS.accent;
-  // 12px → 28px ring spread; 0.55 → 0.95 ring alpha.
-  const ringSpread = 12 + heatNorm * 2.7;
+  // 6px → 14px ring spread; 0.55 → 0.95 ring alpha. Halved from the
+  // first cut — 6+ bursts are the norm, so the previous 28px peak ate
+  // up most of the cell's neighbour and read as overkill.
+  const ringSpread = 6 + heatNorm * 1.35;
   const ringAlpha = Math.min(0.95, 0.55 + heatNorm * 0.07);
   // Slightly faster flash duration on hotter cells so consecutive
   // bursts stack visually instead of blurring into a steady tint.
