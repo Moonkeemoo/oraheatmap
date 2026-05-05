@@ -5,8 +5,6 @@ import { Features } from "@/components/landing/Features";
 import { Hero } from "@/components/landing/Hero";
 import { HowItWorks } from "@/components/landing/HowItWorks";
 import { Nav } from "@/components/landing/Nav";
-import { Pricing } from "@/components/landing/Pricing";
-import { SocialProof } from "@/components/landing/SocialProof";
 import { Stats } from "@/components/landing/Stats";
 import { TOKENS } from "@/lib/tokens";
 
@@ -27,8 +25,6 @@ export default function LandingPage() {
       <Stats />
       <Features />
       <HowItWorks />
-      <SocialProof />
-      <Pricing />
       <Faq />
       <CtaFinal />
       <Footer />

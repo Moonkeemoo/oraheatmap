@@ -276,6 +276,37 @@ export function createApi(deps: ApiDeps) {
         ts: new Date().toISOString(),
       };
     })
+    .get("/api/landing-stats", async ({ set }) => {
+      // Numbers for the public landing strip. Lightweight COUNT/SUM over
+      // the signals hypertable — runs in <100ms because it hits the same
+      // chunk indexes the heatmap query uses. Cached via Cache-Control so
+      // the marketing page doesn't burn a DB round-trip per visitor.
+      const [row] = await deps.sql<
+        {
+          total_signals: string;
+          total_volume: string | null;
+          net_flow_24h: string | null;
+        }[]
+      >`
+        SELECT
+          COUNT(*)::text AS total_signals,
+          COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)::text AS total_volume,
+          COALESCE(
+            SUM(size * price) FILTER (WHERE side = 'BUY'  AND ts > NOW() - INTERVAL '24 hours')
+          - SUM(size * price) FILTER (WHERE side = 'SELL' AND ts > NOW() - INTERVAL '24 hours'),
+            0
+          )::text AS net_flow_24h
+        FROM signals
+      `;
+      set.headers["cache-control"] = "public, max-age=60, stale-while-revalidate=300";
+      return {
+        totalSignals: Number(row?.total_signals ?? 0),
+        totalVolumeUsd: Number(row?.total_volume ?? 0),
+        netFlow24hUsd: Number(row?.net_flow_24h ?? 0),
+        whalesWatched: deps.whaleCount(),
+        generatedAt: new Date().toISOString(),
+      };
+    })
     .get(
       "/api/heatmap",
       async ({ query }) => {

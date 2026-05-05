@@ -19,7 +19,6 @@ import { TOKENS } from "@/lib/tokens";
 export function BurgerMenu({ onRequestLogin }: { onRequestLogin?: () => void } = {}) {
   const [open, setOpen] = useState(false);
   const { data: session } = useSession();
-  const isAuthed = Boolean(session?.user?.id);
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -39,6 +38,7 @@ export function BurgerMenu({ onRequestLogin }: { onRequestLogin?: () => void } =
     };
   }, [open]);
 
+  const isAuthed = Boolean(session?.user?.id);
   const userId = (session?.user?.id as string | undefined) ?? null;
   const userName = (session?.user?.name as string | undefined) ?? null;
   const userEmail = (session?.user?.email as string | undefined) ?? null;
@@ -80,23 +80,6 @@ export function BurgerMenu({ onRequestLogin }: { onRequestLogin?: () => void } =
         <span style={{ width: 16, height: 1.5, background: TOKENS.text, borderRadius: 1 }} />
         <span style={{ width: 16, height: 1.5, background: TOKENS.text, borderRadius: 1 }} />
         <span style={{ width: 16, height: 1.5, background: TOKENS.text, borderRadius: 1 }} />
-        {/* Tiny green dot when signed in — communicates "you're authed"
-            without taking the burger off the icon. */}
-        {isAuthed && (
-          <span
-            aria-hidden="true"
-            style={{
-              position: "absolute",
-              top: 4,
-              right: 4,
-              width: 6,
-              height: 6,
-              borderRadius: 6,
-              background: TOKENS.pos,
-              boxShadow: `0 0 5px ${TOKENS.pos}`,
-            }}
-          />
-        )}
       </button>
 
       {open && (

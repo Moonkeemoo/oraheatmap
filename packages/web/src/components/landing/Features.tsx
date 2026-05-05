@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { TOKENS } from "@/lib/tokens";
 import { DrillMock } from "./mocks/DrillMock";
+import { HighlightsMock } from "./mocks/HighlightsMock";
 import { LiveHeatmapMock } from "./mocks/LiveHeatmapMock";
 import { PatternMock } from "./mocks/PatternMock";
 import { TooltipMock } from "./mocks/TooltipMock";
@@ -27,15 +28,21 @@ export function Features() {
         <div style={{ display: "flex", flexDirection: "column", gap: 60, marginTop: 56 }}>
           <FeatureRow
             eyebrow="LIVE feed"
-            title="Every trade, lit up the moment it lands."
-            body="A real-time tape across 9 prediction-market categories. Four time scales — 1h, 24h, 12d, 12w. Cells coloured by PnL: green when smart money is winning, red when it's bleeding. The ‘now' column sits on the right, lit up the second a whale clicks Buy."
+            title="Every trade, the second it hits the chain."
+            body="9 prediction-market categories on one grid. Four timeframes — 1h, 24h, 12d, 12w. Cells colour-shift the moment a whale clicks Buy: green where smart money is winning, red where it's bleeding. No refresh, no polling — a live SSE stream pumps each trade in under a second from when it lands on Polygon."
             visual={<LiveHeatmapMock />}
           />
           <FeatureRow
             reverse
+            eyebrow="Top highlights"
+            title="What's actually standing out — not just what's recent."
+            body="Open any row → see the biggest PnL trades, busiest markets, and largest whale convergences over the chosen timeframe. Each item is gated to ≥ 1.5× the row average and tagged with its multiplier (8.4×, 12×) so you know it's an outlier, not noise. Shifts with the active metric — switch from VOLUME to PNL and the list reranks instantly."
+            visual={<HighlightsMock />}
+          />
+          <FeatureRow
             eyebrow="Whale dossier"
-            title="The full story behind every wallet."
-            body="Click any whale — get a side panel with 90-day cumulative PnL, category mix breakdown, open positions with mark-to-market, recent trades, win rate over decided exits (not over total trades — that's misleading), and Polymarket leaderboard alias with X handle and verified badge. Not just a chart — the full deep-dive."
+            title="The full story behind every wallet — and the leaderboard for any window."
+            body="Click any whale → side panel with 90-day cumulative PnL, category mix, open positions marked-to-market, recent trades, win rate over decided exits (not over total trades — that's misleading), Polymarket alias with X handle and verified badge. Each cell also surfaces its own Top whales — the wallets that drove that 2-hour slot, ranked by USD volume or realised PnL."
             visual={<WhaleProfileMock />}
           />
           <FeatureRow
