@@ -36,8 +36,11 @@ body {
   100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(255,255,255,0); }
 }
 @keyframes flashRing {
-  0% { box-shadow: 0 0 0 0 rgba(255,255,255,0.55); }
-  100% { box-shadow: 0 0 0 12px rgba(255,255,255,0); }
+  /* Cell.tsx sets --ring-color and --ring-spread per-flash so the ring
+     amplitude scales with current heat. Defaults match the old quiet-
+     cell tap so any caller without overrides still works. */
+  0%   { box-shadow: 0 0 0 0 var(--ring-color, rgba(255,255,255,0.55)); }
+  100% { box-shadow: 0 0 0 var(--ring-spread, 12px) rgba(0,0,0,0); }
 }
 @keyframes nowSweep {
   0%, 100% { opacity: 0.55; }

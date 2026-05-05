@@ -133,13 +133,15 @@ export function Cell({
     if (anchor) onClick({ cell, anchor });
   };
 
-  // Heat-driven border — cell gets a coloured ring whose thickness +
-  // saturation track recent SSE activity. Clamped so a 50-signal burst
-  // doesn't render a fence-thick stroke.
+  // Heat → flash-ring amplitude. The discrete flash on each signal
+  // (driven by flashSeq retrigger) is the visible event; heat just
+  // modulates how big and how bright that flash is, so a burst of
+  // signals piles up as progressively heavier rings while a single
+  // quiet signal is a soft tap. No always-on outline — the cell stays
+  // clean between events.
   const heatNorm = Math.min(heat, 6);
-  const heatActive = heatNorm > 0.05;
-  // Tone the ring by current PnL direction — busy losses ring red,
-  // busy wins ring green. Empty / neutral cells fall back to accent.
+  // Tone the ring by current PnL direction — busy losses flash red,
+  // busy wins flash green. Empty / neutral cells fall back to accent.
   const heatColor = !isEmpty
     ? cell.pnl > 0
       ? TOKENS.pos
@@ -147,28 +149,19 @@ export function Cell({
         ? TOKENS.neg
         : TOKENS.accent
     : TOKENS.accent;
-  // Border thickness 1 → 2.5 px as heat ramps. Alpha 0.4 → 1.0.
-  const heatRingPx = heatActive ? 1 + Math.min(1.5, heatNorm * 0.32) : 0;
-  const heatRingAlpha = Math.min(1, 0.4 + heatNorm * 0.15);
-  // Outer halo gives the ring a soft glow off the edge so it reads as
-  // "the cell is hot", not just "it has a stroke". Smaller blur than
-  // before — the previous implementation was too diffuse.
-  const haloBlur = heatActive ? 4 + heatNorm * 4 : 0;
-  const haloAlpha = Math.min(0.45, 0.1 + heatNorm * 0.07);
-  const heatShadow = heatActive
-    ? `0 0 0 ${heatRingPx}px ${heatColor}${alphaHex(heatRingAlpha)}, 0 0 ${haloBlur}px ${heatColor}${alphaHex(haloAlpha)}`
-    : null;
+  // 12px → 28px ring spread; 0.55 → 0.95 ring alpha.
+  const ringSpread = 12 + heatNorm * 2.7;
+  const ringAlpha = Math.min(0.95, 0.55 + heatNorm * 0.07);
+  // Slightly faster flash duration on hotter cells so consecutive
+  // bursts stack visually instead of blurring into a steady tint.
+  const ringDuration = Math.max(0.55, 0.95 - heatNorm * 0.07);
 
-  // Scale up slightly with sustained heat — visible "pop" without
-  // breaking grid alignment.
-  const heatScale = heatActive ? 1 + Math.min(0.04, heatNorm * 0.008) : 1;
-  const finalScale = hovered && !isEmpty ? 1.1 : heatScale;
   const finalShadow =
     isLocked && !isEmpty
       ? `0 8px 22px rgba(0,0,0,0.55), 0 0 0 2px ${TOKENS.accent}`
       : hovered && !isEmpty
         ? `0 8px 22px rgba(0,0,0,0.55), 0 0 0 1px ${TOKENS.borderHi}`
-        : heatShadow ?? "none";
+        : "none";
 
   return (
     <div
@@ -188,11 +181,11 @@ export function Cell({
         alignItems: "center",
         justifyContent: "center",
         cursor: isEmpty ? "default" : "pointer",
-        transform: `scale(${finalScale})`,
-        transition: "transform .18s cubic-bezier(.2,.7,.3,1), box-shadow .25s ease-out, background .3s",
+        transform: hovered && !isEmpty ? "scale(1.1)" : "scale(1)",
+        transition: "transform .14s cubic-bezier(.2,.7,.3,1), box-shadow .14s, background .3s",
         boxShadow: finalShadow,
         position: "relative",
-        zIndex: isLocked ? 6 : hovered ? 5 : heatActive ? 4 : 1,
+        zIndex: isLocked ? 6 : hovered ? 5 : 1,
         animation: "cellLand .35s cubic-bezier(.2,.7,.3,1) both",
         outline: isNowCol && !isEmpty ? `1px solid rgba(63,185,80,0.28)` : "none",
         outlineOffset: -1,
@@ -206,7 +199,13 @@ export function Cell({
             inset: 0,
             borderRadius: 7,
             pointerEvents: "none",
-            animation: "flashRing .9s ease-out forwards",
+            animation: `flashRing ${ringDuration}s ease-out forwards`,
+            // Per-flash colour + spread — keyframe in globals.css
+            // reads these custom properties, so a hot cell expands a
+            // bigger PnL-tinted ring per event while a quiet cell just
+            // pings white.
+            ["--ring-color" as string]: `${heatColor}${alphaHex(ringAlpha)}`,
+            ["--ring-spread" as string]: `${ringSpread}px`,
           }}
         />
       )}
