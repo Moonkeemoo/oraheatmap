@@ -53,26 +53,28 @@ export default async function AccountPage() {
     linked: boolean;
     providerAccountId: string | null;
   };
-  const connected: ConnectedRow[] =
-    accountRows.length > 0
-      ? accountRows.map((r) => ({
-          provider: r.provider,
-          label: PROVIDER_LABEL[r.provider] ?? r.provider,
-          subtitle: r.provider_account_id ? truncateId(r.provider_account_id) : null,
-          linked: true,
-          providerAccountId: r.provider_account_id,
-        }))
-      : sessionProvider
-        ? [
-            {
-              provider: sessionProvider,
-              label: PROVIDER_LABEL[sessionProvider] ?? sessionProvider,
-              subtitle: truncateId(userId),
-              linked: false,
-              providerAccountId: null,
-            },
-          ]
-        : [];
+  // Build the full connected list. Auth_accounts rows are always included
+  // (they're the canonical record). The synthetic "primary" entry for the
+  // current Credentials session is added IF that provider isn't already
+  // represented in auth_accounts — covers the case where a SIWE/Telegram
+  // user has linked OAuth providers (rows in auth_accounts) but their own
+  // identity has no row.
+  const connected: ConnectedRow[] = accountRows.map((r) => ({
+    provider: r.provider,
+    label: PROVIDER_LABEL[r.provider] ?? r.provider,
+    subtitle: r.provider_account_id ? truncateId(r.provider_account_id) : null,
+    linked: true,
+    providerAccountId: r.provider_account_id,
+  }));
+  if (sessionProvider && !connected.some((c) => c.provider === sessionProvider)) {
+    connected.push({
+      provider: sessionProvider,
+      label: PROVIDER_LABEL[sessionProvider] ?? sessionProvider,
+      subtitle: truncateId(userId),
+      linked: false,
+      providerAccountId: null,
+    });
+  }
 
   const userName = (session.user.name as string | undefined | null) ?? null;
   const userEmail = (session.user.email as string | undefined | null) ?? null;
