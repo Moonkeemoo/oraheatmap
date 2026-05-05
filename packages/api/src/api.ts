@@ -24,6 +24,7 @@ import { type PatternKind, queryCellCycles, queryPattern } from "./pattern-query
 import type { SignalHub } from "./signal-hub";
 import { readAuthFromHeaders } from "./auth-jwt";
 import { SUBCATEGORY_LABELS, subcategoriesOf } from "./subcategorize";
+import { TtlCache } from "./ttl-cache";
 import type { Signal } from "./types";
 import { whaleAlias, whaleAliasInfo, whaleColor } from "./whale-display";
 import { fetchWhaleProfile } from "./whale-profile";
@@ -58,6 +59,57 @@ const TOP_WHALES_LIMIT = 10;
 /** Hard cap on rows in the L3 "markets in subcategory" heatmap — anything
  *  beyond this would make the grid unreadable. Sorted by total signals desc. */
 const MAX_MARKETS_IN_DRILL = 30;
+
+// ─── Response caches ───────────────────────────────────────────────────────
+// In-process LRU+TTL caches absorb tab-switch spam — most users flick
+// LIVE↔PATTERN↔1h↔24h within seconds, and each request without cache
+// reruns multi-million-row scans. Keys are pure query-param tuples so
+// the same params from different users hit the same cached response.
+const heatmapCache = new TtlCache<unknown>(512);
+const highlightsCache = new TtlCache<unknown>(512);
+const landingStatsCache = new TtlCache<unknown>(2);
+
+/** TTL for the heatmap response. Heavier ranges → longer TTL since the
+ *  underlying data shifts more slowly anyway (12w cells barely change
+ *  minute-over-minute). LIVE 1h still has a short TTL because the
+ *  rightmost "now" column shifts every 5 minutes. */
+function heatmapTtlMs(mode: string, range: string | undefined): number {
+  if (mode === "pattern") return 60_000;
+  switch (range) {
+    case "1h":
+      return 5_000;
+    case "24h":
+      return 15_000;
+    case "12d":
+      return 60_000;
+    case "12w":
+      return 180_000;
+    default:
+      return 5_000;
+  }
+}
+
+/** TTL for /api/highlights. Derived from window span so it matches the
+ *  range that was selected upstream — same heuristic as heatmapTtlMs but
+ *  computed from the fromTs/toTs delta the client passed. */
+function highlightsTtlMs(fromIso: string | null, toIso: string): number {
+  if (!fromIso) return 60_000;
+  const span = new Date(toIso).getTime() - new Date(fromIso).getTime();
+  if (span <= 2 * 3600_000) return 5_000;
+  if (span <= 36 * 3600_000) return 15_000;
+  if (span <= 14 * 86400_000) return 60_000;
+  return 180_000;
+}
+
+/** Build a HTTP Cache-Control header that mirrors the in-process TTL.
+ *  `public` because /api/heatmap and /api/highlights don't depend on the
+ *  caller's identity — same response for all users. */
+function cacheControlHeader(ttlMs: number): string {
+  const sec = Math.max(1, Math.floor(ttlMs / 1000));
+  // stale-while-revalidate doubles the effective cache window — browsers
+  // serve the stale value while refreshing in the background.
+  return `public, max-age=${sec}, stale-while-revalidate=${sec}`;
+}
 
 /** Trim a market question for the L3 row label so it fits a 2-line clamp.
  *  Stages run in order, each one a no-op when its pattern doesn't match.
@@ -273,14 +325,25 @@ export function createApi(deps: ApiDeps) {
         sseSubscribers: deps.hub.size(),
         bufferSize: deps.bufferSize(),
         gammaCacheSize: deps.gammaCacheSize(),
+        responseCaches: {
+          heatmap: heatmapCache.stats(),
+          highlights: highlightsCache.stats(),
+          landing: landingStatsCache.stats(),
+        },
         ts: new Date().toISOString(),
       };
     })
     .get("/api/landing-stats", async ({ set }) => {
       // Numbers for the public landing strip. Lightweight COUNT/SUM over
-      // the signals hypertable — runs in <100ms because it hits the same
-      // chunk indexes the heatmap query uses. Cached via Cache-Control so
-      // the marketing page doesn't burn a DB round-trip per visitor.
+      // the signals hypertable — but with potentially many concurrent
+      // landing-page visitors, even <100ms each adds up. In-process
+      // 60s cache + Cache-Control mirror.
+      const cached = landingStatsCache.get("landing");
+      if (cached !== undefined) {
+        set.headers["x-cache"] = "hit";
+        set.headers["cache-control"] = "public, max-age=60, stale-while-revalidate=300";
+        return cached;
+      }
       const [row] = await deps.sql<
         {
           total_signals: string;
@@ -298,20 +361,46 @@ export function createApi(deps: ApiDeps) {
           )::text AS net_flow_24h
         FROM signals
       `;
-      set.headers["cache-control"] = "public, max-age=60, stale-while-revalidate=300";
-      return {
+      const result = {
         totalSignals: Number(row?.total_signals ?? 0),
         totalVolumeUsd: Number(row?.total_volume ?? 0),
         netFlow24hUsd: Number(row?.net_flow_24h ?? 0),
         whalesWatched: deps.whaleCount(),
         generatedAt: new Date().toISOString(),
       };
+      landingStatsCache.set("landing", result, 60_000);
+      set.headers["x-cache"] = "miss";
+      set.headers["cache-control"] = "public, max-age=60, stale-while-revalidate=300";
+      return result;
     })
     .get(
       "/api/heatmap",
-      async ({ query }) => {
+      async ({ query, set }) => {
         const mode = query.mode ?? "live";
         const metric = query.metric ?? "signals";
+
+        // Cache lookup BEFORE any DB work. Key = pure query-param tuple
+        // (no `now`, no per-request randomness), so identical params from
+        // different users hit the same entry.
+        const cacheKey = [
+          "heatmap",
+          mode,
+          query.range ?? "",
+          query.kind ?? "",
+          query.lookbackDays ?? "",
+          query.category ?? "",
+          query.subcategory ?? "",
+          metric,
+        ].join("|");
+        const ttlMs = heatmapTtlMs(mode, query.range);
+        const ccHeader = cacheControlHeader(ttlMs);
+        const cached = heatmapCache.get(cacheKey);
+        if (cached !== undefined) {
+          set.headers["x-cache"] = "hit";
+          set.headers["cache-control"] = ccHeader;
+          return cached;
+        }
+
         const now = new Date();
         const dataSpan = await fetchDataSpan(deps.sql);
         const trackedWhales = deps.whaleCount();
@@ -346,7 +435,7 @@ export function createApi(deps: ApiDeps) {
           const patternSubcategoryLabels = isDrill
             ? Object.fromEntries(drillRules.map((r) => [r.slug, SUBCATEGORY_LABELS[r.slug] ?? r.slug]))
             : null;
-          return {
+          const patternResponse = {
             mode: "pattern" as const,
             patternKind: kind,
             lookbackDays,
@@ -370,6 +459,10 @@ export function createApi(deps: ApiDeps) {
             metric,
             dataSpan,
           };
+          heatmapCache.set(cacheKey, patternResponse, ttlMs);
+          set.headers["x-cache"] = "miss";
+          set.headers["cache-control"] = ccHeader;
+          return patternResponse;
         }
 
         // live (default)
@@ -528,7 +621,7 @@ export function createApi(deps: ApiDeps) {
         const drillSubcategoryLabel = drillSubcategory
           ? SUBCATEGORY_LABELS[drillSubcategory] ?? drillSubcategory
           : null;
-        return {
+        const liveResponse = {
           ...grid,
           mode: "live" as const,
           trackedWhales,
@@ -556,6 +649,10 @@ export function createApi(deps: ApiDeps) {
           metric,
           dataSpan,
         };
+        heatmapCache.set(cacheKey, liveResponse, ttlMs);
+        set.headers["x-cache"] = "miss";
+        set.headers["cache-control"] = ccHeader;
+        return liveResponse;
       },
       {
         query: t.Object({
@@ -764,7 +861,7 @@ export function createApi(deps: ApiDeps) {
     )
     .get(
       "/api/highlights",
-      async ({ query }) => {
+      async ({ query, set }) => {
         // Standout events for the open cell drawer's row, scoped to the
         // header range (whole window, not the cell's bucket). Unit + sort
         // depend on the active heatmap metric:
@@ -788,6 +885,31 @@ export function createApi(deps: ApiDeps) {
         const fromTs = query.fromTs ?? null;
         const toTs = query.toTs ?? new Date().toISOString();
         const metric = query.metric as "pnl" | "volume" | "signals" | "whales";
+
+        // Cache key: query-param tuple. Round timestamps to the nearest
+        // 15s so consecutive tab switches (which carry timestamps a few
+        // hundred ms apart) hit the same entry instead of all missing.
+        const round15s = (iso: string | null): string =>
+          iso ? new Date(Math.round(new Date(iso).getTime() / 15_000) * 15_000).toISOString() : "";
+        const cacheKey = [
+          "highlights",
+          metric,
+          cat,
+          sub ?? "",
+          cid ?? "",
+          round15s(fromTs),
+          round15s(toTs),
+          limit,
+          threshold,
+        ].join("|");
+        const ttlMs = highlightsTtlMs(fromTs, toTs);
+        const ccHeader = cacheControlHeader(ttlMs);
+        const cachedHi = highlightsCache.get(cacheKey);
+        if (cachedHi !== undefined) {
+          set.headers["x-cache"] = "hit";
+          set.headers["cache-control"] = ccHeader;
+          return cachedHi;
+        }
 
         const scopeFilter = cid
           ? deps.sql`condition_id = ${cid}`
@@ -837,7 +959,7 @@ export function createApi(deps: ApiDeps) {
             ORDER BY ABS(realized_pnl) DESC
             LIMIT ${limit}
           `;
-          return {
+          const pnlResponse = {
             metric,
             unit: "trade" as const,
             baseline,
@@ -862,6 +984,10 @@ export function createApi(deps: ApiDeps) {
               multiplier: baseline > 0 ? Math.abs(Number(r.realized_pnl)) / baseline : 0,
             })),
           };
+          highlightsCache.set(cacheKey, pnlResponse, ttlMs);
+          set.headers["x-cache"] = "miss";
+          set.headers["cache-control"] = ccHeader;
+          return pnlResponse;
         }
 
         // metric ∈ {volume, signals, whales} — aggregate per condition_id.
@@ -910,7 +1036,7 @@ export function createApi(deps: ApiDeps) {
           .filter((c): c is string => c !== null);
         const meta =
           cidsForIcons.length > 0 ? await fetchMarketMeta(deps.sql, cidsForIcons) : {};
-        return {
+        const marketResponse = {
           metric,
           unit: "market" as const,
           baseline,
@@ -926,6 +1052,10 @@ export function createApi(deps: ApiDeps) {
             };
           }),
         };
+        highlightsCache.set(cacheKey, marketResponse, ttlMs);
+        set.headers["x-cache"] = "miss";
+        set.headers["cache-control"] = ccHeader;
+        return marketResponse;
       },
       {
         query: t.Object({

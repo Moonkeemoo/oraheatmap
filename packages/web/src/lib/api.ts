@@ -45,7 +45,11 @@ export async function fetchHeatmap(args: {
     params.set("subcategory", args.drillSubcategory);
   }
   const res = await fetch(`${apiBase()}/api/heatmap?${params.toString()}`, {
-    cache: "no-store",
+    // Lean on the browser HTTP cache — server returns short-lived
+    // Cache-Control headers tuned per range (5s on 1h, 180s on 12w).
+    // Tab switches that re-request the same params skip the network
+    // entirely; SSE keeps the visible grid current via optimistic
+    // updates in heatmap-apply.
     credentials: "include",
   });
   if (!res.ok) {

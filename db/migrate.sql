@@ -51,6 +51,13 @@ CREATE INDEX IF NOT EXISTS idx_signals_cat_ts
 CREATE INDEX IF NOT EXISTS idx_signals_whale_ts
   ON signals (whale_addr, ts DESC);
 
+-- Powers /api/highlights GROUP BY condition_id within a category window.
+-- Without it, 12d/12w highlight queries scan every chunk + GROUP from raw
+-- rows; with it, the planner uses an index-only scan over the small
+-- (category, condition_id) prefix and aggregates a few pages per chunk.
+CREATE INDEX IF NOT EXISTS idx_signals_cat_cond_ts
+  ON signals (category, condition_id, ts DESC) WHERE condition_id IS NOT NULL;
+
 -- ══════════════════════════════════════════
 -- Continuous aggregate: 5-minute buckets (for 1h heatmap view)
 -- ══════════════════════════════════════════

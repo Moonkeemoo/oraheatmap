@@ -75,7 +75,6 @@ export function useRowHighlights({
     if (scope.subcategory) params.set("subcategory", scope.subcategory);
     if (scope.conditionId) params.set("conditionId", scope.conditionId);
     fetch(`${apiBase()}/api/highlights?${params.toString()}`, {
-      cache: "no-store",
       credentials: "include",
     })
       .then(async (r) => {
