@@ -487,6 +487,22 @@ export const authConfig: NextAuthConfig = {
           )
           ON CONFLICT (provider, provider_account_id) DO NOTHING
         `;
+        // Backfill empty user fields from the OAuth/Email profile. COALESCE
+        // never overwrites a non-NULL — so the user can keep an existing
+        // display name picked from an earlier provider (e.g. Discord) and
+        // a follow-up Email link only sets the previously-empty email.
+        const userEmail = (user as { email?: string | null }).email ?? null;
+        const userName = (user as { name?: string | null }).name ?? null;
+        const userImage = (user as { image?: string | null }).image ?? null;
+        if (userEmail || userName || userImage) {
+          await sql`
+            UPDATE auth_users SET
+              email = COALESCE(email, ${userEmail}),
+              name  = COALESCE(name,  ${userName}),
+              image = COALESCE(image, ${userImage})
+            WHERE id = ${currentUserId}
+          `;
+        }
       } catch (err) {
         console.warn("[auth/signIn link] failed:", (err as Error).message);
         return `/account?linkError=db_write_failed&provider=${encodeURIComponent(account.provider)}`;

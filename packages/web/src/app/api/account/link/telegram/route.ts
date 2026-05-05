@@ -63,5 +63,17 @@ export async function POST(req: Request) {
     VALUES (${userId}, 'credentials', 'telegram', ${tgId})
   `;
 
+  // Same backfill pattern as the auth.ts signIn callback — fill empty
+  // name/image fields from the Telegram payload, never overwrite.
+  const tgName = verify.username ?? verify.firstName ?? null;
+  if (tgName || verify.photoUrl) {
+    await sql`
+      UPDATE auth_users SET
+        name  = COALESCE(name,  ${tgName}),
+        image = COALESCE(image, ${verify.photoUrl})
+      WHERE id = ${userId}
+    `;
+  }
+
   return NextResponse.json({ ok: true, telegramId: tgId });
 }

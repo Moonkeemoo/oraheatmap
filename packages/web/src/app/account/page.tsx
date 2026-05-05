@@ -38,9 +38,19 @@ export default async function AccountPage() {
   // SIWE + Telegram are Credentials providers (JWT-only) — they won't have
   // rows here, so we synthesise a "primary" entry from session.provider.
   const { sql } = getDb();
-  const accountRows = await sql<
-    { provider: string; provider_account_id: string; type: string }[]
-  >`SELECT provider, provider_account_id, type FROM auth_accounts WHERE user_id = ${userId}`;
+  const [accountRows, userRows] = await Promise.all([
+    sql<{ provider: string; provider_account_id: string; type: string }[]>`
+      SELECT provider, provider_account_id, type FROM auth_accounts WHERE user_id = ${userId}
+    `,
+    // Read identity from auth_users — the JWT carries whatever was set at
+    // sign-in time (e.g. "Moonkee" from the Telegram username) and goes
+    // stale once a user links OAuth providers that backfill richer data.
+    // DB is the source of truth for /account display.
+    sql<{ name: string | null; email: string | null; image: string | null }[]>`
+      SELECT name, email, image FROM auth_users WHERE id = ${userId} LIMIT 1
+    `,
+  ]);
+  const userRow = userRows[0] ?? null;
 
   // `linked` rows have an auth_accounts entry → can be disconnected via
   // /api/account/unlink. The synthetic primary (Credentials provider, JWT-
@@ -76,8 +86,12 @@ export default async function AccountPage() {
     });
   }
 
-  const userName = (session.user.name as string | undefined | null) ?? null;
-  const userEmail = (session.user.email as string | undefined | null) ?? null;
+  // Prefer DB row over JWT (JWT is set at sign-in and lags behind link
+  // backfills). Fall back to session for fresh Credentials sign-ins where
+  // no auth_users row exists yet.
+  const userName = userRow?.name ?? (session.user.name as string | undefined | null) ?? null;
+  const userEmail = userRow?.email ?? (session.user.email as string | undefined | null) ?? null;
+  const userImage = userRow?.image ?? (session.user.image as string | undefined | null) ?? null;
 
   return (
     <main
@@ -143,6 +157,26 @@ export default async function AccountPage() {
 
         {/* Identity */}
         <Section title="Identity">
+          {userImage && (
+            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: `1px solid ${TOKENS.border}` }}>
+              <div style={{ color: TOKENS.textMuted, fontSize: 12, width: 160 }}>Avatar</div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={userImage}
+                alt=""
+                width={56}
+                height={56}
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 56,
+                  objectFit: "cover",
+                  background: TOKENS.panel2,
+                  border: `1px solid ${TOKENS.border}`,
+                }}
+              />
+            </div>
+          )}
           <Row label="Display name" value={userName ?? <Muted>—</Muted>} />
           <Row
             label="Email"
