@@ -66,6 +66,14 @@ export const metadata: Metadata = {
   authors: [{ name: SITE_NAME, url: SITE_URL }],
   creator: SITE_NAME,
   publisher: SITE_NAME,
+  // Search-engine site-ownership tokens. Each key writes a single
+  // <meta> in the document head; the engines read it once on
+  // verification and never look at it again.
+  verification: {
+    other: {
+      "msvalidate.01": "A893533E8252BFC576390F470266C4F3",
+    },
+  },
 };
 
 export const viewport: Viewport = {
