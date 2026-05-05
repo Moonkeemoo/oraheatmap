@@ -135,23 +135,12 @@ export function Cell({
 
   // Heat → flash-ring amplitude. The discrete flash on each signal
   // (driven by flashSeq retrigger) is the visible event; heat just
-  // modulates how big and how bright that flash is, so a burst of
-  // signals piles up as progressively heavier rings while a single
-  // quiet signal is a soft tap. No always-on outline — the cell stays
-  // clean between events.
+  // modulates how big and how bright that flash is. Colour stays
+  // neutral white — the cell's own background already encodes the
+  // PnL direction, so re-tinting the flash on top of that read as
+  // visual noise. Saturation + spread + speed do all the work.
   const heatNorm = Math.min(heat, 6);
-  // Tone the ring by current PnL direction — busy losses flash red,
-  // busy wins flash green. Empty / neutral cells fall back to accent.
-  const heatColor = !isEmpty
-    ? cell.pnl > 0
-      ? TOKENS.pos
-      : cell.pnl < 0
-        ? TOKENS.neg
-        : TOKENS.accent
-    : TOKENS.accent;
-  // 6px → 14px ring spread; 0.55 → 0.95 ring alpha. Halved from the
-  // first cut — 6+ bursts are the norm, so the previous 28px peak ate
-  // up most of the cell's neighbour and read as overkill.
+  // 6px → 14px ring spread; 0.55 → 0.95 ring alpha.
   const ringSpread = 6 + heatNorm * 1.35;
   const ringAlpha = Math.min(0.95, 0.55 + heatNorm * 0.07);
   // Slightly faster flash duration on hotter cells so consecutive
@@ -202,11 +191,11 @@ export function Cell({
             borderRadius: 7,
             pointerEvents: "none",
             animation: `flashRing ${ringDuration}s ease-out forwards`,
-            // Per-flash colour + spread — keyframe in globals.css
-            // reads these custom properties, so a hot cell expands a
-            // bigger PnL-tinted ring per event while a quiet cell just
-            // pings white.
-            ["--ring-color" as string]: `${heatColor}${alphaHex(ringAlpha)}`,
+            // Per-flash spread + alpha — keyframe in globals.css reads
+            // these custom properties so a hot cell expands a bigger,
+            // brighter ring per event while a quiet cell just pings
+            // softly. Colour stays white across all heat levels.
+            ["--ring-color" as string]: `rgba(255,255,255,${ringAlpha.toFixed(2)})`,
             ["--ring-spread" as string]: `${ringSpread}px`,
           }}
         />
@@ -242,8 +231,3 @@ export function Cell({
   );
 }
 
-/** 0..1 → 2-char lowercase hex alpha suffix for `#rrggbb${aa}` strings. */
-function alphaHex(a: number): string {
-  const v = Math.max(0, Math.min(255, Math.round(a * 255)));
-  return v.toString(16).padStart(2, "0");
-}
