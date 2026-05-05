@@ -437,32 +437,6 @@ export function Tooltip({
         />
       </div>
 
-      {/* Top highlights — drawer-only, range-scoped (not cell-bucket).
-          Sits right under the 4-stat grid because it's the headline insight
-          for the open row over the chosen window. */}
-      {isDrawer && highlights && !isPattern && (
-        <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
-          <div
-            style={{
-              fontSize: 9,
-              letterSpacing: 0.5,
-              color: TOKENS.textMuted,
-              textTransform: "uppercase",
-              marginBottom: 6,
-              fontWeight: 600,
-              display: "flex",
-              justifyContent: "space-between",
-            }}
-          >
-            <span>Top highlights</span>
-            <span style={{ color: TOKENS.textSec }}>
-              {highlights.range} · by {highlightsLabel(metric)}
-            </span>
-          </div>
-          <RowHighlights data={highlights.data} loading={highlights.loading} />
-        </div>
-      )}
-
       {isL3 && locked && (
         <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
           <div
@@ -514,6 +488,32 @@ export function Tooltip({
             <span style={{ color: TOKENS.textSec }}>{metric === "signals" ? "trades" : metric}</span>
           </div>
           <RowSparkline rowCells={rowCells} metric={metric} activeSlot={activeSlot} />
+        </div>
+      )}
+
+      {/* Top highlights — drawer-only, range-scoped (not cell-bucket).
+          Sits below the row sparkline so the user reads the trend shape
+          first, then the standout events that drove it. */}
+      {isDrawer && highlights && !isPattern && (
+        <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
+          <div
+            style={{
+              fontSize: 9,
+              letterSpacing: 0.5,
+              color: TOKENS.textMuted,
+              textTransform: "uppercase",
+              marginBottom: 6,
+              fontWeight: 600,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <span>Top highlights</span>
+            <span style={{ color: TOKENS.textSec }}>
+              {highlights.range} · by {highlightsLabel(metric)}
+            </span>
+          </div>
+          <RowHighlights data={highlights.data} loading={highlights.loading} />
         </div>
       )}
 
