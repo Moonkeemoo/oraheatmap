@@ -4,44 +4,78 @@ import { useEffect, useReducer, useRef, useState } from "react";
 import { TOKENS } from "@/lib/tokens";
 
 /**
- * Animated heatmap mock for the hero. Tells the actual product narrative
- * (not just "alive cells"):
+ * Animated heatmap mock for the hero. Designed to read as a real
+ * screenshot of the product, not a generic "alive cells" loop:
  *
- *   1. A trade dot flies in from the left, lands on a target cell, the cell
- *      flashes brighter for ~1.5s, and a "+$X · Whale · BUY" callout pops
- *      pinned to that cell.
- *   2. Every ~12s a "convergence event" — 4 dots fly into the SAME cell in
- *      quick succession, then a "🐋×4 in 8s" badge lights up.
- *   3. A live counter top-right ticks up every time a trade lands —
- *      "Signals streamed since you opened: 14".
- *
- * Pure visual. Zero connection to real SSE; all events are scripted with
- * deterministic-ish randomness so the story plays out predictably while
- * still feeling alive. No external deps.
+ *   - Header chrome mirrors the actual app — mode tab (LIVE | PATTERN),
+ *     range chips (1h | 24h | 12d | 12w), metric chips (PNL | VOLUME |
+ *     SIGNALS | WHALES), live status pill on the right.
+ *   - Category labels carry their real palette colour from
+ *     lib/categories.ts so a viewer instantly recognises the shape.
+ *   - Cells are seeded with cluster patterns (a "hot streak" in Crypto
+ *     col 11-14, a sustained dip in Finance, an evening spike in
+ *     Sports), not a single sine wave — looks like real PnL data.
+ *   - Trades fly in from the left, land on a cell that flashes, and
+ *     pop a richer mini-tooltip styled like the real cell drawer
+ *     header (4-stat row + whale + market label).
+ *   - Convergence: 4 trades hit the same cell in succession → "🐋×N
+ *     converging" badge lights up.
+ *   - Bottom time strip with hourly-ish ticks and a NOW marker on the
+ *     right edge so the sliding-window narrative reads at a glance.
  */
 
-const ROWS: ReadonlyArray<{ label: string; tilt: number }> = [
-  { label: "POLITICS", tilt:  0.55 },
-  { label: "SPORTS",   tilt: -0.35 },
-  { label: "CRYPTO",   tilt:  0.20 },
-  { label: "FINANCE",  tilt: -0.50 },
-  { label: "TECH",     tilt:  0.15 },
-  { label: "WORLD",    tilt:  0.40 },
-  { label: "CULTURE",  tilt: -0.20 },
-  { label: "CLIMATE",  tilt:  0.05 },
+type RowDef = { label: string; color: string; tilt: number };
+
+// Mirrors the categoryMeta palette in lib/categories.ts so the badge
+// strip on the left reads as the real product, not a generic mock.
+const ROWS: ReadonlyArray<RowDef> = [
+  { label: "POLITICS", color: "#1f6feb", tilt:  0.55 },
+  { label: "SPORTS",   color: "#f85149", tilt: -0.35 },
+  { label: "CRYPTO",   color: "#f0b429", tilt:  0.25 },
+  { label: "FINANCE",  color: "#39d2c0", tilt: -0.50 },
+  { label: "TECH",     color: "#3fb950", tilt:  0.15 },
+  { label: "WORLD",    color: "#58a6ff", tilt:  0.40 },
+  { label: "CULTURE",  color: "#a371f7", tilt: -0.20 },
+  { label: "CLIMATE",  color: "#768390", tilt:  0.05 },
 ];
-const COLS = 16;
+const COLS = 18;
+
+// Hot/cold cluster definitions per row. Each entry boosts a specific
+// span of columns by a signed amount — gives the heatmap a "real data"
+// shape (Politics rallying late, Sports dropping mid-window, Crypto
+// recent rip, Finance bleeding throughout).
+type Cluster = { from: number; to: number; boost: number };
+const ROW_CLUSTERS: ReadonlyArray<ReadonlyArray<Cluster>> = [
+  /* POLITICS */ [{ from: 8,  to: 17, boost:  0.55 }, { from: 14, to: 17, boost:  0.30 }],
+  /* SPORTS   */ [{ from: 2,  to:  9, boost: -0.50 }, { from: 12, to: 17, boost: -0.35 }],
+  /* CRYPTO   */ [{ from: 10, to: 15, boost:  0.50 }, { from: 16, to: 17, boost:  0.65 }],
+  /* FINANCE  */ [{ from: 0,  to: 17, boost: -0.40 }, { from: 5,  to:  9, boost: -0.30 }],
+  /* TECH     */ [{ from: 4,  to:  9, boost:  0.30 }, { from: 14, to: 17, boost: -0.40 }],
+  /* WORLD    */ [{ from: 0,  to:  6, boost:  0.40 }, { from: 11, to: 15, boost:  0.35 }],
+  /* CULTURE  */ [{ from: 6,  to: 13, boost: -0.45 }],
+  /* CLIMATE  */ [{ from: 2,  to:  5, boost: -0.30 }, { from: 9,  to: 12, boost:  0.40 }],
+];
 
 function seedSigned(row: number, col: number): number {
   const tilt = ROWS[row]!.tilt;
-  const recency = (col + 1) / COLS;
-  const phase = Math.sin(row * 1.7 + col * 0.6) * 0.4;
-  return Math.max(-1, Math.min(1, (tilt + phase) * (0.55 + recency * 0.45)));
+  // Soft phase noise — keeps neighbouring cells from being identical.
+  const phase = Math.sin(row * 1.7 + col * 0.6) * 0.18;
+  let signed = tilt * 0.5 + phase;
+  for (const cl of ROW_CLUSTERS[row] ?? []) {
+    if (col >= cl.from && col <= cl.to) {
+      // Smooth bell within the cluster span so the boost peaks in the middle.
+      const t = (col - cl.from) / Math.max(1, cl.to - cl.from);
+      const bell = 0.5 - 0.5 * Math.cos(t * Math.PI);
+      signed += cl.boost * (0.35 + 0.65 * bell);
+    }
+  }
+  return Math.max(-1, Math.min(1, signed));
 }
+
 function pnlColor(signed: number): { color: string; alpha: number } {
   const a = Math.abs(signed);
-  if (a < 0.06) return { color: "#30363d", alpha: 0.35 };
-  return { color: signed > 0 ? "#3fb950" : "#f85149", alpha: 0.22 + a * 0.7 };
+  if (a < 0.06) return { color: "#262d36", alpha: 0.55 };
+  return { color: signed > 0 ? "#3fb950" : "#f85149", alpha: 0.18 + a * 0.78 };
 }
 
 type Trade = {
@@ -56,21 +90,20 @@ type Trade = {
   landAt: number;
 };
 
-/** Whale presets paired with the category they typically trade in and a few
- *  representative markets — gives the hero callout enough variety that
- *  reading two in a row already tells the story (different whales, different
- *  sides, different markets). cat indexes ROWS above. */
+/** Whale presets paired with the category they typically trade in and a
+ *  few representative markets. Reading two callouts in a row tells the
+ *  story (different whale × side × market). cat indexes ROWS above. */
 const WHALE_POOL: ReadonlyArray<{ alias: string; cat: number; markets: ReadonlyArray<string> }> = [
-  { alias: "Theo4",         cat: 2, markets: ["BTC > $150k", "ETH < $2k", "SOL > $300"] },
-  { alias: "@PrincessOfCo", cat: 0, markets: ["Trump 2028", "GOP Senate", "VP pick"] },
+  { alias: "Theo4",         cat: 2, markets: ["BTC > $150k", "ETH ETF flows", "SOL > $300"] },
+  { alias: "@PrincessOfCo", cat: 0, markets: ["Trump 2028", "GOP Senate", "VP pick by July"] },
   { alias: "0xAce…f7",      cat: 1, markets: ["Lakers vs Celtics", "Bills vs Eagles", "Yankees ML"] },
-  { alias: "@BetMaker",     cat: 3, markets: ["Fed rate cut", "Oil > $90", "USDJPY > 155"] },
-  { alias: "GammaGod",      cat: 2, markets: ["BTC ATH by Q3", "ETH ETF flows", "XRP > $3"] },
-  { alias: "@EVMaxi",       cat: 4, markets: ["AI bill passes", "OpenAI valuation", "TSMC > $200"] },
-  { alias: "RoenickFan",    cat: 1, markets: ["Chelsea wins EPL", "Real Madrid UCL", "Lakers conf finals"] },
-  { alias: "0xWhale99",     cat: 0, markets: ["Powell stays", "Election turnout", "SCOTUS ruling"] },
+  { alias: "@BetMaker",     cat: 3, markets: ["Fed rate cut Sep", "Oil > $90", "USDJPY > 155"] },
+  { alias: "GammaGod",      cat: 2, markets: ["BTC ATH by Q3", "ETH/BTC > 0.06", "XRP > $3"] },
+  { alias: "@EVMaxi",       cat: 4, markets: ["AI Bill passes", "OpenAI valuation", "TSMC > $200"] },
+  { alias: "RoenickFan",    cat: 1, markets: ["Chelsea wins EPL", "Real Madrid UCL", "Lakers conf"] },
+  { alias: "0xWhale99",     cat: 0, markets: ["Powell stays", "Election turnout > 70%", "SCOTUS ruling"] },
   { alias: "@SolEdge",      cat: 2, markets: ["SOL flips ETH?", "Memecoin season", "DEX volume Q2"] },
-  { alias: "@DegenJury",    cat: 6, markets: ["Oscar Best Picture", "Grammy Album", "Eurovision winner"] },
+  { alias: "@DegenJury",    cat: 6, markets: ["Oscar Best Picture", "Grammy Album", "Eurovision"] },
   { alias: "ClimateBro",    cat: 7, markets: ["NYC > 25°C Fri", "Hurricane landfall", "Arctic ice min"] },
   { alias: "GeoWhale",      cat: 5, markets: ["UK election", "Brazil presidency", "EU summit deal"] },
 ];
@@ -207,8 +240,7 @@ export function HeroVisual() {
       const col = COLS - 1 - Math.floor(Math.random() * 3);
       dispatch({ type: "convergeStart", row, col, now: Date.now() });
       // Pick a single market the convergence forms around — bumps the
-      // "they're piling into THIS" reading. Use a whale that matches the
-      // chosen row category for the seed market label.
+      // "they're piling into THIS" reading.
       const seedWhale = WHALE_POOL.find((w) => w.cat === row) ?? WHALE_POOL[0]!;
       const market = seedWhale.markets[Math.floor(Math.random() * seedWhale.markets.length)]!;
       const aliases: ReadonlyArray<string> = ["Theo4", "@PrincessOfCo", "GammaGod", "0xWhale99"];
@@ -255,71 +287,32 @@ export function HeroVisual() {
       aria-hidden="true"
       style={{
         position: "relative",
-        background: TOKENS.panel,
+        background: "linear-gradient(180deg, #14181d 0%, #0d1117 100%)",
         border: `1px solid ${TOKENS.borderHi}`,
-        borderRadius: 16,
-        padding: 16,
-        boxShadow: "0 30px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(240, 180, 41, 0.06)",
+        borderRadius: 14,
+        padding: "12px 14px 16px",
+        boxShadow:
+          "0 30px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(240, 180, 41, 0.06), inset 0 1px 0 rgba(255,255,255,0.02)",
         overflow: "hidden",
       }}
     >
-      {/* fake header bar — mimics the app's chrome */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 12,
-          paddingBottom: 10,
-          borderBottom: `1px solid ${TOKENS.border}`,
-        }}
-      >
-        <div style={{ display: "flex", gap: 6 }}>
-          {[TOKENS.neg, TOKENS.accent, TOKENS.pos].map((c) => (
-            <span
-              key={c}
-              style={{ width: 10, height: 10, borderRadius: 10, background: c, opacity: 0.55 }}
-            />
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-          <span style={{ fontSize: 10, color: TOKENS.textMuted, fontFamily: TOKENS.mono, letterSpacing: 0.4, textTransform: "uppercase" }}>
-            signals streamed: <strong style={{ color: TOKENS.text, fontVariantNumeric: "tabular-nums" }}>{state.counter}</strong>
-          </span>
-          <span
-            style={{
-              fontSize: 10,
-              color: TOKENS.textMuted,
-              fontFamily: TOKENS.mono,
-              letterSpacing: 0.4,
-              textTransform: "uppercase",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            LIVE · 24h · PnL
-            <span
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: 6,
-                background: TOKENS.pos,
-                boxShadow: `0 0 10px ${TOKENS.pos}`,
-                animation: "heroPulse 1.6s ease-in-out infinite",
-              }}
-            />
-          </span>
-        </div>
-      </div>
+      {/* App-chrome header — traffic-light dots, mode tabs, status pill. */}
+      <AppChrome counter={state.counter} />
+
+      {/* Tab strip — looks like the real app's range/metric controls. */}
+      <TabStrip />
 
       {/* heatmap grid — wraps in a positioning container so dots / callouts can overlay */}
-      <div style={{ position: "relative" }} ref={null}>
+      <div style={{ position: "relative", marginTop: 10 }}>
         <Grid activeMap={activeMap} tick={tick} />
+        <NowLine />
         <Inflight trades={state.inflight} />
         <Callout callout={state.callout} />
         <Convergence convergence={state.convergence} />
       </div>
+
+      {/* Bottom time-strip — anchors the sliding-window narrative. */}
+      <TimeStrip />
 
       <style>{`
         @keyframes heroPulse {
@@ -327,8 +320,8 @@ export function HeroVisual() {
           50%      { opacity: 0.45; transform: scale(0.85); }
         }
         @keyframes cellFlash {
-          0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(63,185,80,0.5); }
-          40%  { transform: scale(1.18); box-shadow: 0 0 0 6px rgba(63,185,80,0.0); }
+          0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(63,185,80,0.55); }
+          40%  { transform: scale(1.16); box-shadow: 0 0 0 6px rgba(63,185,80,0.0); }
           100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(63,185,80,0); }
         }
         @keyframes tipIn {
@@ -345,12 +338,166 @@ export function HeroVisual() {
           0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(240,180,41,0.45); }
           50%      { transform: scale(1.04); box-shadow: 0 0 0 8px rgba(240,180,41,0); }
         }
+        @keyframes nowLinePulse {
+          0%, 100% { opacity: 0.65; }
+          50%      { opacity: 0.95; }
+        }
       `}</style>
     </div>
   );
 }
 
-// ─── Subcomponents ───────────────────────────────────────────────────────
+// ─── Sub-components ──────────────────────────────────────────────────────
+
+function AppChrome({ counter }: { counter: number }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: 10,
+        paddingBottom: 10,
+        borderBottom: `1px solid ${TOKENS.border}`,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          {[TOKENS.neg, TOKENS.accent, TOKENS.pos].map((c) => (
+            <span
+              key={c}
+              style={{ width: 9, height: 9, borderRadius: 9, background: c, opacity: 0.55 }}
+            />
+          ))}
+        </div>
+        {/* "App-style" mode toggle — LIVE active. */}
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 6 }}>
+          <span
+            style={{
+              fontSize: 9,
+              padding: "3px 8px",
+              borderRadius: 4,
+              background: TOKENS.panel2,
+              border: `1px solid ${TOKENS.borderHi}`,
+              color: TOKENS.text,
+              fontFamily: TOKENS.mono,
+              fontWeight: 700,
+              letterSpacing: 0.5,
+              textTransform: "uppercase",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: 6,
+                background: TOKENS.pos,
+                boxShadow: `0 0 6px ${TOKENS.pos}`,
+              }}
+            />
+            LIVE
+          </span>
+          <span
+            style={{
+              fontSize: 9,
+              padding: "3px 8px",
+              borderRadius: 4,
+              background: "transparent",
+              color: TOKENS.textMuted,
+              fontFamily: TOKENS.mono,
+              fontWeight: 700,
+              letterSpacing: 0.5,
+              textTransform: "uppercase",
+            }}
+          >
+            PATTERN
+          </span>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+        <span
+          style={{
+            fontSize: 9,
+            color: TOKENS.textMuted,
+            fontFamily: TOKENS.mono,
+            letterSpacing: 0.5,
+            textTransform: "uppercase",
+          }}
+        >
+          signals streamed{" "}
+          <strong
+            style={{
+              color: TOKENS.text,
+              fontVariantNumeric: "tabular-nums",
+              marginLeft: 4,
+              fontSize: 11,
+            }}
+          >
+            {counter}
+          </strong>
+        </span>
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 8,
+            background: TOKENS.pos,
+            boxShadow: `0 0 12px ${TOKENS.pos}`,
+            animation: "heroPulse 1.6s ease-in-out infinite",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function TabStrip() {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        fontSize: 9,
+        fontFamily: TOKENS.mono,
+        letterSpacing: 0.5,
+        textTransform: "uppercase",
+        fontWeight: 700,
+      }}
+    >
+      <ChipGroup items={["1H", "24H", "12D", "12W"]} active="24H" />
+      <span style={{ width: 1, height: 14, background: TOKENS.border }} />
+      <ChipGroup items={["PNL", "VOLUME", "SIGNALS", "WHALES"]} active="PNL" />
+    </div>
+  );
+}
+
+function ChipGroup({ items, active }: { items: ReadonlyArray<string>; active: string }) {
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+      {items.map((label) => {
+        const isActive = label === active;
+        return (
+          <span
+            key={label}
+            style={{
+              padding: "3px 7px",
+              borderRadius: 4,
+              background: isActive ? TOKENS.panel2 : "transparent",
+              color: isActive ? TOKENS.text : TOKENS.textMuted,
+              border: isActive ? `1px solid ${TOKENS.border}` : "1px solid transparent",
+            }}
+          >
+            {label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 
 function Grid({
   activeMap,
@@ -360,7 +507,7 @@ function Grid({
   tick: number;
 }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: `74px repeat(${COLS}, 1fr)`, gap: 3 }}>
+    <div style={{ display: "grid", gridTemplateColumns: `78px repeat(${COLS}, 1fr)`, gap: 3 }}>
       {ROWS.map((row, r) => (
         <Row key={row.label} row={r} tick={tick} activeMap={activeMap} />
       ))}
@@ -380,9 +527,11 @@ function Row({
   const r = ROWS[row]!;
   return (
     <>
+      {/* Category badge — coloured square + label. Mirrors the real app. */}
       <div
         style={{
           background: TOKENS.panel2,
+          border: `1px solid ${TOKENS.border}`,
           color: TOKENS.textSec,
           fontSize: 9,
           fontWeight: 700,
@@ -391,25 +540,36 @@ function Row({
           borderRadius: 4,
           display: "flex",
           alignItems: "center",
-          height: 28,
-          border: `1px solid ${TOKENS.border}`,
+          gap: 7,
+          height: 26,
+          fontFamily: TOKENS.font,
         }}
       >
-        {r.label}
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: 2,
+            background: r.color,
+            boxShadow: `0 0 5px ${r.color}66`,
+            flexShrink: 0,
+          }}
+        />
+        <span style={{ color: TOKENS.text }}>{r.label}</span>
       </div>
       {Array.from({ length: COLS }).map((_, c) => {
         const signed = seedSigned(row, c);
         const mag = Math.abs(signed);
         const pulse = (Math.sin((tick + row * 3 + c * 5) * 0.7) + 1) / 2;
         const { color, alpha } = pnlColor(signed);
-        const adjusted = Math.min(1, alpha + pulse * mag * 0.12);
+        const adjusted = Math.min(1, alpha + pulse * mag * 0.1);
         const isActive = activeMap.has(`${row}:${c}`);
         return (
           <div
             key={c}
             data-cell={`${row}:${c}`}
             style={{
-              height: 28,
+              height: 26,
               borderRadius: 3,
               background: color,
               opacity: isActive ? Math.min(1, alpha + 0.4) : adjusted,
@@ -427,16 +587,84 @@ function Row({
   );
 }
 
+function NowLine() {
+  // Vertical accent line on the rightmost column edge — communicates
+  // "this is the NOW boundary, the grid scrolls left as time advances".
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        position: "absolute",
+        top: -2,
+        bottom: -2,
+        right: `calc((100% - 78px - 3px) / ${COLS} / 2)`,
+        transform: "translateX(50%)",
+        width: 1.5,
+        background: `linear-gradient(180deg, transparent 0%, ${TOKENS.accent} 25%, ${TOKENS.accent} 75%, transparent 100%)`,
+        opacity: 0.65,
+        pointerEvents: "none",
+        animation: "nowLinePulse 2s ease-in-out infinite",
+        boxShadow: `0 0 6px ${TOKENS.accent}88`,
+      }}
+    />
+  );
+}
+
+function TimeStrip() {
+  // Time anchors along the bottom — sparser than the column grid so
+  // they don't crowd. "now" sits on the right edge, accent-coloured.
+  // Positions are computed off the same column geometry as the grid.
+  const ticks: ReadonlyArray<{ col: number; label: string }> = [
+    { col: 0,  label: "−21h" },
+    { col: 5,  label: "−16h" },
+    { col: 9,  label: "−10h" },
+    { col: 13, label: "−4h" },
+    { col: 17, label: "now" },
+  ];
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `78px repeat(${COLS}, 1fr)`,
+        gap: 3,
+        marginTop: 8,
+        fontSize: 8,
+        fontFamily: TOKENS.mono,
+        color: TOKENS.textMuted,
+        letterSpacing: 0.5,
+      }}
+    >
+      <span />
+      {Array.from({ length: COLS }).map((_, c) => {
+        const tick = ticks.find((t) => t.col === c);
+        if (!tick) return <span key={c} />;
+        return (
+          <span
+            key={c}
+            style={{
+              textAlign: "center",
+              color: tick.label === "now" ? TOKENS.accent : TOKENS.textMuted,
+              fontWeight: tick.label === "now" ? 700 : 500,
+            }}
+          >
+            {tick.label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 /** % position of a cell's CENTER within the inner content area (label col + data cells). */
 function cellLeftPct(col: number): number {
-  // 74px label col is small relative to total; approximate as 0.092 of width.
-  const labelFrac = 74 / (74 + COLS * 60); // rough
+  // 78px label col is small relative to total; approximate as 0.10 of width.
+  const labelFrac = 78 / (78 + COLS * 60); // rough
   const dataFrac = 1 - labelFrac;
   const colFrac = (col + 0.5) / COLS;
   return (labelFrac + dataFrac * colFrac) * 100;
 }
 function cellTopPct(row: number): number {
-  // Rows: 28px height + 3px gap; we have ROWS.length rows.
+  // Rows: 26px height + 3px gap; we have ROWS.length rows.
   const total = ROWS.length;
   return ((row + 0.5) / total) * 100;
 }
@@ -455,11 +683,11 @@ function Inflight({ trades }: { trades: ReadonlyArray<Trade> }) {
               position: "absolute",
               left: `${left}%`,
               top: `${top}%`,
-              width: 12,
-              height: 12,
-              borderRadius: 12,
+              width: 11,
+              height: 11,
+              borderRadius: 11,
               background: accent,
-              boxShadow: `0 0 12px ${accent}, 0 0 4px ${accent}`,
+              boxShadow: `0 0 14px ${accent}, 0 0 4px ${accent}`,
               transform: "translate(-50%, -50%)",
               animation: "flyIn 1.1s linear forwards",
               pointerEvents: "none",
@@ -480,7 +708,12 @@ function Callout({
   if (!callout) return null;
   const left = cellLeftPct(callout.col);
   const top = cellTopPct(callout.row);
-  const accent = callout.side === "BUY" ? TOKENS.pos : TOKENS.accent;
+  const accent = callout.side === "BUY" ? TOKENS.pos : TOKENS.neg;
+  const row = ROWS[callout.row]!;
+  // Synthetic stat values for the mini grid — not real, but consistent
+  // shape (4 cells: TRADES, PNL, VOLUME, WIN%) that mirrors the actual
+  // app's cell-tooltip header.
+  const fakeStats = synthCellStats(callout.row, callout.col, callout.side, callout.usd);
   return (
     <div
       style={{
@@ -490,25 +723,99 @@ function Callout({
         transform: "translate(-50%, calc(-100% - 4px))",
         background: TOKENS.panel,
         border: `1px solid ${accent}`,
-        borderRadius: 8,
-        padding: "6px 10px",
-        boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+        borderRadius: 10,
+        padding: "8px 12px 10px",
+        boxShadow: "0 18px 36px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,0,0,0.4)",
         whiteSpace: "nowrap",
         animation: "tipIn .25s ease-out forwards",
         pointerEvents: "none",
         zIndex: 4,
+        minWidth: 220,
       }}
       key={`${callout.row}-${callout.col}-${callout.alias}-${callout.until}`}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, fontFamily: TOKENS.mono, letterSpacing: 0.4, textTransform: "uppercase", fontWeight: 700, color: TOKENS.textMuted }}>
-        <span style={{ color: accent }}>{callout.side}</span>
-        <span>·</span>
-        <span style={{ color: TOKENS.text }}>{callout.usd}</span>
-        <span>·</span>
-        <span style={{ color: TOKENS.textSec }}>{ROWS[callout.row]?.label}</span>
+      {/* Header strip — category chip + side badge + USD + slot label. */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          paddingBottom: 6,
+          borderBottom: `1px solid ${TOKENS.border}`,
+          marginBottom: 6,
+        }}
+      >
+        <span
+          style={{
+            background: row.color,
+            color: "#fff",
+            fontSize: 8,
+            fontWeight: 700,
+            letterSpacing: 0.4,
+            padding: "2px 6px",
+            borderRadius: 3,
+            textTransform: "uppercase",
+            fontFamily: TOKENS.mono,
+          }}
+        >
+          {row.label}
+        </span>
+        <span
+          style={{
+            fontSize: 9,
+            color: accent,
+            fontWeight: 800,
+            letterSpacing: 0.5,
+            textTransform: "uppercase",
+            fontFamily: TOKENS.mono,
+          }}
+        >
+          {callout.side}
+        </span>
+        <span style={{ fontSize: 11, color: TOKENS.text, fontWeight: 700, fontFamily: TOKENS.mono }}>
+          {callout.usd}
+        </span>
+        <span style={{ flex: 1 }} />
+        <span style={{ fontSize: 9, color: TOKENS.textMuted, fontFamily: TOKENS.mono }}>now</span>
       </div>
-      <div style={{ fontSize: 12, color: TOKENS.text, fontWeight: 700, marginTop: 2 }}>{callout.alias}</div>
-      <div style={{ fontSize: 10, color: TOKENS.textMuted, fontFamily: TOKENS.mono, marginTop: 1, maxWidth: 220, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={callout.market}>
+      {/* 4-stat micro-grid — looks like the real cell-tooltip header. */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: 6,
+          marginBottom: 6,
+        }}
+      >
+        <MicroStat label="TRADES" value={fakeStats.trades} />
+        <MicroStat
+          label="PNL"
+          value={fakeStats.pnl}
+          color={fakeStats.pnlPositive ? TOKENS.pos : TOKENS.neg}
+        />
+        <MicroStat label="VOL" value={fakeStats.vol} />
+        <MicroStat
+          label="WIN"
+          value={fakeStats.win}
+          color={fakeStats.winRate >= 0.5 ? TOKENS.pos : TOKENS.neg}
+        />
+      </div>
+      {/* Whale line + market label. */}
+      <div style={{ fontSize: 11, color: TOKENS.text, fontWeight: 700, marginBottom: 1 }}>
+        {callout.alias}
+      </div>
+      <div
+        style={{
+          fontSize: 10,
+          color: TOKENS.textSec,
+          fontFamily: TOKENS.mono,
+          maxWidth: 240,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+        title={callout.market}
+      >
         {callout.market}
       </div>
       {/* tail */}
@@ -528,6 +835,79 @@ function Callout({
       />
     </div>
   );
+}
+
+function MicroStat({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: string;
+  color?: string;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+      <span
+        style={{
+          fontSize: 7.5,
+          fontFamily: TOKENS.mono,
+          color: TOKENS.textMuted,
+          letterSpacing: 0.5,
+          fontWeight: 700,
+        }}
+      >
+        {label}
+      </span>
+      <span
+        style={{
+          fontSize: 11,
+          fontFamily: TOKENS.mono,
+          color: color ?? TOKENS.text,
+          fontWeight: 700,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+/** Synthesised stat values for the callout's micro-grid. Deterministic
+ *  per (row, col, side, usd) so consecutive frames don't shimmer. Not
+ *  real data — purpose-built to look credible alongside the cell that
+ *  just flashed. */
+function synthCellStats(
+  row: number,
+  col: number,
+  side: "BUY" | "SELL",
+  usd: string,
+): {
+  trades: string;
+  pnl: string;
+  pnlPositive: boolean;
+  vol: string;
+  win: string;
+  winRate: number;
+} {
+  const seed = row * 17 + col * 31 + side.charCodeAt(0);
+  const tradeCount = 18 + (seed % 80);
+  // PnL leans positive on BUY-led cells, negative on SELL-led.
+  const pnlSigned = (side === "BUY" ? 1 : -1) * (12 + (seed % 70)) * 1000;
+  const pnlPositive = pnlSigned > 0;
+  const volume = 180 + (seed % 320);
+  const winCount = 8 + (seed % 12);
+  const lossCount = 3 + (seed % 7);
+  const winRate = winCount / (winCount + lossCount);
+  return {
+    trades: String(tradeCount),
+    pnl: `${pnlSigned >= 0 ? "+" : "−"}$${(Math.abs(pnlSigned) / 1000).toFixed(0)}k`,
+    pnlPositive,
+    vol: `$${volume}k`,
+    win: `${Math.round(winRate * 100)}%`,
+    winRate,
+  };
 }
 
 function Convergence({
