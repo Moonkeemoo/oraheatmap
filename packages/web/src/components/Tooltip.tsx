@@ -141,10 +141,10 @@ export function Tooltip({
    *  the body when this is provided. Heatmap owns the hook so a single
    *  useSse subscription can pipe signals into the active feed. */
   feed?: { entries: ReadonlyArray<import("@/hooks/useCellFeed").FeedEntry>; loading: boolean } | null;
-  /** HIGHLIGHTS mode payload — when set (highlights mode active), the
-   *  tooltip body swaps the aggregate "Top whales" + "Top markets" blocks
-   *  for a Receipts list. Heatmap owns the hook so the same scope+window
-   *  feeds both the float hover (top 5) and the click drawer (top 30). */
+  /** Top highlights payload — drawer-only. Renders a "biggest individual
+   *  trades" list (top N signals by the active metric) below the aggregate
+   *  Top whales / Top markets blocks and above the Live feed. Heatmap owns
+   *  the hook + scope window. NULL = section hidden. */
   receipts?: {
     signals: ReadonlyArray<import("@/lib/types").SignalEvent>;
     loading: boolean;
@@ -583,29 +583,7 @@ export function Tooltip({
         </div>
       )}
 
-      {/* HIGHLIGHTS mode — receipts list replaces aggregate Top sections. */}
-      {receipts && !isPattern && (
-        <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
-          <div
-            style={{
-              fontSize: 9,
-              letterSpacing: 0.5,
-              color: TOKENS.textMuted,
-              textTransform: "uppercase",
-              marginBottom: 6,
-              fontWeight: 600,
-              display: "flex",
-              justifyContent: "space-between",
-            }}
-          >
-            <span>Top receipts</span>
-            <span style={{ color: TOKENS.textSec }}>by {sortLabel(receipts.sort)}</span>
-          </div>
-          <Receipts signals={receipts.signals} loading={receipts.loading} sort={receipts.sort} />
-        </div>
-      )}
-
-      {!receipts && !isPattern && cellWhales.length > 0 && isAuthed && (
+      {!isPattern && cellWhales.length > 0 && isAuthed && (
         <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
           <div
             style={{
@@ -702,7 +680,7 @@ export function Tooltip({
         </div>
       )}
 
-      {!receipts && !isPattern && cellWhales.length > 0 && !isAuthed && (
+      {!isPattern && cellWhales.length > 0 && !isAuthed && (
         <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
           <div
             style={{
@@ -741,7 +719,7 @@ export function Tooltip({
         </div>
       )}
 
-      {!receipts && !isPattern && sortedMarkets.length > 0 && !isAuthed && (
+      {!isPattern && sortedMarkets.length > 0 && !isAuthed && (
         <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8 }}>
           <div
             style={{
@@ -787,7 +765,7 @@ export function Tooltip({
         </div>
       )}
 
-      {!receipts && !isPattern && sortedMarkets.length > 0 && isAuthed && (
+      {!isPattern && sortedMarkets.length > 0 && isAuthed && (
         <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8 }}>
           <div
             style={{
@@ -876,6 +854,31 @@ export function Tooltip({
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Top highlights — drawer-only. Renders top 10 individual signals for
+          this cell sorted by the active metric, above the recency feed. The
+          aggregate "Top whales" / "Top markets" blocks above stay; this is a
+          parallel "biggest individual trades" view. */}
+      {isDrawer && receipts && !isPattern && (
+        <div style={{ marginTop: 16, borderTop: `1px solid ${TOKENS.border}`, paddingTop: 12 }}>
+          <div
+            style={{
+              fontSize: 9,
+              letterSpacing: 0.5,
+              color: TOKENS.textMuted,
+              textTransform: "uppercase",
+              marginBottom: 6,
+              fontWeight: 600,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <span>Top highlights</span>
+            <span style={{ color: TOKENS.textSec }}>by {sortLabel(receipts.sort)}</span>
+          </div>
+          <Receipts signals={receipts.signals} loading={receipts.loading} sort={receipts.sort} />
         </div>
       )}
 
