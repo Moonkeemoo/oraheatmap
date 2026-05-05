@@ -9,6 +9,7 @@ import { getDb } from "@/db";
 import { TOKENS } from "@/lib/tokens";
 import { AccountActions } from "./AccountActions";
 import { ConnectProviders, DisconnectButton } from "./ConnectProviders";
+import { LinkBanner } from "./LinkBanner";
 
 export const metadata: Metadata = {
   title: "Account · oralab",
@@ -132,9 +133,11 @@ export default async function AccountPage() {
         >
           Account
         </h1>
-        <p style={{ color: TOKENS.textMuted, fontSize: 13, margin: "0 0 32px" }}>
+        <p style={{ color: TOKENS.textMuted, fontSize: 13, margin: "0 0 24px" }}>
           Your sign-in identity, connected providers, and data controls.
         </p>
+
+        <LinkBanner />
 
         {/* Identity */}
         <Section title="Identity">

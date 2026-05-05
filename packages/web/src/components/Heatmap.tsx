@@ -89,6 +89,22 @@ export function Heatmap() {
   const [loginOpen, setLoginOpen] = useState(false);
   const { status: authStatus } = useSession();
   const isAuthed = authStatus === "authenticated";
+
+  // Auto-open the LoginModal when navigated here with ?connect=...
+  // (used by /account ConnectProviders for the Email + Telegram flows
+  // that need their existing modal forms). Safe to run unconditionally
+  // — modal stays closed for any non-matching value, including absent.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("connect")) {
+      setLoginOpen(true);
+      // Strip the param so a refresh doesn't re-open the modal forever.
+      const url = new URL(window.location.href);
+      url.searchParams.delete("connect");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
   const [hover, setHover] = useState<HoverState | null>(null);
   const [locked, setLocked] = useState<HoverState | null>(null);
   const [lockedRect, setLockedRect] = useState<TooltipRect | null>(null);

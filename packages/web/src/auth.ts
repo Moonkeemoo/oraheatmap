@@ -2,6 +2,7 @@ import NextAuth, { type NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { SignJWT, jwtVerify } from "jose";
+import { cookies } from "next/headers";
 import { getDb } from "@/db";
 import { accounts, authenticators, sessions, users, verificationTokens } from "@/db/auth-schema";
 import { verifySiwe, verifyTelegram } from "@/lib/credentials";
@@ -97,6 +98,9 @@ if (process.env["RESEND_API_KEY"] && process.env["EMAIL_FROM"]) {
     Resend({
       apiKey: process.env["RESEND_API_KEY"],
       from: friendlyFrom,
+      // (No `allowDangerousEmailAccountLinking` here — the Resend provider
+      // type doesn't accept it. Cross-account same-email linking is
+      // handled instead by our custom signIn() callback below.)
       // Override the default sendVerificationRequest with a branded HTML
       // template (and matching plain-text fallback). Generic Auth.js template
       // looked spammy — our own copy + dark theme tracks the dashboard's
@@ -393,6 +397,105 @@ export const authConfig: NextAuthConfig = {
   // than the session, breaking Twitter's state-check on callback with
   // "InvalidCheck: state value could not be parsed".
   callbacks: {
+    /**
+     * Detect "OAuth / Email sign-in while a session is already active and
+     * adapter is about to fork a new user" — when that happens, manually
+     * write the auth_accounts row to the EXISTING user_id and short-
+     * circuit the adapter via a string-redirect return. Without this,
+     * Auth.js' built-in `allowDangerousEmailAccountLinking` only handles
+     * email-match cases — Credentials sessions (SIWE / Telegram) have no
+     * email so OAuth follow-ups always forked a separate account.
+     */
+    async signIn({ user, account }) {
+      if (!account || account.type === "credentials") return true;
+      // Get the active session JWT from the request cookies. v5 default
+      // name is `authjs.session-token`; behind HTTPS it gets `__Secure-`
+      // prefixed.
+      const cookieStore = await cookies();
+      let sessionToken: string | undefined;
+      for (const name of [
+        "authjs.session-token",
+        "__Secure-authjs.session-token",
+        "next-auth.session-token",
+        "__Secure-next-auth.session-token",
+      ]) {
+        const v = cookieStore.get(name)?.value;
+        if (v) {
+          sessionToken = v;
+          break;
+        }
+      }
+      if (!sessionToken) return true; // no active session → normal sign-in flow
+
+      let currentUserId: string | null = null;
+      try {
+        const { payload } = await jwtVerify(sessionToken, SECRET_KEY, { algorithms: ["HS256"] });
+        currentUserId = (payload.sub as string | undefined) ?? null;
+      } catch {
+        return true; // invalid/expired session — fall back to default flow
+      }
+      if (!currentUserId || currentUserId === user.id) {
+        // Either no active user, or the adapter already matched the OAuth
+        // profile to the same user (email-merge worked). Default flow.
+        return true;
+      }
+
+      if (!process.env["DATABASE_URL"]) return true;
+      const { sql } = getDb();
+      try {
+        // Refuse if the OAuth profile is already linked to a DIFFERENT user
+        // — that would be a silent account-merge attempt. Surface as a
+        // banner on /account.
+        const conflict = await sql<{ user_id: string }[]>`
+          SELECT user_id FROM auth_accounts
+          WHERE provider = ${account.provider} AND provider_account_id = ${account.providerAccountId}
+          LIMIT 1
+        `;
+        if (conflict[0] && conflict[0].user_id !== currentUserId) {
+          return `/account?linkError=already_on_another_account&provider=${encodeURIComponent(account.provider)}`;
+        }
+        // Stub the auth_users row if the active session came in via a
+        // Credentials provider (SIWE/Telegram) and never touched the DB.
+        const userRow = await sql<{ id: string }[]>`
+          SELECT id FROM auth_users WHERE id = ${currentUserId} LIMIT 1
+        `;
+        if (userRow.length === 0) {
+          await sql`
+            INSERT INTO auth_users (id, name, image)
+            VALUES (
+              ${currentUserId},
+              ${(user.name as string | null | undefined) ?? null},
+              ${(user.image as string | null | undefined) ?? null}
+            )
+            ON CONFLICT (id) DO NOTHING
+          `;
+        }
+        await sql`
+          INSERT INTO auth_accounts (
+            user_id, type, provider, provider_account_id,
+            access_token, refresh_token, expires_at, token_type, scope, id_token, session_state
+          )
+          VALUES (
+            ${currentUserId}, ${account.type}, ${account.provider}, ${account.providerAccountId},
+            ${(account.access_token as string | null | undefined) ?? null},
+            ${(account.refresh_token as string | null | undefined) ?? null},
+            ${(account.expires_at as number | null | undefined) ?? null},
+            ${(account.token_type as string | null | undefined) ?? null},
+            ${(account.scope as string | null | undefined) ?? null},
+            ${(account.id_token as string | null | undefined) ?? null},
+            ${(account.session_state as string | null | undefined) ?? null}
+          )
+          ON CONFLICT (provider, provider_account_id) DO NOTHING
+        `;
+      } catch (err) {
+        console.warn("[auth/signIn link] failed:", (err as Error).message);
+        return `/account?linkError=db_write_failed&provider=${encodeURIComponent(account.provider)}`;
+      }
+      // Returning a string redirects the OAuth callback there AND aborts
+      // the adapter's createUser/linkAccount/createSession steps, leaving
+      // the user on their existing session.
+      return `/account?linked=${encodeURIComponent(account.provider)}`;
+    },
     async jwt({ token, user, account }) {
       if (user) {
         token.sub = user.id ?? token.sub;
