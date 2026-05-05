@@ -309,7 +309,12 @@ export function HeroVisual() {
         padding: "12px 14px 16px",
         boxShadow:
           "0 30px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(240, 180, 41, 0.06), inset 0 1px 0 rgba(255,255,255,0.02)",
-        overflow: "hidden",
+        // Intentionally NOT clipping: the cell-tooltip callout pops above
+        // the top row when a trade lands in row 0 / 1, and clipping would
+        // chop it visually (see screenshot dated 2026-05-05). The flying
+        // dots start at opacity 0 from outside the box so removing the
+        // clip doesn't expose any pre-flight ghosts.
+        overflow: "visible",
       }}
     >
       {/* App-chrome header — traffic-light dots, mode tabs, status pill. */}
