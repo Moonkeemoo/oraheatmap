@@ -322,6 +322,7 @@ export function HeroVisual() {
       <div style={{ position: "relative", marginTop: 10 }}>
         <Grid activeMap={activeMap} tick={tick} cellShift={state.cellShift} />
         <NowLine />
+        <PulseTracers trades={state.inflight} />
         <Inflight trades={state.inflight} />
         <Callout callout={state.callout} />
         <Convergence convergence={state.convergence} />
@@ -357,6 +358,15 @@ export function HeroVisual() {
         @keyframes nowLinePulse {
           0%, 100% { opacity: 0.65; }
           50%      { opacity: 0.95; }
+        }
+        @keyframes tracerSweep {
+          /* Tracer "grows" from a zero-length point at the left edge to
+             its full row-anchor width — the bright head appears to fly
+             rightward along the row while a soft tail trails behind. */
+          0%   { transform: translateY(-50%) scaleX(0);   opacity: 0;    }
+          12%  { opacity: 0.95; }
+          88%  { opacity: 0.85; }
+          100% { transform: translateY(-50%) scaleX(1);   opacity: 0;    }
         }
       `}</style>
     </div>
@@ -697,6 +707,57 @@ function cellTopPct(row: number): number {
   // Rows: 26px height + 3px gap; we have ROWS.length rows.
   const total = ROWS.length;
   return ((row + 0.5) / total) * 100;
+}
+
+/** Hair-thin horizontal tracer streak that runs from the left edge of
+ *  the data area to the target cell along the row. Looks like a
+ *  data packet on a wire — adds a sense of "the signal is travelling
+ *  to its destination", which the dot alone doesn't quite convey.
+ *  Uses a short bright gradient as the leading edge with a soft tail
+ *  fading out behind it. The whole element is animated via a single
+ *  CSS keyframe `tracerSweep` so it costs almost nothing to render. */
+function PulseTracers({ trades }: { trades: ReadonlyArray<Trade> }) {
+  // The data area starts at 78px (label column) + 3px gap.
+  // Use the same cellLeftPct math so the head lines up with the dot.
+  return (
+    <>
+      {trades.map((t) => {
+        const headLeft = cellLeftPct(t.col); // % of total width — where the streak should peak
+        const top = cellTopPct(t.row);
+        const accent = t.side === "BUY" ? TOKENS.pos : TOKENS.neg;
+        return (
+          <div
+            key={`tr-${t.id}`}
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              top: `${top}%`,
+              left: 0,
+              width: `${headLeft}%`,
+              height: 1,
+              transform: "translateY(-50%)",
+              // Long fading tail on the left, brightest "head" on the right
+              // — when the element grows in width, the head appears to
+              // travel rightward.
+              background: `linear-gradient(90deg,
+                transparent 0%,
+                ${accent}00 40%,
+                ${accent}66 80%,
+                ${accent}ee 96%,
+                #fff 100%)`,
+              boxShadow: `0 0 6px ${accent}, 0 0 2px ${accent}`,
+              filter: "blur(0.3px)",
+              animation: "tracerSweep 1.1s linear forwards",
+              transformOrigin: "right center",
+              pointerEvents: "none",
+              zIndex: 2,
+              opacity: 0.85,
+            }}
+          />
+        );
+      })}
+    </>
+  );
 }
 
 function Inflight({ trades }: { trades: ReadonlyArray<Trade> }) {
