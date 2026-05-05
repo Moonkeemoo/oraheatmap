@@ -183,6 +183,31 @@ export function Heatmap() {
     enabled: panelCell !== null && mode === "highlights",
   });
 
+  // Hover receipts (highlights mode only) — drives the floating tooltip
+  // body. Smaller limit (5) to keep the hover panel scannable. Fires on
+  // every hover change; useEffect cancel logic in the hook drops stale
+  // in-flight responses so a quick scan doesn't cause stale render.
+  const hoverReceiptsScope = (() => {
+    if (!hover || mode !== "highlights" || !fetchedData) return null;
+    const slot = parseSlotFromCellId(hover.cellId);
+    const bucket = slot != null ? fetchedData.buckets[slot] : null;
+    const fromTs = bucket?.ts ?? null;
+    const nextBucket = slot != null ? fetchedData.buckets[slot + 1] : null;
+    const toTs = nextBucket?.ts ?? fetchedData.windowEnd ?? new Date().toISOString();
+    const baseScope = drillSubcategory != null
+      ? { category: drillCategory!, subcategory: drillSubcategory, conditionId: hover.category }
+      : drillCategory
+        ? { category: drillCategory, subcategory: hover.category, conditionId: null }
+        : { category: hover.category, subcategory: null, conditionId: null };
+    return { ...baseScope, fromTs, toTs };
+  })();
+  const hoverReceipts = useCellReceipts({
+    scope: hoverReceiptsScope,
+    sort: receiptsSort,
+    limit: 5,
+    enabled: hover !== null && mode === "highlights",
+  });
+
   // Optimistic merge — only meaningful in LIVE mode (PATTERN values are
   // averages, not running sums; bumping by 1 doesn't make sense).
   const displayData = useMemo(() => {
@@ -425,7 +450,14 @@ export function Heatmap() {
                     : null
                 }
                 slotIndex={parseSlotFromCellId(panelCell.cellId)}
-                feed={{ entries: cellFeed.entries, loading: cellFeed.loading }}
+                // Live feed only in LIVE / PATTERN drawers. HIGHLIGHTS uses
+                // the receipts list as the headline content; a parallel
+                // recency feed would compete for visual weight.
+                feed={
+                  mode !== "highlights"
+                    ? { entries: cellFeed.entries, loading: cellFeed.loading }
+                    : null
+                }
                 receipts={
                   mode === "highlights"
                     ? {
@@ -488,6 +520,15 @@ export function Heatmap() {
                     : null
                 }
                 slotIndex={parseSlotFromCellId(hover.cellId)}
+                receipts={
+                  mode === "highlights"
+                    ? {
+                        signals: hoverReceipts.signals,
+                        loading: hoverReceipts.loading,
+                        sort: receiptsSort,
+                      }
+                    : null
+                }
                 isAuthed={isAuthed}
                 onRequestLogin={() => setLoginOpen(true)}
                 onWhaleClick={(addr) => setWhaleProfileAddr(addr)}
