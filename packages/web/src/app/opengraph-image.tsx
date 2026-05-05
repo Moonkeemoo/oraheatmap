@@ -56,15 +56,20 @@ export default async function Image() {
             marginBottom: 24,
           }}
         >
+          {/* Wordmark — multi-child text needs display:flex per @vercel/og.
+              flexWrap:wrap keeps it inline-looking despite being a flexbox. */}
           <div
             style={{
+              display: "flex",
               fontSize: 32,
               fontWeight: 700,
               letterSpacing: -1,
               color: "#fff",
             }}
           >
-            oralab<span style={{ color: "#f0b429" }}>.</span>xyz
+            <span>oralab</span>
+            <span style={{ color: "#f0b429" }}>.</span>
+            <span>xyz</span>
           </div>
           <div
             style={{
@@ -88,13 +93,16 @@ export default async function Image() {
                 boxShadow: "0 0 14px #3fb950",
               }}
             />
-            Live
+            <span>Live</span>
           </div>
         </div>
 
-        {/* Headline */}
+        {/* Headline — flex-wrap so the multi-span text reads naturally. */}
         <div
           style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 14,
             fontSize: 76,
             fontWeight: 700,
             lineHeight: 1.05,
@@ -104,8 +112,8 @@ export default async function Image() {
             marginBottom: 14,
           }}
         >
-          Polymarket whale tracker.{" "}
-          <span style={{ color: "#f0b429" }}>Every trade.</span>{" "}
+          <span>Polymarket whale tracker.</span>
+          <span style={{ color: "#f0b429" }}>Every trade.</span>
           <span style={{ color: "#3fb950" }}>Live.</span>
         </div>
 
