@@ -2,6 +2,7 @@ import { signOut, useSession } from "next-auth/react";
 import { TOKENS } from "@/lib/tokens";
 import type { HeatmapMetric, LiveRange, Mode, PatternKind } from "@/lib/types";
 import { BrandLogo } from "./BrandLogo";
+import { BurgerMenu } from "./BurgerMenu";
 import { LiveStatus } from "./LiveStatus";
 import { ScaleLegend } from "./ScaleLegend";
 
@@ -250,6 +251,7 @@ export function Header({
             onLogout={() => signOut()}
           />
           <LiveStatus />
+          <BurgerMenu />
         </div>
         {/* Filter controls row — read left-to-right: mode → mode-block
             (range OR patternKind) → metric → scale. */}

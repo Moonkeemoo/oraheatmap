@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { BrandLogo } from "@/components/BrandLogo";
+import { BurgerMenu } from "@/components/BurgerMenu";
 import { TOKENS } from "@/lib/tokens";
 
 export function Nav() {
@@ -69,6 +70,7 @@ export function Nav() {
           >
             Open heatmap
           </Link>
+          <BurgerMenu />
         </div>
       </div>
     </nav>
