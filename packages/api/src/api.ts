@@ -732,49 +732,28 @@ export function createApi(deps: ApiDeps) {
       },
     )
     .get(
-      "/api/cell-receipts",
+      "/api/highlights",
       async ({ query }) => {
-        // Top "receipts" — individual notable trades — for one heatmap
-        // cell's scope + time bucket. Powers the HIGHLIGHTS mode tooltip
-        // and drawer.
-        //
-        // Sort by:
-        //   - "volume" → size*price desc (BUYs only — entries)
-        //   - "pnl"    → realized_pnl desc (exits only with realised PnL)
-        //   - "abs_pnl"→ |realized_pnl| desc (biggest wins AND losses)
-        //   - default  → ts desc (most recent)
-        const limit = Math.min(Math.max(query.limit ?? 30, 1), 100);
+        // Standout events for the open cell drawer's row, scoped to the
+        // header range (whole window, not the cell's bucket). Unit + sort
+        // depend on the active heatmap metric:
+        //   pnl     → individual exit trades, sorted by |realized_pnl|
+        //   volume  → markets, summed USD volume of BUYs
+        //   signals → markets, total trade count
+        //   whales  → markets, distinct whale_addr count
+        // Items are filtered to those at least `threshold`× the baseline
+        // (baseline = mean across other items in the same scope+window),
+        // so a row where everything is similarly active returns nothing
+        // and the UI can show an empty-state instead of mediocre top-N.
+        const limit = Math.min(Math.max(query.limit ?? 5, 1), 20);
+        const threshold = Math.max(query.threshold ?? 1.5, 1);
         const cat = query.category;
         const sub = query.subcategory ?? null;
         const cid = query.conditionId ?? null;
         const fromTs = query.fromTs ? new Date(query.fromTs) : null;
         const toTs = query.toTs ? new Date(query.toTs) : new Date();
-        const sort = (query.sort ?? "recent") as "volume" | "pnl" | "abs_pnl" | "recent";
+        const metric = query.metric as "pnl" | "volume" | "signals" | "whales";
 
-        type Row = {
-          ts: Date | string;
-          whale_addr: string;
-          asset_id: string;
-          condition_id: string | null;
-          market_question: string | null;
-          market_slug: string | null;
-          category: string;
-          subcategory: string | null;
-          side: "BUY" | "SELL" | "SETTLEMENT";
-          price: number;
-          size: number;
-          realized_pnl: number | null;
-          exit_kind: "SELL" | "RESOLUTION" | null;
-          tx_hash: string | null;
-        };
-
-        // Build the WHERE clause incrementally — postgres-js tagged templates
-        // require us to commit to one shape per call site, so the scope
-        // levels and sort branches each get their own dedicated template.
-        const cols = deps.sql`
-          ts, whale_addr, asset_id, condition_id, market_question, market_slug,
-          category, subcategory, side, price, size, realized_pnl, exit_kind, tx_hash
-        `;
         const scopeFilter = cid
           ? deps.sql`condition_id = ${cid}`
           : sub
@@ -783,42 +762,134 @@ export function createApi(deps: ApiDeps) {
         const fromFilter = fromTs ? deps.sql`AND ts >= ${fromTs}` : deps.sql``;
         const toFilter = deps.sql`AND ts <= ${toTs}`;
 
-        const orderClause =
-          sort === "volume"
-            ? deps.sql`AND side = 'BUY' ORDER BY size * price DESC`
-            : sort === "pnl"
-              ? deps.sql`AND realized_pnl IS NOT NULL ORDER BY realized_pnl DESC`
-              : sort === "abs_pnl"
-                ? deps.sql`AND realized_pnl IS NOT NULL ORDER BY ABS(realized_pnl) DESC`
-                : deps.sql`ORDER BY ts DESC`;
+        if (metric === "pnl") {
+          type Row = {
+            ts: Date | string;
+            whale_addr: string;
+            asset_id: string;
+            condition_id: string | null;
+            market_question: string | null;
+            market_slug: string | null;
+            category: string;
+            subcategory: string | null;
+            side: "BUY" | "SELL" | "SETTLEMENT";
+            price: number;
+            size: number;
+            realized_pnl: number | null;
+            exit_kind: "SELL" | "RESOLUTION" | null;
+            tx_hash: string | null;
+          };
+          // Baseline = AVG(|realized_pnl|) across all exits in scope+window.
+          // Mean (not median) because postgres percentile_cont is heavier and
+          // we already cap by `threshold` — outlier-driven mean still gates
+          // out only the truly extreme.
+          const [baselineRow] = await deps.sql<{ baseline: number | null }[]>`
+            SELECT AVG(ABS(realized_pnl))::float8 AS baseline
+            FROM signals
+            WHERE ${scopeFilter} ${fromFilter} ${toFilter}
+              AND realized_pnl IS NOT NULL AND realized_pnl <> 0
+          `;
+          const baseline = baselineRow?.baseline ?? 0;
+          const minAbs = baseline > 0 ? baseline * threshold : 0;
+          const rows = await deps.sql<Row[]>`
+            SELECT ts, whale_addr, asset_id, condition_id, market_question,
+                   market_slug, category, subcategory, side, price, size,
+                   realized_pnl, exit_kind, tx_hash
+            FROM signals
+            WHERE ${scopeFilter} ${fromFilter} ${toFilter}
+              AND realized_pnl IS NOT NULL AND realized_pnl <> 0
+              AND ABS(realized_pnl) >= ${minAbs}
+            ORDER BY ABS(realized_pnl) DESC
+            LIMIT ${limit}
+          `;
+          return {
+            metric,
+            unit: "trade" as const,
+            baseline,
+            items: rows.map((r) => ({
+              ts: r.ts instanceof Date ? r.ts.toISOString() : new Date(r.ts).toISOString(),
+              whaleAddr: r.whale_addr,
+              whaleAlias: whaleAlias(r.whale_addr),
+              whaleColor: whaleColor(r.whale_addr),
+              assetId: r.asset_id,
+              conditionId: r.condition_id,
+              marketQuestion: r.market_question,
+              marketSlug: r.market_slug,
+              category: r.category,
+              subcategory: r.subcategory,
+              side: r.side,
+              price: Number(r.price),
+              size: Number(r.size),
+              sizeUsd: Number(r.size) * Number(r.price),
+              realizedPnl: r.realized_pnl !== null ? Number(r.realized_pnl) : null,
+              exitKind: r.exit_kind,
+              txHash: r.tx_hash,
+              multiplier: baseline > 0 ? Math.abs(Number(r.realized_pnl)) / baseline : 0,
+            })),
+          };
+        }
 
-        const rows = await deps.sql<Row[]>`
-          SELECT ${cols} FROM signals
+        // metric ∈ {volume, signals, whales} — aggregate per condition_id.
+        const aggExpr =
+          metric === "volume"
+            ? deps.sql`SUM(size * price) FILTER (WHERE side = 'BUY')`
+            : metric === "signals"
+              ? deps.sql`COUNT(*)`
+              : deps.sql`COUNT(DISTINCT whale_addr)`;
+
+        type AggRow = {
+          condition_id: string | null;
+          market_question: string | null;
+          market_slug: string | null;
+          value: number;
+        };
+        // Pull all aggregated markets in one query, compute baseline in app
+        // code (cheaper than a second query with PARTITION OVER and easier
+        // to read). Skip rows where condition_id is NULL — can't render a
+        // market card without it.
+        const all = await deps.sql<AggRow[]>`
+          SELECT
+            condition_id,
+            MAX(market_question) AS market_question,
+            MAX(market_slug)     AS market_slug,
+            (${aggExpr})::float8 AS value
+          FROM signals
           WHERE ${scopeFilter} ${fromFilter} ${toFilter}
-          ${orderClause}
-          LIMIT ${limit}
+            AND condition_id IS NOT NULL
+          GROUP BY condition_id
+          HAVING (${aggExpr}) > 0
+          ORDER BY value DESC
         `;
+        const baseline =
+          all.length > 0
+            ? all.reduce((s, r) => s + Number(r.value), 0) / all.length
+            : 0;
+        const minVal = baseline > 0 ? baseline * threshold : 0;
+        const filtered = all
+          .filter((r) => Number(r.value) >= minVal)
+          .slice(0, limit);
+        // Hydrate market icons via the same gamma cache the heatmap uses,
+        // so the highlight thumbnails match what the user already sees.
+        const cidsForIcons = filtered
+          .map((r) => r.condition_id)
+          .filter((c): c is string => c !== null);
+        const meta =
+          cidsForIcons.length > 0 ? await fetchMarketMeta(deps.sql, cidsForIcons) : {};
         return {
-          sort,
-          signals: rows.map((r) => ({
-            ts: r.ts instanceof Date ? r.ts.toISOString() : new Date(r.ts).toISOString(),
-            whaleAddr: r.whale_addr,
-            whaleAlias: whaleAlias(r.whale_addr),
-            whaleColor: whaleColor(r.whale_addr),
-            assetId: r.asset_id,
-            conditionId: r.condition_id,
-            marketQuestion: r.market_question,
-            marketSlug: r.market_slug,
-            category: r.category,
-            subcategory: r.subcategory,
-            side: r.side,
-            price: Number(r.price),
-            size: Number(r.size),
-            sizeUsd: Number(r.size) * Number(r.price),
-            realizedPnl: r.realized_pnl !== null ? Number(r.realized_pnl) : null,
-            exitKind: r.exit_kind,
-            txHash: r.tx_hash,
-          })),
+          metric,
+          unit: "market" as const,
+          baseline,
+          items: filtered.map((r) => {
+            const m = r.condition_id ? meta[r.condition_id] : undefined;
+            return {
+              conditionId: r.condition_id,
+              marketQuestion: r.market_question ?? m?.question ?? null,
+              marketSlug: r.market_slug ?? m?.slug ?? null,
+              marketIcon: m?.icon ?? null,
+              value: Number(r.value),
+              multiplier: baseline > 0 ? Number(r.value) / baseline : 0,
+            };
+          }),
         };
       },
       {
@@ -828,10 +899,14 @@ export function createApi(deps: ApiDeps) {
           conditionId: t.Optional(t.String()),
           fromTs: t.Optional(t.String()),
           toTs: t.Optional(t.String()),
-          sort: t.Optional(
-            t.Union([t.Literal("volume"), t.Literal("pnl"), t.Literal("abs_pnl"), t.Literal("recent")]),
-          ),
-          limit: t.Optional(t.Numeric({ minimum: 1, maximum: 100 })),
+          metric: t.Union([
+            t.Literal("pnl"),
+            t.Literal("volume"),
+            t.Literal("signals"),
+            t.Literal("whales"),
+          ]),
+          limit: t.Optional(t.Numeric({ minimum: 1, maximum: 20 })),
+          threshold: t.Optional(t.Numeric({ minimum: 1, maximum: 10 })),
         }),
       },
     )

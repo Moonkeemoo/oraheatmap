@@ -7,7 +7,7 @@ import { marketUrl } from "@/lib/polymarket-url";
 import { TOKENS } from "@/lib/tokens";
 import { ProbabilityChart } from "./ProbabilityChart";
 import { CellFeed } from "./tooltip/CellFeed";
-import { Receipts } from "./tooltip/Receipts";
+import { RowHighlights } from "./tooltip/RowHighlights";
 import { CycleHistogram, rowIndexToServerSlot } from "./tooltip/CycleHistogram";
 import { MarketIcon } from "./tooltip/MarketIcon";
 import {
@@ -91,7 +91,7 @@ export function Tooltip({
   headerCrumb,
   parentCategory,
   feed,
-  receipts,
+  highlights,
   displayLabel,
   slotIndex,
   renderAs = "float",
@@ -141,14 +141,14 @@ export function Tooltip({
    *  the body when this is provided. Heatmap owns the hook so a single
    *  useSse subscription can pipe signals into the active feed. */
   feed?: { entries: ReadonlyArray<import("@/hooks/useCellFeed").FeedEntry>; loading: boolean } | null;
-  /** Top highlights payload — drawer-only. Renders a "biggest individual
-   *  trades" list (top N signals by the active metric) below the aggregate
-   *  Top whales / Top markets blocks and above the Live feed. Heatmap owns
-   *  the hook + scope window. NULL = section hidden. */
-  receipts?: {
-    signals: ReadonlyArray<import("@/lib/types").SignalEvent>;
+  /** Row-scope standout-events list — drawer-only. Surfaced right under
+   *  the 4-stat header so the user sees "what's notable in this row over
+   *  the chosen window" before scrolling into per-cell aggregates. NULL
+   *  = section hidden (PATTERN mode, WIN RATE metric, hover tooltip). */
+  highlights?: {
+    data: import("@/hooks/useRowHighlights").HighlightsResponse | null;
     loading: boolean;
-    sort: import("@/hooks/useCellReceipts").ReceiptsSort;
+    range: LiveRange;
   } | null;
   /** Override for the small badge text. At L1 omit (badge = category
    *  name from meta.label). At L2 pass the subcategory display label
@@ -436,6 +436,32 @@ export function Tooltip({
           color={cell.winRate === null ? TOKENS.textSec : cell.winRate >= 0.5 ? TOKENS.pos : TOKENS.neg}
         />
       </div>
+
+      {/* Top highlights — drawer-only, range-scoped (not cell-bucket).
+          Sits right under the 4-stat grid because it's the headline insight
+          for the open row over the chosen window. */}
+      {isDrawer && highlights && !isPattern && (
+        <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
+          <div
+            style={{
+              fontSize: 9,
+              letterSpacing: 0.5,
+              color: TOKENS.textMuted,
+              textTransform: "uppercase",
+              marginBottom: 6,
+              fontWeight: 600,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <span>Top highlights</span>
+            <span style={{ color: TOKENS.textSec }}>
+              {highlights.range} · by {highlightsLabel(metric)}
+            </span>
+          </div>
+          <RowHighlights data={highlights.data} loading={highlights.loading} />
+        </div>
+      )}
 
       {isL3 && locked && (
         <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
@@ -857,31 +883,6 @@ export function Tooltip({
         </div>
       )}
 
-      {/* Top highlights — drawer-only. Renders top 10 individual signals for
-          this cell sorted by the active metric, above the recency feed. The
-          aggregate "Top whales" / "Top markets" blocks above stay; this is a
-          parallel "biggest individual trades" view. */}
-      {isDrawer && receipts && !isPattern && (
-        <div style={{ marginTop: 16, borderTop: `1px solid ${TOKENS.border}`, paddingTop: 12 }}>
-          <div
-            style={{
-              fontSize: 9,
-              letterSpacing: 0.5,
-              color: TOKENS.textMuted,
-              textTransform: "uppercase",
-              marginBottom: 6,
-              fontWeight: 600,
-              display: "flex",
-              justifyContent: "space-between",
-            }}
-          >
-            <span>Top highlights</span>
-            <span style={{ color: TOKENS.textSec }}>by {sortLabel(receipts.sort)}</span>
-          </div>
-          <Receipts signals={receipts.signals} loading={receipts.loading} sort={receipts.sort} />
-        </div>
-      )}
-
       {/* Live feed — drawer-only. Renders below the top markets / probability
           chart blocks so the heavy aggregations stay above the fold. */}
       {isDrawer && feed && (
@@ -1082,11 +1083,12 @@ function fmtCellShort(metric: HeatmapMetric, v: number): string {
   return "$" + Math.round(v);
 }
 
-function sortLabel(sort: import("@/hooks/useCellReceipts").ReceiptsSort): string {
-  if (sort === "volume") return "USD volume";
-  if (sort === "pnl") return "realised PnL";
-  if (sort === "abs_pnl") return "biggest PnL";
-  return "most recent";
+function highlightsLabel(metric: HeatmapMetric): string {
+  if (metric === "volume") return "USD volume";
+  if (metric === "pnl") return "biggest PnL";
+  if (metric === "signals") return "trade count";
+  if (metric === "whales") return "unique whales";
+  return "—";
 }
 
 function clamp(v: number, min: number, max: number): number {

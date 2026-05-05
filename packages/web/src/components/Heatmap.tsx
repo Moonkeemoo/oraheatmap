@@ -8,7 +8,7 @@ import { useSse } from "@/hooks/useSse";
 import { applySignal } from "@/lib/heatmap-apply";
 import { recordSignal } from "@/lib/live-clock";
 import { useCellFeed } from "@/hooks/useCellFeed";
-import { metricToSort, useCellReceipts } from "@/hooks/useCellReceipts";
+import { metricToHighlightKind, useRowHighlights } from "@/hooks/useRowHighlights";
 import { buildScopeKey } from "@/lib/row-order";
 import { TOKENS } from "@/lib/tokens";
 import type {
@@ -160,25 +160,23 @@ export function Heatmap() {
     setPendingSignals([]);
   }, [fetchedData?.generatedAt]);
 
-  // Top highlights receipts for the open cell drawer — top N signals by the
-  // active metric inside the cell's bucket window. Reuses cellFeedScope's
-  // category/sub/cid wiring then layers fromTs/toTs derived from the
-  // bucket index. Drawer-only — hover tooltip never fires this.
-  const cellReceiptsScope = (() => {
-    if (!panelCell || !fetchedData || mode !== "live") return null;
-    const slot = parseSlotFromCellId(panelCell.cellId);
-    const bucket = slot != null ? fetchedData.buckets[slot] : null;
-    const fromTs = bucket?.ts ?? null;
-    const nextBucket = slot != null ? fetchedData.buckets[slot + 1] : null;
-    const toTs = nextBucket?.ts ?? fetchedData.windowEnd ?? new Date().toISOString();
-    return { ...(cellFeedScope ?? { category: panelCell.category }), fromTs, toTs };
-  })();
-  const receiptsSort = metricToSort(metric);
-  const cellReceipts = useCellReceipts({
-    scope: cellReceiptsScope,
-    sort: receiptsSort,
-    limit: 10,
-    enabled: panelCell !== null && mode === "live",
+  // Top highlights — standout events for the panel's row, scoped to the
+  // WHOLE header range (not the cell's bucket). Unit + sort follow the
+  // active metric (pnl→trades by |pnl|, volume/signals/whales→markets).
+  // Drawer-only — hover tooltip never fires this.
+  const highlightsKind = metricToHighlightKind(metric);
+  const highlightsScope =
+    panelCell && cellFeedScope && fetchedData?.windowStart && fetchedData?.windowEnd && mode === "live"
+      ? {
+          ...cellFeedScope,
+          fromTs: fetchedData.windowStart,
+          toTs: fetchedData.windowEnd,
+        }
+      : null;
+  const rowHighlights = useRowHighlights({
+    scope: highlightsScope,
+    metric: highlightsKind,
+    enabled: panelCell !== null && mode === "live" && highlightsKind !== null,
   });
 
   // Optimistic merge — only meaningful in LIVE mode (PATTERN values are
@@ -422,12 +420,12 @@ export function Heatmap() {
                 }
                 slotIndex={parseSlotFromCellId(panelCell.cellId)}
                 feed={{ entries: cellFeed.entries, loading: cellFeed.loading }}
-                receipts={
-                  mode === "live"
+                highlights={
+                  mode === "live" && highlightsKind
                     ? {
-                        signals: cellReceipts.signals,
-                        loading: cellReceipts.loading,
-                        sort: receiptsSort,
+                        data: rowHighlights.data,
+                        loading: rowHighlights.loading,
+                        range,
                       }
                     : null
                 }
