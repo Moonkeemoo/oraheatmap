@@ -1,6 +1,11 @@
 # Production Caddyfile — installed at /etc/caddy/Caddyfile on the host VPS.
-# Reverse-proxies oralab.xyz to the docker-compose `api` (port 3001) and `web`
-# (port 3000) containers, both bound to 127.0.0.1 in compose.
+# Reverse-proxies oralab.xyz to two long-lived processes managed by systemd:
+#   - Next.js web (oraheatmap-web.service) on 127.0.0.1:3000
+#   - Elysia API + SSE (oraheatmap-api.service) on 127.0.0.1:3001
+#
+# Order matters in Caddy — more-specific `handle` blocks evaluate first, so
+# the Next.js-owned API prefixes (auth + account) MUST come before the
+# generic /api/* catch-all that goes to Elysia.
 #
 # Replace `oralab.xyz` with your own domain if you fork. Email is used by
 # Let's Encrypt for cert-renewal notices.
@@ -12,7 +17,19 @@
 oralab.xyz, www.oralab.xyz {
   encode zstd gzip
 
-  # API + SSE go through to the api container.
+  # Auth.js routes live in the Next.js app — sign-in / callback / providers.
+  handle /api/auth/* {
+    reverse_proxy 127.0.0.1:3000
+  }
+
+  # Account-management routes live in Next.js too — link / unlink / export
+  # / delete. Without this block they'd fall into the Elysia catch-all
+  # below and 404 (Elysia never registers them).
+  handle /api/account/* {
+    reverse_proxy 127.0.0.1:3000
+  }
+
+  # Everything else under /api/* → Elysia (heatmap, whale, stream, me, …).
   handle /api/* {
     reverse_proxy 127.0.0.1:3001 {
       # SSE: don't buffer / don't time out long-lived /api/stream connections.
@@ -23,7 +40,7 @@ oralab.xyz, www.oralab.xyz {
     }
   }
 
-  # Everything else → Next.js dashboard.
+  # Everything else → Next.js dashboard / landing / legal pages.
   handle {
     reverse_proxy 127.0.0.1:3000
   }
