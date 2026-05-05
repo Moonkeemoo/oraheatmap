@@ -2,6 +2,7 @@ import { signOut, useSession } from "next-auth/react";
 import { TOKENS } from "@/lib/tokens";
 import type { HeatmapMetric, LiveRange, Mode, PatternKind } from "@/lib/types";
 import { BrandLogo } from "./BrandLogo";
+import { LiveStatus } from "./LiveStatus";
 import { ScaleLegend } from "./ScaleLegend";
 
 const LIVE_RANGES: ReadonlyArray<LiveRange> = ["1h", "24h", "12d", "12w"];
@@ -240,13 +241,16 @@ export function Header({
           gap: 8,
         }}
       >
-        <UserChip
-          name={(session?.user?.name as string) || null}
-          email={(session?.user?.email as string) || null}
-          authed={isAuthed}
-          onLogin={onRequestLogin}
-          onLogout={() => signOut()}
-        />
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <UserChip
+            name={(session?.user?.name as string) || null}
+            email={(session?.user?.email as string) || null}
+            authed={isAuthed}
+            onLogin={onRequestLogin}
+            onLogout={() => signOut()}
+          />
+          <LiveStatus />
+        </div>
         {/* Filter controls row — read left-to-right: mode → mode-block
             (range OR patternKind) → metric → scale. */}
         <div

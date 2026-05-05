@@ -6,6 +6,7 @@ import { useHeatmap } from "@/hooks/useHeatmap";
 import { useRowOrder } from "@/hooks/useRowOrder";
 import { useSse } from "@/hooks/useSse";
 import { applySignal } from "@/lib/heatmap-apply";
+import { recordSignal } from "@/lib/live-clock";
 import { buildScopeKey } from "@/lib/row-order";
 import { TOKENS } from "@/lib/tokens";
 import type {
@@ -122,6 +123,11 @@ export function Heatmap() {
   }, [fetchedData, pendingSignals]);
 
   useSse((s) => {
+    // Stamp the live-clock for any signal — including ones the current
+    // view filters out (the Header pill should still tick when SSE is
+    // healthy, regardless of drill state).
+    recordSignal();
+
     if (!fetchedData) return;
     if (!metricAffectedBy(metric, s)) return;
 
