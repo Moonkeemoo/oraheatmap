@@ -9,7 +9,8 @@ import { ImageResponse } from "next/og";
  * Renders a brand-coloured 1200x630 card with the product hook copy
  * and a faux-heatmap strip that mirrors the live grid colour palette.
  */
-export const runtime = "edge";
+// We self-host this Next.js app on Bun (no Vercel Edge), so leave the
+// runtime at the default "nodejs". Edge-only here would 502 on prod.
 export const alt = "oralab — Polymarket whale tracker · live PnL heatmap";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
