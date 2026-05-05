@@ -530,6 +530,26 @@ export const authConfig: NextAuthConfig = {
         session.user.name = (token.name as string) ?? null;
         session.user.email = (token.email as string) ?? session.user.email;
         session.user.image = (token.picture as string) ?? null;
+        // Refresh from auth_users — JWT was minted at sign-in time and
+        // doesn't reflect later link-backfills (e.g. Discord avatar set
+        // by a follow-up Connect Discord). One indexed SELECT per session
+        // check; cheap. Skipped silently when DB isn't configured.
+        if (process.env["DATABASE_URL"] && session.user.id) {
+          try {
+            const { sql } = getDb();
+            const rows = await sql<
+              { name: string | null; email: string | null; image: string | null }[]
+            >`SELECT name, email, image FROM auth_users WHERE id = ${session.user.id} LIMIT 1`;
+            const row = rows[0];
+            if (row) {
+              if (row.name) session.user.name = row.name;
+              if (row.email) session.user.email = row.email;
+              if (row.image) session.user.image = row.image;
+            }
+          } catch (err) {
+            console.warn("[auth/session] DB enrich failed:", (err as Error).message);
+          }
+        }
         (session as { provider?: string }).provider = token["provider"] as string | undefined;
       }
       return session;
