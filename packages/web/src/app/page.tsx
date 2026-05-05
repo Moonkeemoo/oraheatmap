@@ -4,6 +4,7 @@ import { Faq } from "@/components/landing/Faq";
 import { Features } from "@/components/landing/Features";
 import { Hero } from "@/components/landing/Hero";
 import { HowItWorks } from "@/components/landing/HowItWorks";
+import { JsonLd } from "@/components/landing/JsonLd";
 import { Nav } from "@/components/landing/Nav";
 import { Stats } from "@/components/landing/Stats";
 import { TOKENS } from "@/lib/tokens";
@@ -20,6 +21,7 @@ export default function LandingPage() {
         flexDirection: "column",
       }}
     >
+      <JsonLd />
       <Nav />
       <Hero />
       <Stats />

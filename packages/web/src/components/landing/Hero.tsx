@@ -120,10 +120,12 @@ export function Hero() {
               maxWidth: 540,
             }}
           >
-            Real-time heatmap of every Polymarket trade from the top wallets by all-time
-            PnL. Drill from a hot cell to the markets driving it and the whales pushing
-            them. The only smart-money tracker built specifically for{" "}
-            <strong style={{ color: TOKENS.text }}>prediction markets</strong>.
+            Real-time <strong style={{ color: TOKENS.text }}>Polymarket whale tracker</strong>{" "}
+            with smart-money signals across 9 prediction-market categories. Live PnL heatmap,
+            convergence alerts, whale dossier with 90-day balance, drill from a hot cell to
+            the markets driving it. The only{" "}
+            <strong style={{ color: TOKENS.text }}>prediction-market</strong> dashboard built
+            for traders who already trade Polymarket.
           </p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
             <Link

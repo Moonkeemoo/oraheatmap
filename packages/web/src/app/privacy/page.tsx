@@ -3,8 +3,11 @@ import type { Metadata } from "next";
 import { H2, LI, LegalPage, P, Strong, UL } from "@/components/LegalPage";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy · oralab",
-  description: "How oralab handles personal data.",
+  // Root layout's template renders this as "Privacy Policy · oralab".
+  title: "Privacy Policy",
+  description:
+    "How oralab handles personal data. Cookie policy, data retention, third-party processors, and the rights you have over your account data.",
+  alternates: { canonical: "/privacy" },
 };
 
 const CONTACT_EMAIL = "hello@oralab.xyz";

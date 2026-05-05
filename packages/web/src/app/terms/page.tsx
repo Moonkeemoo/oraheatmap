@@ -3,8 +3,10 @@ import type { Metadata } from "next";
 import { H2, LI, LegalPage, P, Strong, UL } from "@/components/LegalPage";
 
 export const metadata: Metadata = {
-  title: "Terms of Service · oralab",
-  description: "The rules for using oralab.",
+  title: "Terms of Service",
+  description:
+    "The rules for using oralab — acceptable use, account responsibilities, disclaimers about prediction-market data, and the limited liability we take on.",
+  alternates: { canonical: "/terms" },
 };
 
 const CONTACT_EMAIL = "hello@oralab.xyz";

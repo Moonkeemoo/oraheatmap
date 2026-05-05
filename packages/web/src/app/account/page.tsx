@@ -12,8 +12,12 @@ import { ConnectProviders, DisconnectButton } from "./ConnectProviders";
 import { LinkBanner } from "./LinkBanner";
 
 export const metadata: Metadata = {
-  title: "Account · oralab",
+  title: "Account",
   description: "Manage your oralab account and connected sign-in methods.",
+  // Authenticated dashboard surface — no SEO value, plus we don't want
+  // the rendered email/identity content cached by crawlers if a
+  // logged-out request ever reaches here.
+  robots: { index: false, follow: false },
 };
 
 const PROVIDER_LABEL: Record<string, string> = {
