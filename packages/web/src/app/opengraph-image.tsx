@@ -16,15 +16,15 @@ export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
 export default async function Image() {
-  // 9 columns × 5 rows of mock heatmap cells. The pattern is hand-tuned
-  // (not random) so the OG image always reads as a credible cross-
-  // section of "smart money in/out" rather than visual noise.
+  // 11 columns × 4 rows of mock heatmap cells. Pattern is hand-tuned
+  // (not random) so the OG image reads as a credible cross-section of
+  // "smart money in/out". 4 rows fit cleanly under the headline + sub
+  // without overlapping in the 1200×630 frame.
   const PATTERN: ReadonlyArray<ReadonlyArray<-1 | 0 | 1>> = [
-    [ 1,  1,  1,  0,  1,  1,  1,  1,  1],
-    [-1, -1, -1, -1,  0, -1, -1,  0, -1],
-    [ 1,  0,  1,  1,  1,  0,  1,  1,  1],
-    [-1, -1,  0, -1, -1, -1,  0,  0, -1],
-    [ 1,  1,  1,  0,  1,  1,  1,  1,  1],
+    [ 1,  1,  1,  0,  1,  1,  1,  1,  1,  1,  1],
+    [-1, -1, -1, -1,  0, -1, -1,  0, -1, -1,  0],
+    [ 1,  0,  1,  1,  1,  0,  1,  1,  1,  1,  1],
+    [-1, -1,  0, -1, -1, -1,  0,  0, -1, -1,  0],
   ];
   const cellColor = (v: -1 | 0 | 1, intensity: number): string => {
     if (v === 0) return "#1f2530";
@@ -40,11 +40,12 @@ export default async function Image() {
           height: "100%",
           display: "flex",
           flexDirection: "column",
+          justifyContent: "space-between",
           background:
             "radial-gradient(circle at 80% 20%, rgba(240,180,41,0.12) 0%, transparent 55%), linear-gradient(135deg, #0d1117 0%, #14181d 100%)",
           color: "#fff",
           fontFamily: "Inter, system-ui, -apple-system, sans-serif",
-          padding: 64,
+          padding: 56,
         }}
       >
         {/* Header — wordmark + Live pill */}
@@ -97,54 +98,53 @@ export default async function Image() {
           </div>
         </div>
 
-        {/* Headline — flex-wrap so the multi-span text reads naturally. */}
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 14,
-            fontSize: 76,
-            fontWeight: 700,
-            lineHeight: 1.05,
-            letterSpacing: -2.5,
-            color: "#fff",
-            maxWidth: 920,
-            marginBottom: 14,
-          }}
-        >
-          <span>Polymarket whale tracker.</span>
-          <span style={{ color: "#f0b429" }}>Every trade.</span>
-          <span style={{ color: "#3fb950" }}>Live.</span>
+        {/* Body — text block, growing from below the header. */}
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 14,
+              fontSize: 68,
+              fontWeight: 700,
+              lineHeight: 1.05,
+              letterSpacing: -2.2,
+              color: "#fff",
+              maxWidth: 920,
+              marginBottom: 18,
+            }}
+          >
+            <span>Polymarket whale tracker.</span>
+            <span style={{ color: "#f0b429" }}>Every trade.</span>
+            <span style={{ color: "#3fb950" }}>Live.</span>
+          </div>
+          <div
+            style={{
+              fontSize: 22,
+              color: "#b1bac4",
+              maxWidth: 880,
+              lineHeight: 1.4,
+            }}
+          >
+            Real-time heatmap of every trade from 10,000+ top wallets — drill
+            from a hot cell to the markets driving it.
+          </div>
         </div>
 
-        {/* Subhead */}
-        <div
-          style={{
-            fontSize: 24,
-            color: "#b1bac4",
-            maxWidth: 880,
-            lineHeight: 1.4,
-            marginBottom: 36,
-          }}
-        >
-          Real-time heatmap of every trade from 10,000+ top wallets. Drill from
-          a hot cell to the markets driving it.
-        </div>
-
-        {/* Faux heatmap strip */}
+        {/* Faux heatmap strip — pinned bottom via outer space-between. */}
         <div
           style={{
             display: "flex",
             flexDirection: "column",
-            gap: 6,
-            padding: 12,
+            gap: 5,
+            padding: 10,
             border: "1px solid #30363d",
-            borderRadius: 12,
+            borderRadius: 10,
             background: "rgba(22,27,34,0.55)",
           }}
         >
           {PATTERN.map((row, ri) => (
-            <div key={ri} style={{ display: "flex", gap: 6 }}>
+            <div key={ri} style={{ display: "flex", gap: 5 }}>
               {row.map((v, ci) => {
                 // Right-most columns intensify ("now" edge) so the
                 // image hints at the sliding-window narrative.
@@ -153,9 +153,9 @@ export default async function Image() {
                   <div
                     key={ci}
                     style={{
-                      width: 100,
-                      height: 60,
-                      borderRadius: 6,
+                      width: 96,
+                      height: 36,
+                      borderRadius: 5,
                       background: cellColor(v, intensity),
                     }}
                   />
