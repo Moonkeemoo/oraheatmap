@@ -133,14 +133,13 @@ export function Cell({
     if (anchor) onClick({ cell, anchor });
   };
 
-  // Heat-driven aura — cell visibly "heats up" with sustained activity.
-  // Heat clamped to a sane range so a 50-signal burst doesn't render a
-  // city-block-sized glow.
+  // Heat-driven border — cell gets a coloured ring whose thickness +
+  // saturation track recent SSE activity. Clamped so a 50-signal burst
+  // doesn't render a fence-thick stroke.
   const heatNorm = Math.min(heat, 6);
   const heatActive = heatNorm > 0.05;
-  // Tone the aura by current PnL direction so a hot bleeding cell looks
-  // bleeding, a hot rallying cell looks rallying. Falls back to accent
-  // for empty / neutral cells.
+  // Tone the ring by current PnL direction — busy losses ring red,
+  // busy wins ring green. Empty / neutral cells fall back to accent.
   const heatColor = !isEmpty
     ? cell.pnl > 0
       ? TOKENS.pos
@@ -148,23 +147,25 @@ export function Cell({
         ? TOKENS.neg
         : TOKENS.accent
     : TOKENS.accent;
-  // Scale + box-shadow grow with heat. Hover scale (1.1) overrides at
-  // peak heat the cell can squeeze to ~1.06, plenty without breaking
-  // grid alignment in long rows.
-  const heatScale = heatActive ? 1 + Math.min(0.06, heatNorm * 0.012) : 1;
-  const auraInnerBlur = 2 + heatNorm * 4; // px
-  const auraOuterBlur = 4 + heatNorm * 10;
-  const auraInnerAlpha = Math.min(0.95, 0.25 + heatNorm * 0.18);
-  const auraOuterAlpha = Math.min(0.55, 0.08 + heatNorm * 0.12);
-  // Combined shadow: inner ring (sharp) + outer halo (soft) + drop.
+  // Border thickness 1 → 2.5 px as heat ramps. Alpha 0.4 → 1.0.
+  const heatRingPx = heatActive ? 1 + Math.min(1.5, heatNorm * 0.32) : 0;
+  const heatRingAlpha = Math.min(1, 0.4 + heatNorm * 0.15);
+  // Outer halo gives the ring a soft glow off the edge so it reads as
+  // "the cell is hot", not just "it has a stroke". Smaller blur than
+  // before — the previous implementation was too diffuse.
+  const haloBlur = heatActive ? 4 + heatNorm * 4 : 0;
+  const haloAlpha = Math.min(0.45, 0.1 + heatNorm * 0.07);
   const heatShadow = heatActive
-    ? `0 0 0 1.5px ${heatColor}${alphaHex(auraInnerAlpha)}, 0 0 ${auraInnerBlur}px ${heatColor}${alphaHex(auraInnerAlpha)}, 0 0 ${auraOuterBlur}px ${heatColor}${alphaHex(auraOuterAlpha)}, 0 8px 22px rgba(0,0,0,0.45)`
+    ? `0 0 0 ${heatRingPx}px ${heatColor}${alphaHex(heatRingAlpha)}, 0 0 ${haloBlur}px ${heatColor}${alphaHex(haloAlpha)}`
     : null;
 
+  // Scale up slightly with sustained heat — visible "pop" without
+  // breaking grid alignment.
+  const heatScale = heatActive ? 1 + Math.min(0.04, heatNorm * 0.008) : 1;
   const finalScale = hovered && !isEmpty ? 1.1 : heatScale;
   const finalShadow =
     isLocked && !isEmpty
-      ? `0 8px 22px rgba(0,0,0,0.55), 0 0 0 2px ${TOKENS.accent}${heatActive ? `, 0 0 ${auraOuterBlur}px ${heatColor}${alphaHex(auraOuterAlpha)}` : ""}`
+      ? `0 8px 22px rgba(0,0,0,0.55), 0 0 0 2px ${TOKENS.accent}`
       : hovered && !isEmpty
         ? `0 8px 22px rgba(0,0,0,0.55), 0 0 0 1px ${TOKENS.borderHi}`
         : heatShadow ?? "none";
@@ -197,23 +198,6 @@ export function Cell({
         outlineOffset: -1,
       }}
     >
-      {/* Heat aura — semi-transparent inner gradient that brightens the
-          cell tint when activity is sustained. Pure overlay so the value
-          text on top stays readable. */}
-      {heatActive && !isEmpty && (
-        <span
-          aria-hidden
-          style={{
-            position: "absolute",
-            inset: 0,
-            borderRadius: 7,
-            pointerEvents: "none",
-            background: `radial-gradient(circle at 50% 50%, ${heatColor}${alphaHex(Math.min(0.45, heatNorm * 0.12))} 0%, transparent 70%)`,
-            mixBlendMode: "screen",
-            transition: "opacity .25s ease-out",
-          }}
-        />
-      )}
       {flashSeq > 0 && (
         <span
           key={`flash-${flashSeq}`}
