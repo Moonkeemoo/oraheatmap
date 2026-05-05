@@ -34,9 +34,13 @@ export async function fetchHeatmap(args: {
   drillSubcategory?: string | null;
 }): Promise<HeatmapResponse> {
   const params = new URLSearchParams();
-  params.set("mode", args.mode);
-  if (args.mode === "live" && args.range) params.set("range", args.range);
-  if (args.mode === "pattern") {
+  // "highlights" is a UI-only mode — API knows only "live" and "pattern".
+  // Highlights reuses LIVE's data shape (sliding-window aggregates), the
+  // mode-specific divergence lives entirely in the tooltip/drawer body.
+  const apiMode = args.mode === "highlights" ? "live" : args.mode;
+  params.set("mode", apiMode);
+  if (apiMode === "live" && args.range) params.set("range", args.range);
+  if (apiMode === "pattern") {
     if (args.kind) params.set("kind", args.kind);
     if (args.lookbackDays) params.set("lookbackDays", String(args.lookbackDays));
   }
