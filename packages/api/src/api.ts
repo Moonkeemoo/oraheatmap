@@ -458,7 +458,9 @@ export function createApi(deps: ApiDeps) {
         const rows = events
           .filter((e) => ALLOWED_EVENT_NAMES.has(e.name))
           .map((e) => ({
-            ts: e.ts ? new Date(e.ts) : new Date(),
+            // ISO string + ::timestamptz cast in SQL — postgres-js
+            // chokes on Date when nested in sql`` fragments.
+            ts: e.ts ?? new Date().toISOString(),
             session_id: typeof e.sessionId === "string" ? e.sessionId.slice(0, 64) : "anon",
             user_id: userId,
             name: e.name,
@@ -483,7 +485,7 @@ export function createApi(deps: ApiDeps) {
             await tx`
               INSERT INTO analytics_events
                 (ts, session_id, user_id, name, path, referrer, ua_brief, country, props)
-              VALUES (${r.ts}, ${r.session_id}, ${r.user_id}, ${r.name},
+              VALUES (${r.ts}::timestamptz, ${r.session_id}, ${r.user_id}, ${r.name},
                       ${r.path}, ${r.referrer}, ${r.ua_brief}, ${r.country},
                       ${r.props}::jsonb)
             `;
