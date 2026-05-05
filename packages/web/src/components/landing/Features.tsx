@@ -29,7 +29,7 @@ export function Features() {
           <FeatureRow
             eyebrow="LIVE feed"
             title="Every trade, the second it hits the chain."
-            body="9 prediction-market categories on one grid. Four timeframes — 1h, 24h, 12d, 12w. Cells colour-shift the moment a whale clicks Buy: green where smart money is winning, red where it's bleeding. No refresh, no polling — a live SSE stream pumps each trade in under a second from when it lands on Polygon."
+            body="9 top-level categories — drill any one and the same grid re-shapes into its subcategories: Sports → NBA, NFL, EPL, UCL, MLB. Four timeframes — 1h, 24h, 12d, 12w. Cells colour-shift the moment a whale clicks Buy: green where smart money is winning, red where it's bleeding. No refresh, no polling — a live SSE stream pumps each trade in under a second from when it lands on Polygon."
             visual={<LiveHeatmapMock />}
           />
           <FeatureRow

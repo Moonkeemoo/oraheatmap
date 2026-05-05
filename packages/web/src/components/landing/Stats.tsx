@@ -54,7 +54,8 @@ export function Stats() {
   const stats: ReadonlyArray<Stat> = data
     ? [
         {
-          ...formatBigUsd(data.totalVolumeUsd),
+          // Gross BUY-side USD — never negative, so no signed prefix.
+          ...formatBigUsd(data.totalVolumeUsd, { signed: false }),
           label: "volume tracked",
           sub: "all-time · all watched whales",
         },
@@ -64,7 +65,8 @@ export function Stats() {
           sub: "all-time · every Buy / Sell",
         },
         {
-          ...formatBigUsd(data.netFlow24hUsd),
+          // Signed: + when whales are net-buying, − when net-selling.
+          ...formatBigUsd(data.netFlow24hUsd, { signed: true }),
           label: "net buy flow",
           sub: "last 24h · buys minus sells",
           tone: data.netFlow24hUsd >= 0 ? "pos" : "neg",
@@ -196,8 +198,11 @@ const PLACEHOLDER_STATS: ReadonlyArray<Stat> = [
   { value: "—", label: "whales watched", sub: "refreshed weekly · top by all-time PnL" },
 ];
 
-function formatBigUsd(n: number): { value: string; unit?: string } {
-  const sign = n < 0 ? "-" : n > 0 ? "+" : "";
+function formatBigUsd(
+  n: number,
+  opts: { signed: boolean } = { signed: false },
+): { value: string; unit?: string } {
+  const sign = opts.signed ? (n < 0 ? "-" : n > 0 ? "+" : "") : n < 0 ? "-" : "";
   const abs = Math.abs(n);
   if (abs >= 1e9) return { value: `${sign}$${(abs / 1e9).toFixed(1)}`, unit: "B" };
   if (abs >= 1e6) return { value: `${sign}$${(abs / 1e6).toFixed(0)}`, unit: "M" };

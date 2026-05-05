@@ -51,27 +51,35 @@ type Trade = {
   alias: string;
   side: "BUY" | "SELL";
   usd: string;
+  market: string;
   /** ms since mount when trade was scheduled to land. */
   landAt: number;
 };
 
-const ALIAS_POOL: ReadonlyArray<{ alias: string; cat: number }> = [
-  { alias: "Theo4",       cat: 2 },
-  { alias: "@PrincessOfCo", cat: 0 },
-  { alias: "0xAce…f7",    cat: 1 },
-  { alias: "@BetMaker",   cat: 3 },
-  { alias: "GammaGod",    cat: 2 },
-  { alias: "@EVMaxi",     cat: 4 },
-  { alias: "RoenickFan",  cat: 1 },
-  { alias: "0xWhale99",   cat: 0 },
-  { alias: "@SolEdge",    cat: 2 },
+/** Whale presets paired with the category they typically trade in and a few
+ *  representative markets — gives the hero callout enough variety that
+ *  reading two in a row already tells the story (different whales, different
+ *  sides, different markets). cat indexes ROWS above. */
+const WHALE_POOL: ReadonlyArray<{ alias: string; cat: number; markets: ReadonlyArray<string> }> = [
+  { alias: "Theo4",         cat: 2, markets: ["BTC > $150k", "ETH < $2k", "SOL > $300"] },
+  { alias: "@PrincessOfCo", cat: 0, markets: ["Trump 2028", "GOP Senate", "VP pick"] },
+  { alias: "0xAce…f7",      cat: 1, markets: ["Lakers vs Celtics", "Bills vs Eagles", "Yankees ML"] },
+  { alias: "@BetMaker",     cat: 3, markets: ["Fed rate cut", "Oil > $90", "USDJPY > 155"] },
+  { alias: "GammaGod",      cat: 2, markets: ["BTC ATH by Q3", "ETH ETF flows", "XRP > $3"] },
+  { alias: "@EVMaxi",       cat: 4, markets: ["AI bill passes", "OpenAI valuation", "TSMC > $200"] },
+  { alias: "RoenickFan",    cat: 1, markets: ["Chelsea wins EPL", "Real Madrid UCL", "Lakers conf finals"] },
+  { alias: "0xWhale99",     cat: 0, markets: ["Powell stays", "Election turnout", "SCOTUS ruling"] },
+  { alias: "@SolEdge",      cat: 2, markets: ["SOL flips ETH?", "Memecoin season", "DEX volume Q2"] },
+  { alias: "@DegenJury",    cat: 6, markets: ["Oscar Best Picture", "Grammy Album", "Eurovision winner"] },
+  { alias: "ClimateBro",    cat: 7, markets: ["NYC > 25°C Fri", "Hurricane landfall", "Arctic ice min"] },
+  { alias: "GeoWhale",      cat: 5, markets: ["UK election", "Brazil presidency", "EU summit deal"] },
 ];
 
-const USD_OPTIONS = ["$8.4k", "$22k", "$48k", "$84k", "$120k", "$310k"];
+const USD_OPTIONS = ["$8.4k", "$22k", "$48k", "$84k", "$120k", "$210k", "$310k", "$540k"];
 
 let nextId = 1;
 function newRandomTrade(now: number): Trade {
-  const sample = ALIAS_POOL[Math.floor(Math.random() * ALIAS_POOL.length)]!;
+  const sample = WHALE_POOL[Math.floor(Math.random() * WHALE_POOL.length)]!;
   // Trades skew to recent columns — the "now" edge.
   const col = COLS - 1 - Math.floor(Math.random() * 4);
   return {
@@ -81,6 +89,7 @@ function newRandomTrade(now: number): Trade {
     alias: sample.alias,
     side: Math.random() > 0.35 ? "BUY" : "SELL",
     usd: USD_OPTIONS[Math.floor(Math.random() * USD_OPTIONS.length)]!,
+    market: sample.markets[Math.floor(Math.random() * sample.markets.length)]!,
     landAt: now + 1100, // 1.1s flight time
   };
 }
@@ -88,7 +97,15 @@ function newRandomTrade(now: number): Trade {
 type State = {
   inflight: ReadonlyArray<Trade>;
   active: ReadonlyArray<{ row: number; col: number; until: number }>;
-  callout: { row: number; col: number; alias: string; side: "BUY" | "SELL"; usd: string; until: number } | null;
+  callout: {
+    row: number;
+    col: number;
+    alias: string;
+    side: "BUY" | "SELL";
+    usd: string;
+    market: string;
+    until: number;
+  } | null;
   convergence: { row: number; col: number; count: number; until: number } | null;
   counter: number;
 };
@@ -117,6 +134,7 @@ function reduce(state: State, action: Action): State {
           alias: action.trade.alias,
           side: action.trade.side,
           usd: action.trade.usd,
+          market: action.trade.market,
           until: action.now + 2400,
         },
         counter: state.counter + 1,
@@ -188,6 +206,11 @@ export function HeroVisual() {
       const row = Math.floor(Math.random() * ROWS.length);
       const col = COLS - 1 - Math.floor(Math.random() * 3);
       dispatch({ type: "convergeStart", row, col, now: Date.now() });
+      // Pick a single market the convergence forms around — bumps the
+      // "they're piling into THIS" reading. Use a whale that matches the
+      // chosen row category for the seed market label.
+      const seedWhale = WHALE_POOL.find((w) => w.cat === row) ?? WHALE_POOL[0]!;
+      const market = seedWhale.markets[Math.floor(Math.random() * seedWhale.markets.length)]!;
       const aliases: ReadonlyArray<string> = ["Theo4", "@PrincessOfCo", "GammaGod", "0xWhale99"];
       aliases.forEach((alias, i) => {
         setTimeout(() => {
@@ -199,6 +222,7 @@ export function HeroVisual() {
             alias,
             side: "BUY",
             usd: USD_OPTIONS[2 + (i % 3)]!,
+            market,
             landAt: Date.now() + 1100,
           };
           dispatch({ type: "schedule", trade });
@@ -480,8 +504,13 @@ function Callout({
         <span style={{ color: accent }}>{callout.side}</span>
         <span>·</span>
         <span style={{ color: TOKENS.text }}>{callout.usd}</span>
+        <span>·</span>
+        <span style={{ color: TOKENS.textSec }}>{ROWS[callout.row]?.label}</span>
       </div>
-      <div style={{ fontSize: 12, color: TOKENS.text, fontWeight: 700, marginTop: 1 }}>{callout.alias}</div>
+      <div style={{ fontSize: 12, color: TOKENS.text, fontWeight: 700, marginTop: 2 }}>{callout.alias}</div>
+      <div style={{ fontSize: 10, color: TOKENS.textMuted, fontFamily: TOKENS.mono, marginTop: 1, maxWidth: 220, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={callout.market}>
+        {callout.market}
+      </div>
       {/* tail */}
       <div
         style={{
