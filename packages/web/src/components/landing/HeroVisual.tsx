@@ -141,7 +141,17 @@ type State = {
   } | null;
   convergence: { row: number; col: number; count: number; until: number } | null;
   counter: number;
+  /** Accumulated PnL-shift per cell driven by landed trades. Each BUY
+   *  bumps the cell signed by +SHIFT, each SELL by -SHIFT. Persists
+   *  for the lifetime of the mount so the heatmap visibly drifts as
+   *  trades flow in (just like the real product). Keyed "${row}:${col}". */
+  cellShift: Readonly<Record<string, number>>;
 };
+
+/** How much one trade nudges its target cell's signed value. BUY pulls
+ *  toward green, SELL toward red. Combined with the seeded background
+ *  via Math.max/Math.min(±1) in the renderer. */
+const TRADE_SHIFT = 0.22;
 
 type Action =
   | { type: "schedule"; trade: Trade }
@@ -157,6 +167,10 @@ function reduce(state: State, action: Action): State {
       return { ...state, inflight: [...state.inflight, action.trade] };
     case "land": {
       const cellUntil = action.now + 1500;
+      const cellKey = `${action.trade.row}:${action.trade.col}`;
+      const delta = action.trade.side === "BUY" ? TRADE_SHIFT : -TRADE_SHIFT;
+      const prev = state.cellShift[cellKey] ?? 0;
+      const next = Math.max(-1, Math.min(1, prev + delta));
       return {
         ...state,
         inflight: state.inflight.filter((t) => t.id !== action.trade.id),
@@ -171,6 +185,7 @@ function reduce(state: State, action: Action): State {
           until: action.now + 2400,
         },
         counter: state.counter + 1,
+        cellShift: { ...state.cellShift, [cellKey]: next },
       };
     }
     case "convergeStart":
@@ -200,6 +215,7 @@ export function HeroVisual() {
     callout: null,
     convergence: null,
     counter: 0,
+    cellShift: {},
   });
   const [tick, setTick] = useState(0);
   const startedAt = useRef<number>(0);
@@ -304,7 +320,7 @@ export function HeroVisual() {
 
       {/* heatmap grid — wraps in a positioning container so dots / callouts can overlay */}
       <div style={{ position: "relative", marginTop: 10 }}>
-        <Grid activeMap={activeMap} tick={tick} />
+        <Grid activeMap={activeMap} tick={tick} cellShift={state.cellShift} />
         <NowLine />
         <Inflight trades={state.inflight} />
         <Callout callout={state.callout} />
@@ -502,14 +518,16 @@ function ChipGroup({ items, active }: { items: ReadonlyArray<string>; active: st
 function Grid({
   activeMap,
   tick,
+  cellShift,
 }: {
   activeMap: Map<string, number>;
   tick: number;
+  cellShift: Readonly<Record<string, number>>;
 }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: `78px repeat(${COLS}, 1fr)`, gap: 3 }}>
       {ROWS.map((row, r) => (
-        <Row key={row.label} row={r} tick={tick} activeMap={activeMap} />
+        <Row key={row.label} row={r} tick={tick} activeMap={activeMap} cellShift={cellShift} />
       ))}
     </div>
   );
@@ -519,10 +537,12 @@ function Row({
   row,
   tick,
   activeMap,
+  cellShift,
 }: {
   row: number;
   tick: number;
   activeMap: Map<string, number>;
+  cellShift: Readonly<Record<string, number>>;
 }) {
   const r = ROWS[row]!;
   return (
@@ -558,22 +578,32 @@ function Row({
         <span style={{ color: TOKENS.text }}>{r.label}</span>
       </div>
       {Array.from({ length: COLS }).map((_, c) => {
-        const signed = seedSigned(row, c);
+        const cellKey = `${row}:${c}`;
+        // Apply landed-trade nudges on top of the seeded baseline so
+        // the cell's actual colour shifts as BUYs/SELLs come in. Clamp
+        // to [-1, 1] — trade shifts can otherwise stack past the
+        // saturation point of the colour ramp.
+        const baseline = seedSigned(row, c);
+        const shift = cellShift[cellKey] ?? 0;
+        const signed = Math.max(-1, Math.min(1, baseline + shift));
         const mag = Math.abs(signed);
         const pulse = (Math.sin((tick + row * 3 + c * 5) * 0.7) + 1) / 2;
         const { color, alpha } = pnlColor(signed);
         const adjusted = Math.min(1, alpha + pulse * mag * 0.1);
-        const isActive = activeMap.has(`${row}:${c}`);
+        const isActive = activeMap.has(cellKey);
         return (
           <div
             key={c}
-            data-cell={`${row}:${c}`}
+            data-cell={cellKey}
             style={{
               height: 26,
               borderRadius: 3,
               background: color,
               opacity: isActive ? Math.min(1, alpha + 0.4) : adjusted,
-              transition: "opacity .35s ease-out",
+              // Slight delay on the colour transition so the user can
+              // perceive "trade landed → cell flashed → cell shifted
+              // hue" as three distinct beats rather than one blur.
+              transition: "background .55s ease-out, opacity .35s ease-out",
               animation: isActive ? "cellFlash 1.1s ease-out" : undefined,
               outline: isActive ? `1.5px solid ${TOKENS.pos}` : undefined,
               outlineOffset: -1,
