@@ -25,7 +25,7 @@ import { Header } from "./Header";
 import { HeatmapSkeleton } from "./HeatmapSkeleton";
 import { LoginModal } from "./LoginModal";
 import { StatsBar } from "./StatsBar";
-import { Tooltip, type TooltipAnchor, type TooltipRect } from "./Tooltip";
+import { Tooltip, type TooltipAnchor } from "./Tooltip";
 import { WhaleDrawer } from "./WhaleDrawer";
 
 type HoverState = {
@@ -106,8 +106,13 @@ export function Heatmap() {
     }
   }, []);
   const [hover, setHover] = useState<HoverState | null>(null);
-  const [locked, setLocked] = useState<HoverState | null>(null);
-  const [lockedRect, setLockedRect] = useState<TooltipRect | null>(null);
+  // Click on a cell opens this in the right-side drawer (Tooltip in
+  // `renderAs="drawer"` mode). Replaces the prior anchored "locked"
+  // tooltip — UX equivalent of the WhaleDrawer pattern, the user can
+  // keep peeking at other cells via hover while the panel stays put.
+  // Clicking another cell SWAPS the panel content; clicking the same
+  // cell again toggles it off.
+  const [panelCell, setPanelCell] = useState<HoverState | null>(null);
   const [whaleProfileAddr, setWhaleProfileAddr] = useState<string | null>(null);
   const [flashByCell, setFlashByCell] = useState<FlashByCell>({});
   const [pendingSignals, setPendingSignals] = useState<SignalEvent[]>([]);
@@ -188,8 +193,7 @@ export function Heatmap() {
   // are stale across grid shape changes).
   useEffect(() => {
     setHover(null);
-    setLocked(null);
-    setLockedRect(null);
+    setPanelCell(null);
   }, [mode, range, patternKind, drillCategory, drillSubcategory]);
 
   // Drilling out of a category should also clear any L3 state — going from
@@ -309,14 +313,13 @@ export function Heatmap() {
                   metric={metric}
                   onHover={(h) => setHover(h)}
                   onClick={(h) => {
-                    setLocked((prev) => {
-                      if (prev?.cellId === h.cellId) {
-                        setLockedRect(null);
-                        return null;
-                      }
-                      setLockedRect(null);
-                      return h;
-                    });
+                    // Toggle: clicking the same cell again closes the panel.
+                    // Clicking a different cell SWAPS content (instead of
+                    // close-then-open) — Tooltip re-renders with new props.
+                    // Mutually exclusive with WhaleDrawer — opening one
+                    // closes the other so they don't stack to the right.
+                    setPanelCell((prev) => (prev?.cellId === h.cellId ? null : h));
+                    setWhaleProfileAddr(null);
                   }}
                   onRowClick={
                     // PATTERN doesn't support L3 (per-market) drill — bail
@@ -331,7 +334,7 @@ export function Heatmap() {
                           ? (key) => (isAuthed ? setDrillSubcategory(key) : setLoginOpen(true))
                           : undefined
                   }
-                  lockedCellId={locked?.cellId ?? null}
+                  lockedCellId={panelCell?.cellId ?? null}
                   flashByCell={flashByCell}
                   gridKey={`${mode}-${range}-${patternKind}-${drillCategory ?? "top"}`}
                   savedOrder={rowOrder.get(scopeKey)}
@@ -341,33 +344,39 @@ export function Heatmap() {
                 />
               );
             })()}
-            {locked && (
+            {panelCell && (
               <Tooltip
-                key={`locked-${locked.cellId}`}
-                cell={locked.cell}
-                rowCells={displayData.cells[locked.category] ?? []}
-                anchor={locked.anchor}
-                category={locked.category as Category}
-                slotLabel={locked.slotLabel}
+                key={`panel-${panelCell.cellId}`}
+                cell={panelCell.cell}
+                rowCells={displayData.cells[panelCell.category] ?? []}
+                anchor={panelCell.anchor}
+                category={panelCell.category as Category}
+                slotLabel={panelCell.slotLabel}
                 mode={displayData.mode}
                 range={range}
                 patternKind={patternKind}
                 metric={metric}
                 lookbackDays={displayData.lookbackDays ?? 30}
                 locked
-                onPlaced={setLockedRect}
+                renderAs="drawer"
                 isAuthed={isAuthed}
                 onRequestLogin={() => setLoginOpen(true)}
-                onWhaleClick={(addr) => setWhaleProfileAddr(addr)}
+                // Clicking a whale row inside the cell panel pivots to that
+                // whale's full drawer — close the cell panel so the two
+                // right-side surfaces never stack.
+                onWhaleClick={(addr) => {
+                  setPanelCell(null);
+                  setWhaleProfileAddr(addr);
+                }}
                 drillSubcategory={displayData.drillSubcategory}
                 headerIcon={
                   displayData.drillSubcategory
-                    ? displayData.marketIcons?.[locked.category] ?? null
+                    ? displayData.marketIcons?.[panelCell.category] ?? null
                     : null
                 }
                 headerTitle={
                   displayData.drillSubcategory
-                    ? displayData.marketQuestions?.[locked.category] ?? null
+                    ? displayData.marketQuestions?.[panelCell.category] ?? null
                     : null
                 }
                 headerCrumb={
@@ -375,13 +384,10 @@ export function Heatmap() {
                     ? `${displayData.drillCategory} · ${displayData.drillSubcategoryLabel ?? ""}`
                     : null
                 }
-                onUnlock={() => {
-                  setLocked(null);
-                  setLockedRect(null);
-                }}
+                onClose={() => setPanelCell(null)}
               />
             )}
-            {hover && hover.cellId !== locked?.cellId && (
+            {hover && hover.cellId !== panelCell?.cellId && (
               <Tooltip
                 key={`hover-${hover.cellId}`}
                 cell={hover.cell}
@@ -395,7 +401,6 @@ export function Heatmap() {
                 metric={metric}
                 lookbackDays={displayData.lookbackDays ?? 30}
                 locked={false}
-                avoidRect={lockedRect}
                 isAuthed={isAuthed}
                 onRequestLogin={() => setLoginOpen(true)}
                 onWhaleClick={(addr) => setWhaleProfileAddr(addr)}

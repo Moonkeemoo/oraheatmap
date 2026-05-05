@@ -84,6 +84,8 @@ export function Tooltip({
   headerIcon,
   headerTitle,
   headerCrumb,
+  renderAs = "float",
+  onClose,
 }: {
   cell: HeatmapCell;
   /** All cells of the same row (category) in display order. Used to draw
@@ -129,7 +131,15 @@ export function Tooltip({
    *  area (not on an interactive child). Lets users dismiss the lock
    *  without having to find the cell underneath the tooltip. */
   onUnlock?: () => void;
+  /** Outer chrome variant. "float" (default) keeps the existing
+   *  cell-anchored positioning logic; "drawer" pins to the right edge
+   *  like WhaleDrawer (backdrop overlay, slide-in, top-right X button).
+   *  Drawer is what Cell click triggers; float is what hover triggers. */
+  renderAs?: "float" | "drawer";
+  /** Drawer-only — fired by ESC, overlay click, or the X button. */
+  onClose?: () => void;
 }) {
+  const isDrawer = renderAs === "drawer";
   const meta = categoryMeta(category);
   const isPattern = mode === "pattern";
   // At L3, the `category` prop holds the condition_id (rowKey) — the heatmap
@@ -186,6 +196,8 @@ export function Tooltip({
   const [pos, setPos] = useState(initialPos);
 
   useLayoutEffect(() => {
+    // Drawer mode is fixed to the right edge — no anchor-based dodging.
+    if (isDrawer) return;
     if (!ref.current) return;
     const r = ref.current.getBoundingClientRect();
     const parent = ref.current.offsetParent as HTMLElement | null;
@@ -273,46 +285,22 @@ export function Tooltip({
       right: picked.left + W,
       bottom: picked.top + H,
     });
-  }, [anchor, sortedMarkets.length, isPattern, avoidRect, onPlaced]);
+  }, [anchor, sortedMarkets.length, isPattern, avoidRect, onPlaced, isDrawer]);
 
-  return (
-    <div
-      ref={ref}
-      style={{
-        position: "absolute",
-        left: pos.left,
-        top: pos.top,
-        width: initialW,
-        background: TOKENS.panel,
-        border: `1px solid ${locked ? TOKENS.accent : TOKENS.borderHi}`,
-        borderRadius: 8,
-        padding: "12px 14px",
-        fontFamily: TOKENS.font,
-        color: TOKENS.text,
-        boxShadow: locked
-          ? `0 10px 30px rgba(0,0,0,0.55), 0 0 0 1px ${TOKENS.accent}55`
-          : "0 10px 30px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.4)",
-        // Locked tooltip is interactive (so the user can click market links).
-        // Hover tooltip stays pointer-transparent so it doesn't hijack the
-        // mouse during cell-to-cell comparison.
-        pointerEvents: locked ? "auto" : "none",
-        cursor: locked ? "pointer" : "default",
-        zIndex: locked ? 31 : 30,
-        animation: "tipIn .12s ease-out",
-        boxSizing: "border-box",
-      }}
-      onClick={
-        locked && onUnlock
-          ? (e) => {
-              // Don't unlock when the user clicked an interactive descendant
-              // (whale row, market link, sign-in CTA, etc.) — those have
-              // their own behaviours and shouldn't dismiss the tooltip.
-              const target = e.target as HTMLElement | null;
-              if (target?.closest("button, a, input, textarea, select")) return;
-              onUnlock();
-            }
-          : undefined
-      }>
+  // ESC closes the drawer. Bound only when drawer mode is active so float
+  // hovers don't accidentally swallow ESC.
+  useLayoutEffect(() => {
+    if (!isDrawer || !onClose) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose!();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isDrawer, onClose]);
+
+  // ── Body — same JSX both modes; outer chrome differs. ──────────────────
+  const body = (
+    <>
       {isL3 && headerTitle ? (
         // L3 header — Polymarket-style: icon + breadcrumb + full title.
         // Replaces the small "OTHER" category badge with the actual market.
@@ -822,20 +810,170 @@ export function Tooltip({
         </div>
       )}
 
-      <div
-        style={{
-          marginTop: 8,
-          paddingTop: 6,
-          borderTop: `1px dashed ${TOKENS.border}`,
-          fontSize: 9,
-          fontFamily: TOKENS.mono,
-          color: TOKENS.textMuted,
-          letterSpacing: 0.4,
-          textAlign: "center",
-        }}
-      >
-        {locked ? "клікни ще раз щоб розлочити" : "клікни щоб залочити"}
-      </div>
+      {!isDrawer && (
+        <div
+          style={{
+            marginTop: 8,
+            paddingTop: 6,
+            borderTop: `1px dashed ${TOKENS.border}`,
+            fontSize: 9,
+            fontFamily: TOKENS.mono,
+            color: TOKENS.textMuted,
+            letterSpacing: 0.4,
+            textAlign: "center",
+          }}
+        >
+          {locked ? "клікни ще раз щоб закрити" : "клікни щоб відкрити панель"}
+        </div>
+      )}
+    </>
+  );
+
+  // ── Drawer chrome — right-side slide-in (mirrors WhaleDrawer). ─────────
+  if (isDrawer) {
+    return (
+      <>
+        {/* Click-outside overlay — full viewport, dim, dismisses on click. */}
+        <div
+          onClick={onClose}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            zIndex: 50,
+            animation: "tipIn .18s ease-out",
+          }}
+        />
+        <aside
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: "fixed",
+            top: 0,
+            right: 0,
+            width: "min(440px, 92vw)",
+            height: "100vh",
+            background: TOKENS.panel,
+            borderLeft: `1px solid ${TOKENS.borderHi}`,
+            boxShadow: "-20px 0 60px rgba(0,0,0,0.6)",
+            zIndex: 51,
+            display: "flex",
+            flexDirection: "column",
+            fontFamily: TOKENS.font,
+            color: TOKENS.text,
+            animation: "drawerIn .18s ease-out",
+            overflowY: "auto",
+          }}
+        >
+          {/* Top bar — close button + slot label so the user knows which
+              cell is loaded. Stays sticky so it's reachable while scrolling
+              long bodies (top whales / probability chart inflate L3 height). */}
+          <div
+            style={{
+              position: "sticky",
+              top: 0,
+              background: TOKENS.panel,
+              borderBottom: `1px solid ${TOKENS.border}`,
+              padding: "10px 14px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              zIndex: 1,
+            }}
+          >
+            <button
+              onClick={onClose}
+              aria-label="Close cell panel"
+              style={{
+                background: "transparent",
+                border: `1px solid ${TOKENS.border}`,
+                color: TOKENS.textSec,
+                fontSize: 14,
+                fontWeight: 700,
+                padding: "3px 9px",
+                borderRadius: 6,
+                cursor: "pointer",
+                lineHeight: 1,
+              }}
+            >
+              ←
+            </button>
+            <span
+              style={{
+                fontSize: 10,
+                color: TOKENS.textMuted,
+                fontFamily: TOKENS.mono,
+                letterSpacing: 0.4,
+                textTransform: "uppercase",
+                fontWeight: 700,
+              }}
+            >
+              {slotLabel}
+            </span>
+            <button
+              onClick={onClose}
+              aria-label="Close cell panel"
+              style={{
+                background: "transparent",
+                border: `1px solid ${TOKENS.border}`,
+                color: TOKENS.textSec,
+                fontSize: 14,
+                fontWeight: 700,
+                padding: "3px 9px",
+                borderRadius: 6,
+                cursor: "pointer",
+                lineHeight: 1,
+              }}
+            >
+              ✕
+            </button>
+          </div>
+          <div style={{ padding: "14px 16px 24px", flex: 1 }}>{body}</div>
+          <style>{`
+            @keyframes drawerIn {
+              0% { transform: translateX(20px); opacity: 0; }
+              100% { transform: translateX(0); opacity: 1; }
+            }
+          `}</style>
+        </aside>
+      </>
+    );
+  }
+
+  // ── Float chrome — anchored to the cell, hover behaviour. ──────────────
+  return (
+    <div
+      ref={ref}
+      style={{
+        position: "absolute",
+        left: pos.left,
+        top: pos.top,
+        width: initialW,
+        background: TOKENS.panel,
+        border: `1px solid ${locked ? TOKENS.accent : TOKENS.borderHi}`,
+        borderRadius: 8,
+        padding: "12px 14px",
+        fontFamily: TOKENS.font,
+        color: TOKENS.text,
+        boxShadow: locked
+          ? `0 10px 30px rgba(0,0,0,0.55), 0 0 0 1px ${TOKENS.accent}55`
+          : "0 10px 30px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.4)",
+        pointerEvents: locked ? "auto" : "none",
+        cursor: locked ? "pointer" : "default",
+        zIndex: locked ? 31 : 30,
+        animation: "tipIn .12s ease-out",
+        boxSizing: "border-box",
+      }}
+      onClick={
+        locked && onUnlock
+          ? (e) => {
+              const target = e.target as HTMLElement | null;
+              if (target?.closest("button, a, input, textarea, select")) return;
+              onUnlock();
+            }
+          : undefined
+      }
+    >
+      {body}
     </div>
   );
 }
