@@ -6,6 +6,7 @@ import { useMarketHistory } from "@/hooks/useMarketHistory";
 import { marketUrl } from "@/lib/polymarket-url";
 import { TOKENS } from "@/lib/tokens";
 import { ProbabilityChart } from "./ProbabilityChart";
+import { CellFeed } from "./tooltip/CellFeed";
 import { CycleHistogram, rowIndexToServerSlot } from "./tooltip/CycleHistogram";
 import { MarketIcon } from "./tooltip/MarketIcon";
 import {
@@ -87,6 +88,7 @@ export function Tooltip({
   headerTitle,
   headerCrumb,
   parentCategory,
+  feed,
   displayLabel,
   slotIndex,
   renderAs = "float",
@@ -131,6 +133,11 @@ export function Tooltip({
    *  `category`; at L2/L3 it's the parent category so the meta lookup
    *  doesn't fall back to "Other". */
   parentCategory?: Category | null;
+  /** Live cell-feed payload from Heatmap's useCellFeed hook. Only used in
+   *  drawer mode — Tooltip renders a chronological list at the bottom of
+   *  the body when this is provided. Heatmap owns the hook so a single
+   *  useSse subscription can pipe signals into the active feed. */
+  feed?: { entries: ReadonlyArray<import("@/hooks/useCellFeed").FeedEntry>; loading: boolean } | null;
   /** Override for the small badge text. At L1 omit (badge = category
    *  name from meta.label). At L2 pass the subcategory display label
    *  ("NBA", "Bitcoin") so the badge reflects the row, not the parent
@@ -834,6 +841,32 @@ export function Tooltip({
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Live feed — drawer-only. Renders below the top markets / probability
+          chart blocks so the heavy aggregations stay above the fold. */}
+      {isDrawer && feed && (
+        <div style={{ marginTop: 16, borderTop: `1px solid ${TOKENS.border}`, paddingTop: 12 }}>
+          <div
+            style={{
+              fontSize: 9,
+              letterSpacing: 0.5,
+              color: TOKENS.textMuted,
+              textTransform: "uppercase",
+              marginBottom: 6,
+              fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <span>Live feed</span>
+            <span style={{ color: TOKENS.textSec, fontFamily: TOKENS.mono }}>
+              latest {feed.entries.length} · streaming
+            </span>
+          </div>
+          <CellFeed entries={feed.entries} loading={feed.loading} />
         </div>
       )}
 

@@ -7,6 +7,7 @@ import { useRowOrder } from "@/hooks/useRowOrder";
 import { useSse } from "@/hooks/useSse";
 import { applySignal } from "@/lib/heatmap-apply";
 import { recordSignal } from "@/lib/live-clock";
+import { useCellFeed } from "@/hooks/useCellFeed";
 import { buildScopeKey } from "@/lib/row-order";
 import { TOKENS } from "@/lib/tokens";
 import type {
@@ -125,6 +126,20 @@ export function Heatmap() {
   // panel, stash the panel state here so the drawer's ← button can pop
   // back to it. Cleared when the drawer is closed via X / overlay / ESC.
   const [whaleDrawerBackTo, setWhaleDrawerBackTo] = useState<HoverState | null>(null);
+  // Live cell-feed for the open panel. Scope is derived from drill state +
+  // panel cell's row key. ingest() is called from the single useSse below
+  // (no second EventSource — keeps us under the per-origin SSE cap).
+  const cellFeedScope = panelCell
+    ? drillSubcategory != null
+      ? // L3: panelCell.category IS the conditionId
+        { category: drillCategory!, subcategory: drillSubcategory, conditionId: panelCell.category }
+      : drillCategory
+        ? // L2: panelCell.category IS the subcategory slug
+          { category: drillCategory, subcategory: panelCell.category, conditionId: null }
+        : // L1: panelCell.category is the actual category
+          { category: panelCell.category, subcategory: null, conditionId: null }
+    : null;
+  const cellFeed = useCellFeed({ scope: cellFeedScope, enabled: panelCell !== null });
   const [flashByCell, setFlashByCell] = useState<FlashByCell>({});
   const [pendingSignals, setPendingSignals] = useState<SignalEvent[]>([]);
   const rowOrder = useRowOrder();
@@ -159,6 +174,9 @@ export function Heatmap() {
     // view filters out (the Header pill should still tick when SSE is
     // healthy, regardless of drill state).
     recordSignal();
+    // Pump the same signal into the cell-feed hook; it filters by the
+    // active panel scope and ignores everything else.
+    cellFeed.ingest(s);
 
     if (!fetchedData) return;
     if (!metricAffectedBy(metric, s)) return;
@@ -381,6 +399,7 @@ export function Heatmap() {
                     : null
                 }
                 slotIndex={parseSlotFromCellId(panelCell.cellId)}
+                feed={{ entries: cellFeed.entries, loading: cellFeed.loading }}
                 isAuthed={isAuthed}
                 onRequestLogin={() => setLoginOpen(true)}
                 // Clicking a whale row inside the cell panel pivots to that
