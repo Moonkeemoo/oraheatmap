@@ -8,7 +8,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { getDb } from "@/db";
 import { TOKENS } from "@/lib/tokens";
 import { AccountActions } from "./AccountActions";
-import { ConnectProviders } from "./ConnectProviders";
+import { ConnectProviders, DisconnectButton } from "./ConnectProviders";
 
 export const metadata: Metadata = {
   title: "Account · oralab",
@@ -41,12 +41,25 @@ export default async function AccountPage() {
     { provider: string; provider_account_id: string; type: string }[]
   >`SELECT provider, provider_account_id, type FROM auth_accounts WHERE user_id = ${userId}`;
 
-  const connected: { provider: string; label: string; subtitle: string | null }[] =
+  // `linked` rows have an auth_accounts entry → can be disconnected via
+  // /api/account/unlink. The synthetic primary (Credentials provider, JWT-
+  // only, no DB row yet) renders without a Disconnect button — it IS the
+  // current session, the only way to "remove" it is to sign out.
+  type ConnectedRow = {
+    provider: string;
+    label: string;
+    subtitle: string | null;
+    linked: boolean;
+    providerAccountId: string | null;
+  };
+  const connected: ConnectedRow[] =
     accountRows.length > 0
       ? accountRows.map((r) => ({
           provider: r.provider,
           label: PROVIDER_LABEL[r.provider] ?? r.provider,
           subtitle: r.provider_account_id ? truncateId(r.provider_account_id) : null,
+          linked: true,
+          providerAccountId: r.provider_account_id,
         }))
       : sessionProvider
         ? [
@@ -54,6 +67,8 @@ export default async function AccountPage() {
               provider: sessionProvider,
               label: PROVIDER_LABEL[sessionProvider] ?? sessionProvider,
               subtitle: truncateId(userId),
+              linked: false,
+              providerAccountId: null,
             },
           ]
         : [];
@@ -171,18 +186,26 @@ export default async function AccountPage() {
                     </div>
                   )}
                 </div>
-                <span
-                  style={{
-                    fontSize: 10,
-                    fontFamily: TOKENS.mono,
-                    color: TOKENS.pos,
-                    letterSpacing: 0.4,
-                    textTransform: "uppercase",
-                    fontWeight: 700,
-                  }}
-                >
-                  Active
-                </span>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontFamily: TOKENS.mono,
+                      color: TOKENS.pos,
+                      letterSpacing: 0.4,
+                      textTransform: "uppercase",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Active
+                  </span>
+                  {c.linked && c.providerAccountId && (
+                    <DisconnectButton
+                      provider={c.provider}
+                      providerAccountId={c.providerAccountId}
+                    />
+                  )}
+                </div>
               </div>
             ))
           )}

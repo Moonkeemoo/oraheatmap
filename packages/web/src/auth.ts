@@ -2,9 +2,9 @@ import NextAuth, { type NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { SignJWT, jwtVerify } from "jose";
-import { SiweMessage } from "siwe";
 import { getDb } from "@/db";
 import { accounts, authenticators, sessions, users, verificationTokens } from "@/db/auth-schema";
+import { verifySiwe, verifyTelegram } from "@/lib/credentials";
 
 /**
  * Auth.js (NextAuth v5) configuration for the heatmap web app.
@@ -33,6 +33,26 @@ if (!AUTH_SECRET) {
 const SECRET_KEY = new TextEncoder().encode(AUTH_SECRET || "dev-fallback-secret");
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
+/** Look up an existing auth_accounts row for (provider, providerAccountId).
+ *  Lets a returning Credentials sign-in route to a previously-linked user
+ *  instead of forking a new identity. NULL when nothing's linked, or when
+ *  DATABASE_URL isn't set (DB-less dev mode). */
+async function findLinkedUserId(provider: string, providerAccountId: string): Promise<string | null> {
+  if (!process.env["DATABASE_URL"]) return null;
+  try {
+    const { sql } = getDb();
+    const rows = await sql<{ user_id: string }[]>`
+      SELECT user_id FROM auth_accounts
+      WHERE provider = ${provider} AND provider_account_id = ${providerAccountId}
+      LIMIT 1
+    `;
+    return rows[0]?.user_id ?? null;
+  } catch (err) {
+    console.warn("[auth] findLinkedUserId failed:", (err as Error).message);
+    return null;
+  }
+}
+
 const providers: NextAuthConfig["providers"] = [
   // ─── SIWE ──────────────────────────────────────────────────────────────
   Credentials({
@@ -43,29 +63,24 @@ const providers: NextAuthConfig["providers"] = [
       signature: { label: "Signature", type: "text" },
     },
     async authorize(credentials) {
-      if (!credentials?.message || !credentials?.signature) return null;
-      try {
-        const siwe = new SiweMessage(credentials.message as string);
-        // Auth.js v5 doesn't expose the request URL here; we trust the
-        // domain field on the message and verify the signature is valid
-        // for that wallet. Nonce uniqueness is enforced client-side
-        // (one-shot fetch).
-        const result = await siwe.verify({
-          signature: credentials.signature as string,
-          domain: siwe.domain,
-          nonce: siwe.nonce,
-        });
-        if (!result.success) return null;
-        const addr = siwe.address.toLowerCase();
-        return {
-          id: addr,
-          name: addr,
-          // No image — UI uses deterministic whaleColor() for the avatar dot.
-        };
-      } catch (err) {
-        console.warn("[auth/siwe] verify failed:", (err as Error).message);
+      const result = await verifySiwe({
+        message: credentials?.message as string,
+        signature: credentials?.signature as string,
+      });
+      if (!result.ok) {
+        console.warn("[auth/siwe] verify failed:", result.reason);
         return null;
       }
+      // If this wallet was previously linked to another oralab account
+      // (via /api/account/link/siwe), route the session to that user
+      // instead of the wallet-derived id. Otherwise fall back to the
+      // wallet address as the standalone identity.
+      const linkedUserId = await findLinkedUserId("siwe", result.address);
+      return {
+        id: linkedUserId ?? result.address,
+        name: result.address,
+        // No image — UI uses deterministic whaleColor() for the avatar dot.
+      };
     },
   }),
 ];
@@ -309,32 +324,21 @@ if (process.env["TG_LOGIN_BOT_TOKEN"]) {
         payload: { label: "Telegram payload (JSON)", type: "text" },
       },
       async authorize(credentials) {
-        if (!credentials?.payload) return null;
-        try {
-          const payload = JSON.parse(credentials.payload as string) as Record<string, string>;
-          const { hash, ...fields } = payload;
-          // Per Telegram spec: build data_check_string from sorted key=value
-          // joined by \n, then HMAC-SHA256 with key = SHA256(bot_token).
-          const checkString = Object.keys(fields)
-            .sort()
-            .map((k) => `${k}=${fields[k]}`)
-            .join("\n");
-          const { createHmac, createHash } = await import("node:crypto");
-          const secretKey = createHash("sha256").update(process.env["TG_LOGIN_BOT_TOKEN"]!).digest();
-          const computed = createHmac("sha256", secretKey).update(checkString).digest("hex");
-          if (computed !== hash) return null;
-          // Reject payloads older than 24h (replay protection).
-          const authDate = Number(fields["auth_date"]);
-          if (!authDate || Date.now() / 1000 - authDate > 86400) return null;
-          return {
-            id: `tg:${fields["id"]}`,
-            name: fields["username"] || fields["first_name"] || `tg-${fields["id"]}`,
-            image: fields["photo_url"] ?? null,
-          };
-        } catch (err) {
-          console.warn("[auth/telegram] verify failed:", (err as Error).message);
+        const result = await verifyTelegram({
+          payload: credentials?.payload as string,
+          botToken: process.env["TG_LOGIN_BOT_TOKEN"]!,
+        });
+        if (!result.ok) {
+          console.warn("[auth/telegram] verify failed:", result.reason);
           return null;
         }
+        const standaloneId = `tg:${result.telegramId}`;
+        const linkedUserId = await findLinkedUserId("telegram", result.telegramId);
+        return {
+          id: linkedUserId ?? standaloneId,
+          name: result.username || result.firstName || `tg-${result.telegramId}`,
+          image: result.photoUrl,
+        };
       },
     }),
   );
