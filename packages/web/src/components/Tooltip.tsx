@@ -87,6 +87,7 @@ export function Tooltip({
   headerTitle,
   headerCrumb,
   parentCategory,
+  displayLabel,
   slotIndex,
   renderAs = "float",
   onClose,
@@ -130,6 +131,12 @@ export function Tooltip({
    *  `category`; at L2/L3 it's the parent category so the meta lookup
    *  doesn't fall back to "Other". */
   parentCategory?: Category | null;
+  /** Override for the small badge text. At L1 omit (badge = category
+   *  name from meta.label). At L2 pass the subcategory display label
+   *  ("NBA", "Bitcoin") so the badge reflects the row, not the parent
+   *  category — the parent already shows in the breadcrumb on L3 and
+   *  is implied by the active drill on L2. */
+  displayLabel?: string | null;
   /** Display slot index for the sparkline highlight. Pass when known —
    *  cell-reference identity goes stale across SSE updates and the
    *  fallback findIndex returns -1, which silently hides the sparkline. */
@@ -382,7 +389,7 @@ export function Tooltip({
               textTransform: "uppercase",
             }}
           >
-            {meta.label}
+            {displayLabel ?? meta.label}
           </span>
           <span style={{ color: TOKENS.textSec, fontSize: 11, fontFamily: TOKENS.mono }}>
             {slotLabel} · {rangeUnit(range, mode, patternKind)}

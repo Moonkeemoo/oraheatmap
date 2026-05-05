@@ -373,6 +373,13 @@ export function Heatmap() {
                 parentCategory={
                   (displayData.drillCategory as Category | null | undefined) ?? null
                 }
+                // L2: row key is a subcategory slug — show its display
+                // label ("NBA") on the badge, not the parent category.
+                displayLabel={
+                  displayData.drillCategory && !displayData.drillSubcategory
+                    ? displayData.subcategoryLabels?.[panelCell.category] ?? null
+                    : null
+                }
                 slotIndex={parseSlotFromCellId(panelCell.cellId)}
                 isAuthed={isAuthed}
                 onRequestLogin={() => setLoginOpen(true)}
@@ -420,6 +427,11 @@ export function Heatmap() {
                 locked={false}
                 parentCategory={
                   (displayData.drillCategory as Category | null | undefined) ?? null
+                }
+                displayLabel={
+                  displayData.drillCategory && !displayData.drillSubcategory
+                    ? displayData.subcategoryLabels?.[hover.category] ?? null
+                    : null
                 }
                 slotIndex={parseSlotFromCellId(hover.cellId)}
                 isAuthed={isAuthed}
