@@ -53,9 +53,10 @@ function rectsOverlap(a: TooltipRect, b: TooltipRect | null): boolean {
   return !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
 }
 
-// 10 leaves enough room in the drawer (no fixed-height float clipping it)
-// while still being scannable. Was 5 — user asked to widen the leaderboard.
-const TOP_N = 10;
+// Drawer has vertical room for the longer leaderboard; float hovers
+// stay short so the tooltip doesn't dominate the screen.
+const TOP_N_DRAWER = 10;
+const TOP_N_FLOAT = 5;
 
 function rangeUnit(r: LiveRange | undefined, mode: Mode, kind: PatternKind | undefined): string {
   if (mode === "pattern") return kind === "hour-of-day" ? "hour" : "day";
@@ -178,7 +179,8 @@ export function Tooltip({
   const isL3 = !isPattern && drillSubcategory != null;
   const conditionId = isL3 ? category : null;
   const marketHistory = useMarketHistory(conditionId, "max", isL3 && locked);
-  const sortedMarkets = isPattern ? [] : sortMarkets(cell.markets, metric).slice(0, TOP_N);
+  const topN = isDrawer ? TOP_N_DRAWER : TOP_N_FLOAT;
+  const sortedMarkets = isPattern ? [] : sortMarkets(cell.markets, metric).slice(0, topN);
   // Per-cell historical cycles for PATTERN locked tooltip — fires only when
   // we lock so we don't spam the API on every mouse move.
   const cyclesEnabled = isPattern && locked;
@@ -195,7 +197,7 @@ export function Tooltip({
   // match what the heatmap is showing. Hidden in PATTERN mode (no per-cell
   // whale aggregation in the pattern query).
   const cellWhales: ReadonlyArray<WhaleCellSummary> =
-    isPattern ? [] : sortWhales(cell.topWhales ?? [], metric).slice(0, TOP_N);
+    isPattern ? [] : sortWhales(cell.topWhales ?? [], metric).slice(0, topN);
   // Slot index inside the active row — derived from cellId pattern "{cat}:{slot}"
   // upstream. We get rowCells in display order, so the active slot is the
   // last index for LIVE (NOW) ... actually we don't have direct access to

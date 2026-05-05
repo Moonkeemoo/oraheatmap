@@ -59,8 +59,11 @@ function Row({ entry: e }: { entry: FeedEntry }) {
   return (
     <div
       style={{
+        // Time column has to fit "HH:MM:SS" (8 chars) at 11px mono with
+        // breathing room — 44px clipped against the BUY badge. 64px is
+        // safe with the 8px columnGap.
         display: "grid",
-        gridTemplateColumns: "44px 50px 1fr auto",
+        gridTemplateColumns: "64px 44px 1fr auto",
         alignItems: "baseline",
         columnGap: 8,
         padding: "5px 6px",
@@ -70,7 +73,7 @@ function Row({ entry: e }: { entry: FeedEntry }) {
         borderRadius: 4,
       }}
     >
-      <span style={{ color: TOKENS.textMuted, fontFamily: TOKENS.mono }}>
+      <span style={{ color: TOKENS.textMuted, fontFamily: TOKENS.mono, whiteSpace: "nowrap" }}>
         {fmtTime(e.ts)}
       </span>
       <span
