@@ -1,4 +1,4 @@
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { TOKENS } from "@/lib/tokens";
 import type { HeatmapMetric, LiveRange, Mode, PatternKind } from "@/lib/types";
 import { BrandLogo } from "./BrandLogo";
@@ -197,7 +197,7 @@ export function Header({
   /** Open the login modal — used to gate range/mode/kind toggles. */
   onRequestLogin: () => void;
 }) {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
   const isAuthed = status === "authenticated";
   // Wrap a control's onClick — when not authed, intercept and open login instead.
   const gate = <T extends unknown[]>(fn: (...args: T) => void): ((...args: T) => void) => {
@@ -242,16 +242,13 @@ export function Header({
           gap: 8,
         }}
       >
+        {/* Burger leads (top-left). Identity card lives INSIDE its dropdown
+            now — replaces the standalone UserChip. LiveStatus stays
+            outside because it changes every second and the user wants it
+            visible without opening anything. */}
         <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <UserChip
-            name={(session?.user?.name as string) || null}
-            email={(session?.user?.email as string) || null}
-            authed={isAuthed}
-            onLogin={onRequestLogin}
-            onLogout={() => signOut()}
-          />
+          <BurgerMenu onRequestLogin={onRequestLogin} />
           <LiveStatus />
-          <BurgerMenu />
         </div>
         {/* Filter controls row — read left-to-right: mode → mode-block
             (range OR patternKind) → metric → scale. */}

@@ -8,6 +8,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { getDb } from "@/db";
 import { TOKENS } from "@/lib/tokens";
 import { AccountActions } from "./AccountActions";
+import { ConnectProviders } from "./ConnectProviders";
 
 export const metadata: Metadata = {
   title: "Account · oralab",
@@ -185,21 +186,11 @@ export default async function AccountPage() {
               </div>
             ))
           )}
-          <div
-            style={{
-              fontSize: 12,
-              color: TOKENS.textMuted,
-              marginTop: 12,
-              padding: "10px 12px",
-              background: TOKENS.panel2,
-              border: `1px dashed ${TOKENS.border}`,
-              borderRadius: 8,
-              lineHeight: 1.45,
-            }}
-          >
-            Linking a second sign-in method to the same account is coming with v1.6.
-            For now, signing in with a different provider creates a separate account.
-          </div>
+        </Section>
+
+        {/* Add another method */}
+        <Section title="Add another sign-in method">
+          <ConnectProviders connectedIds={connected.map((c) => c.provider)} />
         </Section>
 
         {/* Data & privacy + Sign out — interactive bits live in a client component. */}
