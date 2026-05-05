@@ -346,14 +346,14 @@ export function createApi(deps: ApiDeps) {
       }
       const [row] = await deps.sql<
         {
-          total_signals: string;
-          total_volume: string | null;
+          signals_24h: string;
+          volume_24h: string | null;
           net_flow_24h: string | null;
         }[]
       >`
         SELECT
-          COUNT(*)::text AS total_signals,
-          COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)::text AS total_volume,
+          COUNT(*) FILTER (WHERE ts > NOW() - INTERVAL '24 hours')::text AS signals_24h,
+          COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY' AND ts > NOW() - INTERVAL '24 hours'), 0)::text AS volume_24h,
           COALESCE(
             SUM(size * price) FILTER (WHERE side = 'BUY'  AND ts > NOW() - INTERVAL '24 hours')
           - SUM(size * price) FILTER (WHERE side = 'SELL' AND ts > NOW() - INTERVAL '24 hours'),
@@ -362,8 +362,8 @@ export function createApi(deps: ApiDeps) {
         FROM signals
       `;
       const result = {
-        totalSignals: Number(row?.total_signals ?? 0),
-        totalVolumeUsd: Number(row?.total_volume ?? 0),
+        signals24h: Number(row?.signals_24h ?? 0),
+        volume24hUsd: Number(row?.volume_24h ?? 0),
         netFlow24hUsd: Number(row?.net_flow_24h ?? 0),
         whalesWatched: deps.whaleCount(),
         generatedAt: new Date().toISOString(),

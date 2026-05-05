@@ -10,8 +10,8 @@ import { TOKENS } from "@/lib/tokens";
  * the heading communicates "this is live, not a screenshot".
  */
 type StatsResponse = {
-  totalSignals: number;
-  totalVolumeUsd: number;
+  signals24h: number;
+  volume24hUsd: number;
   netFlow24hUsd: number;
   whalesWatched: number;
   generatedAt: string;
@@ -55,14 +55,14 @@ export function Stats() {
     ? [
         {
           // Gross BUY-side USD — never negative, so no signed prefix.
-          ...formatBigUsd(data.totalVolumeUsd, { signed: false }),
+          ...formatBigUsd(data.volume24hUsd, { signed: false }),
           label: "volume tracked",
-          sub: "all-time · all watched whales",
+          sub: "last 24h · all watched whales",
         },
         {
-          ...formatBigCount(data.totalSignals),
+          ...formatBigCount(data.signals24h),
           label: "signals streamed",
-          sub: "all-time · every Buy / Sell",
+          sub: "last 24h · every Buy / Sell",
         },
         {
           // Signed: + when whales are net-buying, − when net-selling.
