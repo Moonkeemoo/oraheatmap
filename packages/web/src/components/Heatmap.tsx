@@ -28,6 +28,7 @@ import { HeatmapSkeleton } from "./HeatmapSkeleton";
 import { LoginModal } from "./LoginModal";
 import { StatsBar } from "./StatsBar";
 import { Tooltip, type TooltipAnchor } from "./Tooltip";
+import type { TracerEvent } from "./TracerLayer";
 import { WhaleDrawer } from "./WhaleDrawer";
 
 type HoverState = {
@@ -45,6 +46,10 @@ type HoverState = {
 export type FlashByCell = Record<string, number>;
 
 const DOW_DISPLAY_ORDER: ReadonlyArray<number> = [1, 2, 3, 4, 5, 6, 0]; // Mon..Sun, Sun last
+
+/** Monotonic id source for tracer events. Module-level so we don't
+ *  collide across remounts — re-keyed React doesn't reset this. */
+let nextTracerId = 1;
 
 /** Map a signal timestamp to the bucket index AS IT APPEARS IN SERVER RESPONSE.
  *  Grid handles local-TZ rotation separately for display. LIVE: last index (NOW).
@@ -142,6 +147,7 @@ export function Heatmap() {
     : null;
   const cellFeed = useCellFeed({ scope: cellFeedScope, enabled: panelCell !== null });
   const [flashByCell, setFlashByCell] = useState<FlashByCell>({});
+  const [tracerEvents, setTracerEvents] = useState<ReadonlyArray<TracerEvent>>([]);
   const [pendingSignals, setPendingSignals] = useState<SignalEvent[]>([]);
   const rowOrder = useRowOrder();
 
@@ -236,7 +242,17 @@ export function Heatmap() {
     }
     const key = `${rowKey}:${slotIdx}`;
     setFlashByCell((prev) => ({ ...prev, [key]: (prev[key] ?? 0) + 1 }));
+    // Tracer streak — fires once per signal. Auto-pruned via onDone
+    // from TracerLayer when the animation finishes (~750ms).
+    setTracerEvents((prev) => [
+      ...prev,
+      { id: nextTracerId++, cellKey: key, side: s.side },
+    ]);
   });
+
+  const handleTracerDone = (id: number): void => {
+    setTracerEvents((prev) => prev.filter((t) => t.id !== id));
+  };
 
   // Reset hover + lock on mode/range/kind/drill switches (anchors + cell IDs
   // are stale across grid shape changes).
@@ -385,6 +401,8 @@ export function Heatmap() {
                   }
                   lockedCellId={panelCell?.cellId ?? null}
                   flashByCell={flashByCell}
+                  tracerEvents={tracerEvents}
+                  onTracerDone={handleTracerDone}
                   gridKey={`${mode}-${range}-${patternKind}-${drillCategory ?? "top"}`}
                   savedOrder={rowOrder.get(scopeKey)}
                   onReorder={(next) => rowOrder.set(scopeKey, next)}

@@ -63,6 +63,7 @@ export function Cell({
   isLocked,
   onHover,
   onClick,
+  tracerKey,
 }: {
   cell: HeatmapCell;
   metric: HeatmapMetric;
@@ -75,6 +76,10 @@ export function Cell({
   isLocked: boolean;
   onHover: (h: { cell: HeatmapCell; anchor: TooltipAnchor } | null) => void;
   onClick: (h: { cell: HeatmapCell; anchor: TooltipAnchor }) => void;
+  /** Stable cell identity in the form `${rowKey}:${originalSlotIdx}` —
+   *  used as a DOM hook so the TracerLayer can find this cell to draw
+   *  a flying streak when an SSE signal lands on it. */
+  tracerKey?: string;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [hovered, setHovered] = useState(false);
@@ -130,6 +135,7 @@ export function Cell({
   return (
     <div
       ref={ref}
+      data-tracer-cell={tracerKey}
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
       onClick={onClickHandler}
