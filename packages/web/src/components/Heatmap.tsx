@@ -53,6 +53,13 @@ const DOW_DISPLAY_ORDER: ReadonlyArray<number> = [1, 2, 3, 4, 5, 6, 0]; // Mon..
  *    (Kyiv UTC+3, India UTC+5.5) the data underneath is still a UTC bucket;
  *    the visual flash just lands on the column the user sees as "now".
  *  PATTERN-dow: 0..6 in Mon..Sun display order. */
+function parseSlotFromCellId(cellId: string): number | null {
+  const idx = cellId.lastIndexOf(":");
+  if (idx < 0) return null;
+  const n = Number(cellId.slice(idx + 1));
+  return Number.isFinite(n) ? n : null;
+}
+
 function flashSlotIndex(
   mode: Mode,
   kind: PatternKind | undefined,
@@ -114,6 +121,10 @@ export function Heatmap() {
   // cell again toggles it off.
   const [panelCell, setPanelCell] = useState<HoverState | null>(null);
   const [whaleProfileAddr, setWhaleProfileAddr] = useState<string | null>(null);
+  // When the whale drawer is opened by clicking a whale row INSIDE a cell
+  // panel, stash the panel state here so the drawer's ← button can pop
+  // back to it. Cleared when the drawer is closed via X / overlay / ESC.
+  const [whaleDrawerBackTo, setWhaleDrawerBackTo] = useState<HoverState | null>(null);
   const [flashByCell, setFlashByCell] = useState<FlashByCell>({});
   const [pendingSignals, setPendingSignals] = useState<SignalEvent[]>([]);
   const rowOrder = useRowOrder();
@@ -359,12 +370,18 @@ export function Heatmap() {
                 lookbackDays={displayData.lookbackDays ?? 30}
                 locked
                 renderAs="drawer"
+                parentCategory={
+                  (displayData.drillCategory as Category | null | undefined) ?? null
+                }
+                slotIndex={parseSlotFromCellId(panelCell.cellId)}
                 isAuthed={isAuthed}
                 onRequestLogin={() => setLoginOpen(true)}
                 // Clicking a whale row inside the cell panel pivots to that
                 // whale's full drawer — close the cell panel so the two
-                // right-side surfaces never stack.
+                // right-side surfaces never stack. Stash the panel for
+                // ← restore from the whale drawer.
                 onWhaleClick={(addr) => {
+                  setWhaleDrawerBackTo(panelCell);
                   setPanelCell(null);
                   setWhaleProfileAddr(addr);
                 }}
@@ -401,6 +418,10 @@ export function Heatmap() {
                 metric={metric}
                 lookbackDays={displayData.lookbackDays ?? 30}
                 locked={false}
+                parentCategory={
+                  (displayData.drillCategory as Category | null | undefined) ?? null
+                }
+                slotIndex={parseSlotFromCellId(hover.cellId)}
                 isAuthed={isAuthed}
                 onRequestLogin={() => setLoginOpen(true)}
                 onWhaleClick={(addr) => setWhaleProfileAddr(addr)}
@@ -437,7 +458,20 @@ export function Heatmap() {
       <WhaleDrawer
         addr={whaleProfileAddr}
         range={range}
-        onClose={() => setWhaleProfileAddr(null)}
+        onClose={() => {
+          setWhaleProfileAddr(null);
+          setWhaleDrawerBackTo(null);
+        }}
+        onBack={
+          whaleDrawerBackTo
+            ? () => {
+                const restore = whaleDrawerBackTo;
+                setWhaleDrawerBackTo(null);
+                setWhaleProfileAddr(null);
+                setPanelCell(restore);
+              }
+            : undefined
+        }
       />
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
     </div>

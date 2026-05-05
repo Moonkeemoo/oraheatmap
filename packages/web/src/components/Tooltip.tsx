@@ -52,7 +52,9 @@ function rectsOverlap(a: TooltipRect, b: TooltipRect | null): boolean {
   return !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
 }
 
-const TOP_N = 5;
+// 10 leaves enough room in the drawer (no fixed-height float clipping it)
+// while still being scannable. Was 5 — user asked to widen the leaderboard.
+const TOP_N = 10;
 
 function rangeUnit(r: LiveRange | undefined, mode: Mode, kind: PatternKind | undefined): string {
   if (mode === "pattern") return kind === "hour-of-day" ? "hour" : "day";
@@ -84,6 +86,8 @@ export function Tooltip({
   headerIcon,
   headerTitle,
   headerCrumb,
+  parentCategory,
+  slotIndex,
   renderAs = "float",
   onClose,
 }: {
@@ -121,6 +125,15 @@ export function Tooltip({
   /** Drill subcategory at L2 in PATTERN — when set, the cycle histogram
    *  filters by subcategory column instead of category. NULL at L1. */
   drillSubcategory?: string | null;
+  /** Real category (Sports / Crypto / …) when the row key in `category`
+   *  is actually a subcategory slug or a condition_id. At L1 this equals
+   *  `category`; at L2/L3 it's the parent category so the meta lookup
+   *  doesn't fall back to "Other". */
+  parentCategory?: Category | null;
+  /** Display slot index for the sparkline highlight. Pass when known —
+   *  cell-reference identity goes stale across SSE updates and the
+   *  fallback findIndex returns -1, which silently hides the sparkline. */
+  slotIndex?: number | null;
   /** Polymarket icon URL for the L3 header. NULL at L1/L2. */
   headerIcon?: string | null;
   /** Full (un-shortened) market question for the L3 header. NULL at L1/L2. */
@@ -140,7 +153,11 @@ export function Tooltip({
   onClose?: () => void;
 }) {
   const isDrawer = renderAs === "drawer";
-  const meta = categoryMeta(category);
+  // At L2/L3 the `category` prop is actually a subcategory slug ("nba")
+  // or a condition_id (0x...) — those don't exist in the Category enum
+  // so categoryMeta() falls back to "Other". The parent category passed
+  // through from Heatmap is what we want for the badge / colour.
+  const meta = categoryMeta(parentCategory ?? category);
   const isPattern = mode === "pattern";
   // At L3, the `category` prop holds the condition_id (rowKey) — the heatmap
   // already drilled past category/subcategory, so each row IS a market.
@@ -170,7 +187,10 @@ export function Tooltip({
   // last index for LIVE (NOW) ... actually we don't have direct access to
   // slot here. The parent guarantees rowCells matches the display order; we
   // find the slot by reference identity against `cell`.
-  const activeSlot = rowCells.findIndex((c) => c === cell);
+  // Stable preferred — passed in by Heatmap from cellId. Fallback uses
+  // object identity which goes stale when SSE replaces cell objects.
+  const fallbackSlot = rowCells.findIndex((c) => c === cell);
+  const activeSlot = slotIndex !== null && slotIndex !== undefined ? slotIndex : fallbackSlot;
   // Sparkline only for LIVE — for PATTERN, the per-cycle bar chart will be
   // a separate (planned) widget; row-across-hours sparkline is duplicative
   // of the heatmap row itself.

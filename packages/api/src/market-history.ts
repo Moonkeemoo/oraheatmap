@@ -93,10 +93,15 @@ export function createMarketHistoryFetcher(
       if (market) break;
     }
     if (!market) {
-      // No gamma — fall back to bare asset list with placeholder labels.
+      // No gamma — fall back to lettered placeholder labels. Truncated
+      // hex IDs ("11361287…") leaked into the chart legend; "Outcome A"
+      // reads cleanly even when we can't resolve the real names.
       return {
         question: null,
-        pairs: assetIds.map((id) => ({ label: id.slice(0, 8) + "…", tokenId: id })),
+        pairs: assetIds.map((id, i) => ({
+          label: `Outcome ${String.fromCharCode(65 + i)}`,
+          tokenId: id,
+        })),
       };
     }
     const pairs: Array<{ label: string; tokenId: string }> = [];

@@ -40,10 +40,15 @@ export function WhaleDrawer({
   addr,
   range,
   onClose,
+  onBack,
 }: {
   addr: string | null;
   range: LiveRange;
   onClose: () => void;
+  /** Optional — when set, a ← button appears in the top-left corner.
+   *  Used when the drawer was opened by drilling out of a cell panel:
+   *  ← restores the cell panel instead of closing everything. */
+  onBack?: () => void;
 }) {
   const { data, loading, error } = useWhaleProfile({ addr, range });
   const open = addr !== null;
@@ -93,7 +98,7 @@ export function WhaleDrawer({
           animation: "drawerIn .18s ease-out",
         }}
       >
-        {data && <DrawerBody data={data} range={range} onClose={onClose} />}
+        {data && <DrawerBody data={data} range={range} onClose={onClose} onBack={onBack} />}
         {!data && loading && (
           <div style={{ padding: 20, color: TOKENS.textSec, fontSize: 13 }}>loading…</div>
         )}
@@ -116,10 +121,12 @@ function DrawerBody({
   data,
   range,
   onClose,
+  onBack,
 }: {
   data: WhaleProfile;
   range: LiveRange;
   onClose: () => void;
+  onBack?: () => void;
 }) {
   // Total volume across the mix is the denominator for percentages.
   const totalMixVolume = useMemo(
@@ -132,6 +139,30 @@ function DrawerBody({
       {/* Header */}
       <div style={{ padding: "16px 18px 12px", borderBottom: `1px solid ${TOKENS.border}` }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+          {/* Back button — appears only when the drawer was opened by
+              drilling out of a cell panel. Restores the cell panel rather
+              than dropping the user back to a bare grid. */}
+          {onBack && (
+            <button
+              onClick={onBack}
+              aria-label="Back to cell panel"
+              title="Back to cell panel"
+              style={{
+                background: "transparent",
+                border: `1px solid ${TOKENS.border}`,
+                color: TOKENS.textSec,
+                fontSize: 14,
+                fontWeight: 700,
+                padding: "4px 10px",
+                borderRadius: 6,
+                cursor: "pointer",
+                lineHeight: 1,
+                marginTop: 2,
+              }}
+            >
+              ←
+            </button>
+          )}
           <div style={{ marginTop: 2 }}>
             <WhaleAvatar
               profileImage={data.profileImage}
