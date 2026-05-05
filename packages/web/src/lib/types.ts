@@ -11,7 +11,12 @@ export type Category =
   | "Climate"
   | "Other";
 
-export type Mode = "live" | "pattern";
+/** "highlights" reuses LIVE's grid layout but the tooltip/drawer body
+ *  pivots from aggregate top-N (whales/markets) to a list of individual
+ *  notable trades ("receipts") sorted by the active metric. Coloring is
+ *  identical to LIVE for v1; could later switch to "max single trade"
+ *  per cell to surface where outsized trades happened. */
+export type Mode = "live" | "pattern" | "highlights";
 
 export type LiveRange = "1h" | "24h" | "12d" | "12w";
 export type PatternKind = "hour-of-day" | "day-of-week";

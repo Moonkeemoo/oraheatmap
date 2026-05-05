@@ -731,6 +731,110 @@ export function createApi(deps: ApiDeps) {
         }),
       },
     )
+    .get(
+      "/api/cell-receipts",
+      async ({ query }) => {
+        // Top "receipts" — individual notable trades — for one heatmap
+        // cell's scope + time bucket. Powers the HIGHLIGHTS mode tooltip
+        // and drawer.
+        //
+        // Sort by:
+        //   - "volume" → size*price desc (BUYs only — entries)
+        //   - "pnl"    → realized_pnl desc (exits only with realised PnL)
+        //   - "abs_pnl"→ |realized_pnl| desc (biggest wins AND losses)
+        //   - default  → ts desc (most recent)
+        const limit = Math.min(Math.max(query.limit ?? 30, 1), 100);
+        const cat = query.category;
+        const sub = query.subcategory ?? null;
+        const cid = query.conditionId ?? null;
+        const fromTs = query.fromTs ? new Date(query.fromTs) : null;
+        const toTs = query.toTs ? new Date(query.toTs) : new Date();
+        const sort = (query.sort ?? "recent") as "volume" | "pnl" | "abs_pnl" | "recent";
+
+        type Row = {
+          ts: Date | string;
+          whale_addr: string;
+          asset_id: string;
+          condition_id: string | null;
+          market_question: string | null;
+          market_slug: string | null;
+          category: string;
+          subcategory: string | null;
+          side: "BUY" | "SELL" | "SETTLEMENT";
+          price: number;
+          size: number;
+          realized_pnl: number | null;
+          exit_kind: "SELL" | "RESOLUTION" | null;
+          tx_hash: string | null;
+        };
+
+        // Build the WHERE clause incrementally — postgres-js tagged templates
+        // require us to commit to one shape per call site, so the scope
+        // levels and sort branches each get their own dedicated template.
+        const cols = deps.sql`
+          ts, whale_addr, asset_id, condition_id, market_question, market_slug,
+          category, subcategory, side, price, size, realized_pnl, exit_kind, tx_hash
+        `;
+        const scopeFilter = cid
+          ? deps.sql`condition_id = ${cid}`
+          : sub
+            ? deps.sql`category = ${cat} AND subcategory = ${sub}`
+            : deps.sql`category = ${cat}`;
+        const fromFilter = fromTs ? deps.sql`AND ts >= ${fromTs}` : deps.sql``;
+        const toFilter = deps.sql`AND ts <= ${toTs}`;
+
+        const orderClause =
+          sort === "volume"
+            ? deps.sql`AND side = 'BUY' ORDER BY size * price DESC`
+            : sort === "pnl"
+              ? deps.sql`AND realized_pnl IS NOT NULL ORDER BY realized_pnl DESC`
+              : sort === "abs_pnl"
+                ? deps.sql`AND realized_pnl IS NOT NULL ORDER BY ABS(realized_pnl) DESC`
+                : deps.sql`ORDER BY ts DESC`;
+
+        const rows = await deps.sql<Row[]>`
+          SELECT ${cols} FROM signals
+          WHERE ${scopeFilter} ${fromFilter} ${toFilter}
+          ${orderClause}
+          LIMIT ${limit}
+        `;
+        return {
+          sort,
+          signals: rows.map((r) => ({
+            ts: r.ts instanceof Date ? r.ts.toISOString() : new Date(r.ts).toISOString(),
+            whaleAddr: r.whale_addr,
+            whaleAlias: whaleAlias(r.whale_addr),
+            whaleColor: whaleColor(r.whale_addr),
+            assetId: r.asset_id,
+            conditionId: r.condition_id,
+            marketQuestion: r.market_question,
+            marketSlug: r.market_slug,
+            category: r.category,
+            subcategory: r.subcategory,
+            side: r.side,
+            price: Number(r.price),
+            size: Number(r.size),
+            sizeUsd: Number(r.size) * Number(r.price),
+            realizedPnl: r.realized_pnl !== null ? Number(r.realized_pnl) : null,
+            exitKind: r.exit_kind,
+            txHash: r.tx_hash,
+          })),
+        };
+      },
+      {
+        query: t.Object({
+          category: t.String(),
+          subcategory: t.Optional(t.String()),
+          conditionId: t.Optional(t.String()),
+          fromTs: t.Optional(t.String()),
+          toTs: t.Optional(t.String()),
+          sort: t.Optional(
+            t.Union([t.Literal("volume"), t.Literal("pnl"), t.Literal("abs_pnl"), t.Literal("recent")]),
+          ),
+          limit: t.Optional(t.Numeric({ minimum: 1, maximum: 100 })),
+        }),
+      },
+    )
     .get("/api/stream", ({ set }) => {
       // Server-Sent Events: a long-lived response of `event: ... \n data: ...\n\n`
       // chunks. Browsers reconnect automatically on disconnect.

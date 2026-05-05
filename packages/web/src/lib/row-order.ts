@@ -7,12 +7,13 @@
  * 1h/24h/7d/30d within a (mode, level, parents) tuple.
  */
 
-export type Mode = "live" | "pattern";
+export type Mode = "live" | "pattern" | "highlights";
 export type PatternKind = "hour-of-day" | "day-of-week";
 
 /** Build the scope key sent to the backend. parents is the chain from root
  *  toward the current level — empty at L1, [category] at L2, [category,
- *  subcategory] at L3. */
+ *  subcategory] at L3. Highlights and Live share the same scope key so a
+ *  user's row order survives mode-toggling between them. */
 export function buildScopeKey(
   mode: Mode,
   patternKind: PatternKind | null,

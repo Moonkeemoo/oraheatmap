@@ -159,6 +159,14 @@ function ModeToggle({
     >
       {renderBtn("live", "LIVE", TOKENS.pos)}
       {renderBtn("pattern", "PATTERN", TOKENS.accent, patternTitle)}
+      {renderBtn(
+        "highlights",
+        "HIGHLIGHTS",
+        TOKENS.link,
+        locked
+          ? "Sign in to switch modes"
+          : "Notable individual trades per cell — top receipts ranked by the active metric",
+      )}
     </div>
   );
 }

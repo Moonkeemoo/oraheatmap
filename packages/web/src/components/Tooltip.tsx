@@ -7,6 +7,7 @@ import { marketUrl } from "@/lib/polymarket-url";
 import { TOKENS } from "@/lib/tokens";
 import { ProbabilityChart } from "./ProbabilityChart";
 import { CellFeed } from "./tooltip/CellFeed";
+import { Receipts } from "./tooltip/Receipts";
 import { CycleHistogram, rowIndexToServerSlot } from "./tooltip/CycleHistogram";
 import { MarketIcon } from "./tooltip/MarketIcon";
 import {
@@ -90,6 +91,7 @@ export function Tooltip({
   headerCrumb,
   parentCategory,
   feed,
+  receipts,
   displayLabel,
   slotIndex,
   renderAs = "float",
@@ -139,6 +141,15 @@ export function Tooltip({
    *  the body when this is provided. Heatmap owns the hook so a single
    *  useSse subscription can pipe signals into the active feed. */
   feed?: { entries: ReadonlyArray<import("@/hooks/useCellFeed").FeedEntry>; loading: boolean } | null;
+  /** HIGHLIGHTS mode payload — when set (highlights mode active), the
+   *  tooltip body swaps the aggregate "Top whales" + "Top markets" blocks
+   *  for a Receipts list. Heatmap owns the hook so the same scope+window
+   *  feeds both the float hover (top 5) and the click drawer (top 30). */
+  receipts?: {
+    signals: ReadonlyArray<import("@/lib/types").SignalEvent>;
+    loading: boolean;
+    sort: import("@/hooks/useCellReceipts").ReceiptsSort;
+  } | null;
   /** Override for the small badge text. At L1 omit (badge = category
    *  name from meta.label). At L2 pass the subcategory display label
    *  ("NBA", "Bitcoin") so the badge reflects the row, not the parent
@@ -572,7 +583,29 @@ export function Tooltip({
         </div>
       )}
 
-      {!isPattern && cellWhales.length > 0 && isAuthed && (
+      {/* HIGHLIGHTS mode — receipts list replaces aggregate Top sections. */}
+      {receipts && !isPattern && (
+        <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
+          <div
+            style={{
+              fontSize: 9,
+              letterSpacing: 0.5,
+              color: TOKENS.textMuted,
+              textTransform: "uppercase",
+              marginBottom: 6,
+              fontWeight: 600,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <span>Top receipts</span>
+            <span style={{ color: TOKENS.textSec }}>by {sortLabel(receipts.sort)}</span>
+          </div>
+          <Receipts signals={receipts.signals} loading={receipts.loading} sort={receipts.sort} />
+        </div>
+      )}
+
+      {!receipts && !isPattern && cellWhales.length > 0 && isAuthed && (
         <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
           <div
             style={{
@@ -669,7 +702,7 @@ export function Tooltip({
         </div>
       )}
 
-      {!isPattern && cellWhales.length > 0 && !isAuthed && (
+      {!receipts && !isPattern && cellWhales.length > 0 && !isAuthed && (
         <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
           <div
             style={{
@@ -708,7 +741,7 @@ export function Tooltip({
         </div>
       )}
 
-      {!isPattern && sortedMarkets.length > 0 && !isAuthed && (
+      {!receipts && !isPattern && sortedMarkets.length > 0 && !isAuthed && (
         <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8 }}>
           <div
             style={{
@@ -754,7 +787,7 @@ export function Tooltip({
         </div>
       )}
 
-      {!isPattern && sortedMarkets.length > 0 && isAuthed && (
+      {!receipts && !isPattern && sortedMarkets.length > 0 && isAuthed && (
         <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8 }}>
           <div
             style={{
@@ -1044,6 +1077,13 @@ function fmtCellShort(metric: HeatmapMetric, v: number): string {
   if (metric === "signals") return String(Math.round(v));
   if (Math.abs(v) >= 1e3) return "$" + (v / 1e3).toFixed(1) + "k";
   return "$" + Math.round(v);
+}
+
+function sortLabel(sort: import("@/hooks/useCellReceipts").ReceiptsSort): string {
+  if (sort === "volume") return "USD volume";
+  if (sort === "pnl") return "realised PnL";
+  if (sort === "abs_pnl") return "biggest PnL";
+  return "most recent";
 }
 
 function clamp(v: number, min: number, max: number): number {

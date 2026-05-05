@@ -8,6 +8,7 @@ import { useSse } from "@/hooks/useSse";
 import { applySignal } from "@/lib/heatmap-apply";
 import { recordSignal } from "@/lib/live-clock";
 import { useCellFeed } from "@/hooks/useCellFeed";
+import { metricToSort, useCellReceipts } from "@/hooks/useCellReceipts";
 import { buildScopeKey } from "@/lib/row-order";
 import { TOKENS } from "@/lib/tokens";
 import type {
@@ -67,7 +68,8 @@ function flashSlotIndex(
   ts: string,
   bucketCount: number,
 ): number {
-  if (mode === "live") return bucketCount - 1;
+  // Highlights treated like LIVE for slot mapping (same sliding window).
+  if (mode !== "pattern") return bucketCount - 1;
   const d = new Date(ts);
   if (kind === "hour-of-day") {
     // Use LOCAL hours so the flash aligns with the column header the user
@@ -146,18 +148,40 @@ export function Heatmap() {
 
   const { data: fetchedData, loading, error } = useHeatmap({
     mode,
-    range: mode === "live" ? range : undefined,
+    // Highlights mode reuses LIVE's data shape (sliding-window aggregates
+    // across the chosen range). Only the tooltip/drawer body diverges.
+    range: mode !== "pattern" ? range : undefined,
     kind: mode === "pattern" ? patternKind : undefined,
     lookbackDays: mode === "pattern" ? 30 : undefined,
     drillCategory,
     // L3 (per-market) only meaningful in LIVE mode for now.
-    drillSubcategory: mode === "live" ? drillSubcategory : null,
+    drillSubcategory: mode !== "pattern" ? drillSubcategory : null,
   });
 
   // Whenever a fresh fetch arrives, drop the optimistic queue.
   useEffect(() => {
     setPendingSignals([]);
   }, [fetchedData?.generatedAt]);
+
+  // HIGHLIGHTS receipts — needs the cell's bucket window so we don't pull
+  // signals from outside the slot. Reuses cellFeedScope's category/sub/cid
+  // wiring then layers fromTs/toTs derived from the bucket index.
+  const cellReceiptsScope = (() => {
+    if (!panelCell || mode !== "highlights" || !fetchedData) return null;
+    const slot = parseSlotFromCellId(panelCell.cellId);
+    const bucket = slot != null ? fetchedData.buckets[slot] : null;
+    const fromTs = bucket?.ts ?? null;
+    const nextBucket = slot != null ? fetchedData.buckets[slot + 1] : null;
+    const toTs = nextBucket?.ts ?? fetchedData.windowEnd ?? new Date().toISOString();
+    return { ...(cellFeedScope ?? { category: panelCell.category }), fromTs, toTs };
+  })();
+  const receiptsSort = metricToSort(metric);
+  const cellReceipts = useCellReceipts({
+    scope: cellReceiptsScope,
+    sort: receiptsSort,
+    limit: 30,
+    enabled: panelCell !== null && mode === "highlights",
+  });
 
   // Optimistic merge — only meaningful in LIVE mode (PATTERN values are
   // averages, not running sums; bumping by 1 doesn't make sense).
@@ -232,7 +256,9 @@ export function Heatmap() {
   }, [drillCategory, drillSubcategory]);
 
 
-  const isLive = mode === "live";
+  // "Live-like" — non-pattern. Highlights mode reuses LIVE's grid layout,
+  // SSE flow, range tabs, drill chrome. Only the tooltip body differs.
+  const isLive = mode !== "pattern";
   const daysOfData = displayData?.dataSpan.daysOfData ?? 0;
   // PATTERN is always clickable. Sample size shows up in the subtitle
   // ("low sample" badge under 7d) so the user can interpret accordingly,
@@ -400,6 +426,15 @@ export function Heatmap() {
                 }
                 slotIndex={parseSlotFromCellId(panelCell.cellId)}
                 feed={{ entries: cellFeed.entries, loading: cellFeed.loading }}
+                receipts={
+                  mode === "highlights"
+                    ? {
+                        signals: cellReceipts.signals,
+                        loading: cellReceipts.loading,
+                        sort: receiptsSort,
+                      }
+                    : null
+                }
                 isAuthed={isAuthed}
                 onRequestLogin={() => setLoginOpen(true)}
                 // Clicking a whale row inside the cell panel pivots to that
