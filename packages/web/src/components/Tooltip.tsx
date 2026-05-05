@@ -609,6 +609,28 @@ export function Tooltip({
         </div>
       )}
 
+      {/* 12d/12w at L1 — server skips per-cell top markets/whales because
+          GROUP BY condition_id over millions of rows would blow latency.
+          Tell the user instead of showing nothing where they expect lists. */}
+      {!isPattern &&
+        parentCategory == null &&
+        (range === "12d" || range === "12w") &&
+        cellWhales.length === 0 &&
+        sortedMarkets.length === 0 && (
+          <div
+            style={{
+              borderTop: `1px solid ${TOKENS.border}`,
+              paddingTop: 8,
+              marginBottom: 8,
+              fontSize: 11,
+              color: TOKENS.textMuted,
+              lineHeight: 1.5,
+            }}
+          >
+            Top markets & whales hidden on {range} — drill into a category to see them.
+          </div>
+        )}
+
       {!isPattern && cellWhales.length > 0 && isAuthed && (
         <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
           <div

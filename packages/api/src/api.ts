@@ -750,8 +750,12 @@ export function createApi(deps: ApiDeps) {
         const cat = query.category;
         const sub = query.subcategory ?? null;
         const cid = query.conditionId ?? null;
-        const fromTs = query.fromTs ? new Date(query.fromTs) : null;
-        const toTs = query.toTs ? new Date(query.toTs) : new Date();
+        // Pass timestamps as ISO strings, not Date objects — postgres-js
+        // chokes on Date when interpolated through nested sql`` fragments
+        // (the inner template loses the type tag and the driver tries to
+        // serialise the Date as a generic param).
+        const fromTs = query.fromTs ?? null;
+        const toTs = query.toTs ?? new Date().toISOString();
         const metric = query.metric as "pnl" | "volume" | "signals" | "whales";
 
         const scopeFilter = cid
@@ -759,8 +763,8 @@ export function createApi(deps: ApiDeps) {
           : sub
             ? deps.sql`category = ${cat} AND subcategory = ${sub}`
             : deps.sql`category = ${cat}`;
-        const fromFilter = fromTs ? deps.sql`AND ts >= ${fromTs}` : deps.sql``;
-        const toFilter = deps.sql`AND ts <= ${toTs}`;
+        const fromFilter = fromTs ? deps.sql`AND ts >= ${fromTs}::timestamptz` : deps.sql``;
+        const toFilter = deps.sql`AND ts <= ${toTs}::timestamptz`;
 
         if (metric === "pnl") {
           type Row = {
