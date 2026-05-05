@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { signIn } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 import { SiweMessage } from "siwe";
 import { TOKENS } from "@/lib/tokens";
 import {
@@ -24,6 +24,15 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [emailInput, setEmailInput] = useState("");
+  // When the user is already signed in and opens the modal (e.g. via the
+  // /account → ?connect=email|telegram redirect), Credentials providers
+  // (SIWE / Telegram) must NOT call signIn — that would replace the
+  // active session with a fresh one, dropping every linked provider.
+  // In link mode, those buttons POST to /api/account/link/* instead.
+  // OAuth + Email providers go through signIn in BOTH modes; the auth.ts
+  // signIn() callback detects active session there and links manually.
+  const { status: sessionStatus } = useSession();
+  const linkMode = sessionStatus === "authenticated";
 
   useEffect(() => {
     if (!open) return;
@@ -81,7 +90,9 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
       const message = new SiweMessage({
         domain: window.location.host,
         address,
-        statement: "Sign in to oralab",
+        statement: linkMode
+          ? "Link this wallet to your oralab account"
+          : "Sign in to oralab",
         uri: window.location.origin,
         version: "1",
         chainId: 1,
@@ -93,9 +104,23 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
         method: "personal_sign",
         params: [prepared, address],
       })) as string;
-      const result = await signIn("siwe", { message: prepared, signature, redirect: false });
-      if (result?.error) setError(result.error);
-      else onClose();
+      if (linkMode) {
+        const res = await fetch("/api/account/link/siwe", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ message: prepared, signature }),
+        });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          setError(body.error ?? `link failed (${res.status})`);
+        } else {
+          window.location.href = "/account?linked=siwe";
+        }
+      } else {
+        const result = await signIn("siwe", { message: prepared, signature, redirect: false });
+        if (result?.error) setError(result.error);
+        else onClose();
+      }
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -148,7 +173,9 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, letterSpacing: 0.4 }}>Sign in</h2>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, letterSpacing: 0.4 }}>
+            {linkMode ? "Link a sign-in method" : "Sign in"}
+          </h2>
           <button
             onClick={onClose}
             aria-label="Close"
@@ -167,6 +194,24 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
             ✕
           </button>
         </div>
+        {linkMode && (
+          <div
+            style={{
+              marginBottom: 12,
+              padding: "8px 10px",
+              background: "rgba(63,185,80,0.08)",
+              border: `1px solid rgba(63,185,80,0.35)`,
+              borderRadius: 6,
+              fontSize: 11,
+              color: TOKENS.textSec,
+              lineHeight: 1.45,
+            }}
+          >
+            <strong style={{ color: TOKENS.pos }}>Linking, not signing in.</strong>{" "}
+            The chosen method will attach to your current account — your existing
+            session stays.
+          </div>
+        )}
         <div style={{ fontSize: 11, color: TOKENS.textMuted, marginBottom: 16, lineHeight: 1.4 }}>
           Pick any method — they all map to the same account if you reuse them later.
         </div>
@@ -275,6 +320,7 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
               setBusy={(b) => setBusy(b ? "telegram" : null)}
               setError={setError}
               onSuccess={onClose}
+              linkMode={linkMode}
             />
           )}
         </div>
@@ -331,12 +377,17 @@ function TelegramLoginButton({
   setBusy,
   setError,
   onSuccess,
+  linkMode,
 }: {
   disabled: boolean;
   busy: boolean;
   setBusy: (b: boolean) => void;
   setError: (msg: string | null) => void;
   onSuccess: () => void;
+  /** true when an active session exists — the widget should attach the
+   *  Telegram identity to the current account via the link endpoint
+   *  instead of calling signIn() and replacing the session. */
+  linkMode: boolean;
 }) {
   const [scriptReady, setScriptReady] = useState(false);
   const botId = process.env["NEXT_PUBLIC_TG_LOGIN_BOT_ID"];
@@ -396,12 +447,26 @@ function TelegramLoginButton({
         return;
       }
       try {
-        const result = await signIn("telegram", {
-          payload: JSON.stringify(data),
-          redirect: false,
-        });
-        if (result?.error) setError(result.error);
-        else onSuccess();
+        if (linkMode) {
+          const res = await fetch("/api/account/link/telegram", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ payload: JSON.stringify(data) }),
+          });
+          if (!res.ok) {
+            const body = (await res.json().catch(() => ({}))) as { error?: string };
+            setError(body.error ?? `link failed (${res.status})`);
+          } else {
+            window.location.href = "/account?linked=telegram";
+          }
+        } else {
+          const result = await signIn("telegram", {
+            payload: JSON.stringify(data),
+            redirect: false,
+          });
+          if (result?.error) setError(result.error);
+          else onSuccess();
+        }
       } catch (err) {
         setError((err as Error).message);
       } finally {
