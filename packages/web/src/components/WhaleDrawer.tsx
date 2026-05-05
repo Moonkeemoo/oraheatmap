@@ -4,18 +4,11 @@ import { useEffect, useMemo } from "react";
 import { useWhaleProfile } from "@/hooks/useWhaleProfile";
 import { categoryMeta } from "@/lib/categories";
 import { fmtMoney, fmtMoneyShort } from "@/lib/format";
+import { marketUrl } from "@/lib/polymarket-url";
 import { TOKENS } from "@/lib/tokens";
 import type { Category, LiveRange, WhaleProfile } from "@/lib/types";
 import { BalanceChart } from "./BalanceChart";
 import { WhaleAvatar } from "./WhaleAvatar";
-
-const POLY_REFERRAL =
-  (typeof process !== "undefined" && process.env["NEXT_PUBLIC_POLYMARKET_REFERRAL"]) || "Moonkeee";
-
-function marketUrl(slug: string | null): string | null {
-  if (!slug) return null;
-  return `https://polymarket.com/event/${encodeURIComponent(slug)}?r=${encodeURIComponent(POLY_REFERRAL)}`;
-}
 
 function rangeLabel(r: LiveRange): string {
   switch (r) {

@@ -22,19 +22,12 @@ import { useMemo, useState } from "react";
 import { categoryMeta } from "@/lib/categories";
 import { makeIntensityFn } from "@/lib/colors";
 import { applyOrder } from "@/lib/row-order";
+import { marketUrl } from "@/lib/polymarket-url";
 import { TOKENS } from "@/lib/tokens";
 import type { Category, HeatmapBucket, HeatmapCell, HeatmapMetric, HeatmapResponse } from "@/lib/types";
 import { Cell } from "./Cell";
 import type { FlashByCell } from "./Heatmap";
 import type { TooltipAnchor } from "./Tooltip";
-
-const POLY_REFERRAL =
-  (typeof process !== "undefined" && process.env["NEXT_PUBLIC_POLYMARKET_REFERRAL"]) || "Moonkeee";
-
-function marketUrl(slug: string | null | undefined): string | null {
-  if (!slug) return null;
-  return `https://polymarket.com/event/${encodeURIComponent(slug)}?r=${encodeURIComponent(POLY_REFERRAL)}`;
-}
 
 /** Lighten a hex color by mixing it with white. amount=0 → original, 1 → white. */
 function tint(hex: string, amount: number): string {
