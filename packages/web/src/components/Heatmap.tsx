@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useHeatmap } from "@/hooks/useHeatmap";
 import { useRowOrder } from "@/hooks/useRowOrder";
 import { useSse } from "@/hooks/useSse";
+import { initAnalytics, track } from "@/lib/analytics";
 import { applySignal } from "@/lib/heatmap-apply";
 import { recordSignal } from "@/lib/live-clock";
 import { useCellFeed } from "@/hooks/useCellFeed";
@@ -111,6 +112,34 @@ export function Heatmap() {
   const [loginOpen, setLoginOpen] = useState(false);
   const { status: authStatus } = useSession();
   const isAuthed = authStatus === "authenticated";
+
+  // Initialise the analytics SDK once — fires session_start + the
+  // initial pageview. Subsequent events fire as the user interacts.
+  useEffect(() => {
+    initAnalytics();
+  }, []);
+
+  // Detect a fresh sign-in: when authStatus flips from "unauthenticated"
+  // to "authenticated", attribute the conversion to whichever modal-open
+  // happened last. signinModalOpened markers stash the open timestamp so
+  // we can also report time-to-signin. signin_completed without a
+  // preceding modal_open (eg returning user with cookie) is dropped —
+  // funnel only counts conversions originating in this tab.
+  const prevAuthStatusRef = useRef<string>(authStatus);
+  useEffect(() => {
+    if (
+      prevAuthStatusRef.current === "unauthenticated" &&
+      authStatus === "authenticated"
+    ) {
+      const provider = (
+        (window as unknown as { __ora_lastProvider?: string }).__ora_lastProvider ?? "siwe"
+      ) as Parameters<typeof track.signinCompleted>[0];
+      const t0 = (window as unknown as { __ora_signinT0?: number }).__ora_signinT0 ?? 0;
+      const dt = t0 > 0 ? Date.now() - t0 : 0;
+      track.signinCompleted(provider, dt);
+    }
+    prevAuthStatusRef.current = authStatus;
+  }, [authStatus]);
 
   // Auto-open the LoginModal when navigated here with ?connect=...
   // (used by /account ConnectProviders for the Email + Telegram flows
@@ -289,6 +318,41 @@ export function Heatmap() {
     if (drillCategory === null && drillSubcategory !== null) setDrillSubcategory(null);
   }, [drillCategory, drillSubcategory]);
 
+  // Analytics-instrumented setters. Use these everywhere instead of
+  // raw setMode/setRange/etc so the events feed reflects only real
+  // user-triggered changes (and not the noop case where prev === next).
+  const trackedSetMode = (next: Mode): void => {
+    if (next !== mode) track.modeChanged(mode, next);
+    setMode(next);
+  };
+  const trackedSetRange = (next: LiveRange): void => {
+    if (next !== range) track.rangeChanged(range, next);
+    setRange(next);
+  };
+  const trackedSetMetric = (next: HeatmapMetric): void => {
+    if (next !== metric) track.metricChanged(metric, next);
+    setMetric(next);
+  };
+  const trackedSetPatternKind = (next: PatternKind): void => {
+    if (next !== patternKind) track.patternKindChanged(patternKind, next);
+    setPatternKind(next);
+  };
+
+  /** Single chokepoint for opening the login modal — emits the
+   *  `signin_modal_opened` event with the trigger source so the funnel
+   *  data can attribute "what gated feature drove the auth attempt". */
+  const requestLogin = (
+    triggerSource: Parameters<typeof track.signinModalOpened>[0],
+  ): void => {
+    track.signinModalOpened(triggerSource);
+    // Stash the open-ts so the post-auth effect can report
+    // time-to-signin as part of signin_completed.
+    if (typeof window !== "undefined") {
+      (window as unknown as { __ora_signinT0?: number }).__ora_signinT0 = Date.now();
+    }
+    setLoginOpen(true);
+  };
+
 
   const isLive = mode === "live";
   const daysOfData = displayData?.dataSpan.daysOfData ?? 0;
@@ -320,20 +384,20 @@ export function Heatmap() {
     >
       <Header
         mode={mode}
-        setMode={setMode}
+        setMode={trackedSetMode}
         metric={metric}
-        setMetric={setMetric}
+        setMetric={trackedSetMetric}
         range={range}
-        setRange={setRange}
+        setRange={trackedSetRange}
         patternKind={patternKind}
-        setPatternKind={setPatternKind}
+        setPatternKind={trackedSetPatternKind}
         isLive={isLive}
         trackedCount={displayData?.trackedWhales ?? 0}
         lookbackDays={displayData?.lookbackDays ?? 30}
         patternUnlocked={patternUnlocked}
         daysOfData={daysOfData}
         lowSample={lowSample}
-        onRequestLogin={() => setLoginOpen(true)}
+        onRequestLogin={() => requestLogin("header")}
       />
 
       <div
@@ -405,8 +469,25 @@ export function Heatmap() {
                     // close-then-open) — Tooltip re-renders with new props.
                     // Mutually exclusive with WhaleDrawer — opening one
                     // closes the other so they don't stack to the right.
+                    const willOpen = panelCell?.cellId !== h.cellId;
                     setPanelCell((prev) => (prev?.cellId === h.cellId ? null : h));
                     setWhaleProfileAddr(null);
+                    if (willOpen) {
+                      const level: 1 | 2 | 3 = displayData.drillSubcategory
+                        ? 3
+                        : displayData.drillCategory
+                          ? 2
+                          : 1;
+                      // Slot index parsed off the cellId; LIVE's last
+                      // bucket is "now" — the most actionable slot to
+                      // know users actually click.
+                      const slotIdx = parseSlotFromCellId(h.cellId);
+                      const isNow =
+                        mode === "live" &&
+                        slotIdx !== null &&
+                        slotIdx === displayData.buckets.length - 1;
+                      track.cellOpen(level, h.category, isNow);
+                    }
                   }}
                   onRowClick={
                     // PATTERN doesn't support L3 (per-market) drill — bail
@@ -415,10 +496,23 @@ export function Heatmap() {
                     mode === "pattern" && displayData.drillCategory
                       ? undefined
                       : !displayData.drillCategory
-                        ? (key) =>
-                            isAuthed ? setDrillCategory(key as Category) : setLoginOpen(true)
+                        ? (key) => {
+                            if (isAuthed) {
+                              track.drillOpen(2, key);
+                              setDrillCategory(key as Category);
+                            } else {
+                              requestLogin("drill_locked");
+                            }
+                          }
                         : !displayData.drillSubcategory
-                          ? (key) => (isAuthed ? setDrillSubcategory(key) : setLoginOpen(true))
+                          ? (key) => {
+                              if (isAuthed) {
+                                track.drillOpen(3, displayData.drillCategory!, key);
+                                setDrillSubcategory(key);
+                              } else {
+                                requestLogin("drill_locked");
+                              }
+                            }
                           : undefined
                   }
                   lockedCellId={panelCell?.cellId ?? null}
@@ -428,7 +522,7 @@ export function Heatmap() {
                   savedOrder={rowOrder.get(scopeKey)}
                   onReorder={(next) => rowOrder.set(scopeKey, next)}
                   reorderEnabled={isAuthed}
-                  onRequestLogin={() => setLoginOpen(true)}
+                  onRequestLogin={() => requestLogin("reorder")}
                 />
               );
             })()}
@@ -469,12 +563,13 @@ export function Heatmap() {
                     : null
                 }
                 isAuthed={isAuthed}
-                onRequestLogin={() => setLoginOpen(true)}
+                onRequestLogin={() => requestLogin("cell_open")}
                 // Clicking a whale row inside the cell panel pivots to that
                 // whale's full drawer — close the cell panel so the two
                 // right-side surfaces never stack. Stash the panel for
                 // ← restore from the whale drawer.
                 onWhaleClick={(addr) => {
+                  track.whaleDrawerOpen("cell", addr);
                   setWhaleDrawerBackTo(panelCell);
                   setPanelCell(null);
                   setWhaleProfileAddr(addr);
@@ -522,8 +617,11 @@ export function Heatmap() {
                 }
                 slotIndex={parseSlotFromCellId(hover.cellId)}
                 isAuthed={isAuthed}
-                onRequestLogin={() => setLoginOpen(true)}
-                onWhaleClick={(addr) => setWhaleProfileAddr(addr)}
+                onRequestLogin={() => requestLogin("cell_open")}
+                onWhaleClick={(addr) => {
+                  track.whaleDrawerOpen("tooltip", addr);
+                  setWhaleProfileAddr(addr);
+                }}
                 drillSubcategory={displayData.drillSubcategory}
                 headerIcon={
                   displayData.drillSubcategory
@@ -550,7 +648,10 @@ export function Heatmap() {
         <StatsBar
           data={displayData}
           trackedCount={displayData.trackedWhales}
-          onWhaleClick={(addr) => setWhaleProfileAddr(addr)}
+          onWhaleClick={(addr) => {
+            track.whaleDrawerOpen("stats", addr);
+            setWhaleProfileAddr(addr);
+          }}
         />
       )}
       <Footer compact />

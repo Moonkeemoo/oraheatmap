@@ -116,11 +116,35 @@ export default function PrivacyPage() {
         the EU under standard contractual clauses or equivalent safeguards.
       </P>
 
+      <H2>Product analytics</H2>
+      <P>
+        We collect anonymised usage events to understand which features
+        people use — what ranges and metrics get switched, how often a cell
+        gets clicked, when sign-in modals open, which signed-in providers
+        complete, and similar product-level signals. The dataset is
+        first-party (stored on our own server, not sent to any third-party
+        analytics vendor) and is keyed by a random per-browser session id
+        that you can wipe at any time by clearing site data.
+        <br />
+        <br />
+        We do not collect: form-input values, full URLs (we strip query
+        strings), full IP addresses (we keep at most a country code from
+        edge headers when available), browser fingerprints, mouse traces,
+        or cross-site tracking identifiers.
+        <br />
+        <br />
+        You can opt out of this entirely by setting{" "}
+        <Strong>localStorage.setItem(&quot;analytics_optout&quot;, &quot;1&quot;)</Strong>{" "}
+        in the browser console. The SDK becomes a no-op for the rest of
+        the session and any future sessions in that browser.
+      </P>
+
       <H2>Retention</H2>
       <UL>
         <LI>Account data: until you delete your account, plus up to 30 days in backups.</LI>
         <LI>Session cookies: until you sign out or the JWT expires.</LI>
         <LI>Server logs: up to 30 days.</LI>
+        <LI>Analytics events: up to 365 days, then auto-purged.</LI>
       </UL>
 
       <H2>Your rights</H2>

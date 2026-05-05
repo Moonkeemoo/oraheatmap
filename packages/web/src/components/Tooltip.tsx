@@ -5,6 +5,7 @@ import { useCellCycles } from "@/hooks/useCellCycles";
 import { useMarketHistory } from "@/hooks/useMarketHistory";
 import { marketUrl } from "@/lib/polymarket-url";
 import { TOKENS } from "@/lib/tokens";
+import { track } from "@/lib/analytics";
 import { ProbabilityChart } from "./ProbabilityChart";
 import { CellFeed } from "./tooltip/CellFeed";
 import { RowHighlights } from "./tooltip/RowHighlights";
@@ -875,6 +876,14 @@ export function Tooltip({
                     href={url}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={() => {
+                      const level: 1 | 2 | 3 = drillSubcategory
+                        ? 3
+                        : parentCategory
+                          ? 2
+                          : 1;
+                      track.marketLinkClick(level, category, m.marketSlug);
+                    }}
                     style={{ ...baseStyle, color: TOKENS.link, cursor: "pointer" }}
                     title={`${label} — open on Polymarket`}
                     onMouseEnter={(e) => {

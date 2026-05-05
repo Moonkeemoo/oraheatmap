@@ -60,6 +60,68 @@ const TOP_WHALES_LIMIT = 10;
  *  beyond this would make the grid unreadable. Sorted by total signals desc. */
 const MAX_MARKETS_IN_DRILL = 30;
 
+// ─── Analytics event allowlist ─────────────────────────────────────────────
+// Keep the schema explicit — a typo on the frontend should fail closed,
+// not silently insert garbage. Mirrors lib/analytics.ts on the web side.
+const ALLOWED_EVENT_NAMES = new Set<string>([
+  // Identity / navigation
+  "session_start",
+  "pageview",
+  // Heatmap controls
+  "mode_changed",
+  "range_changed",
+  "metric_changed",
+  "pattern_kind_changed",
+  // Drill / engagement
+  "drill_open",
+  "drill_back",
+  "cell_open",
+  "whale_drawer_open",
+  "whale_drawer_close",
+  // Outbound (the strongest value moment)
+  "market_link_click",
+  "external_click",
+  // Auth funnel
+  "signin_modal_opened",
+  "signin_modal_closed",
+  "signin_completed",
+  // Pro-gated UX
+  "locked_feature_hover",
+  "locked_feature_click",
+  // Quality / live feed
+  "sse_connected",
+  "sse_dropped",
+  "convergence_event_seen",
+]);
+
+type AnalyticsBatch = {
+  events: ReadonlyArray<{
+    name: string;
+    ts?: string;
+    sessionId: string;
+    path?: string;
+    referrer?: string;
+    uaBrief?: string;
+    props?: Record<string, unknown>;
+  }>;
+};
+
+/** Cap each prop value to keep one runaway client from blowing up storage.
+ *  Strings clipped to 200 chars; everything else allowed through as-is so
+ *  bool/number/null/array round-trip cleanly into JSONB. */
+function sanitiseProps(p: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  let count = 0;
+  for (const [k, v] of Object.entries(p)) {
+    if (count >= 30) break; // hard cap on prop count per event
+    const key = k.length > 50 ? k.slice(0, 50) : k;
+    if (typeof v === "string") out[key] = v.length > 200 ? v.slice(0, 200) : v;
+    else out[key] = v;
+    count++;
+  }
+  return out;
+}
+
 // ─── Response caches ───────────────────────────────────────────────────────
 // In-process LRU+TTL caches absorb tab-switch spam — most users flick
 // LIVE↔PATTERN↔1h↔24h within seconds, and each request without cache
@@ -373,6 +435,79 @@ export function createApi(deps: ApiDeps) {
       set.headers["cache-control"] = "public, max-age=60, stale-while-revalidate=300";
       return result;
     })
+    .post(
+      "/api/analytics",
+      async ({ body, request, set }) => {
+        // Product-analytics ingest. Frontend SDK at lib/analytics.ts
+        // batches events client-side and POSTs them in groups of up to
+        // BATCH_LIMIT. Strongly-typed event names + props are validated
+        // against ALLOWED_EVENTS so a client bug can't silently
+        // pollute the table with random shapes.
+        const events = (body as AnalyticsBatch).events;
+        if (!Array.isArray(events) || events.length === 0) {
+          return { ok: true, inserted: 0 };
+        }
+        if (events.length > 50) {
+          set.status = 413;
+          return { error: "batch too large (max 50 events)" };
+        }
+        const auth = await readAuthFromHeaders(request.headers);
+        const userId = auth?.id ?? null;
+        const country = (request.headers.get("cf-ipcountry") ?? null) || null;
+
+        const rows = events
+          .filter((e) => ALLOWED_EVENT_NAMES.has(e.name))
+          .map((e) => ({
+            ts: e.ts ? new Date(e.ts) : new Date(),
+            session_id: typeof e.sessionId === "string" ? e.sessionId.slice(0, 64) : "anon",
+            user_id: userId,
+            name: e.name,
+            path: typeof e.path === "string" ? e.path.slice(0, 200) : null,
+            referrer: typeof e.referrer === "string" ? e.referrer.slice(0, 200) : null,
+            ua_brief: typeof e.uaBrief === "string" ? e.uaBrief.slice(0, 100) : null,
+            country,
+            // postgres-js parameter binding rejects raw objects under the
+            // jsonb-typed column — stringify so it round-trips as text
+            // and the ::jsonb cast in the INSERT does the parse.
+            props: JSON.stringify(sanitiseProps(e.props ?? {})),
+          }));
+
+        if (rows.length === 0) return { ok: true, inserted: 0 };
+
+        // Per-row INSERTs in a single round-trip via Promise.all wrapped
+        // in a transaction — keeps the event taxonomy schema simple
+        // (jsonb cast happens in the VALUES clause) and avoids the
+        // postgres-js bulk-insert helper's stricter typing.
+        await deps.sql.begin(async (tx) => {
+          for (const r of rows) {
+            await tx`
+              INSERT INTO analytics_events
+                (ts, session_id, user_id, name, path, referrer, ua_brief, country, props)
+              VALUES (${r.ts}, ${r.session_id}, ${r.user_id}, ${r.name},
+                      ${r.path}, ${r.referrer}, ${r.ua_brief}, ${r.country},
+                      ${r.props}::jsonb)
+            `;
+          }
+        });
+        return { ok: true, inserted: rows.length };
+      },
+      {
+        body: t.Object({
+          events: t.Array(
+            t.Object({
+              name: t.String({ maxLength: 64 }),
+              ts: t.Optional(t.String()),
+              sessionId: t.String({ maxLength: 64 }),
+              path: t.Optional(t.String({ maxLength: 200 })),
+              referrer: t.Optional(t.String({ maxLength: 200 })),
+              uaBrief: t.Optional(t.String({ maxLength: 100 })),
+              props: t.Optional(t.Record(t.String(), t.Any())),
+            }),
+            { maxItems: 50 },
+          ),
+        }),
+      },
+    )
     .get(
       "/api/heatmap",
       async ({ query, set }) => {

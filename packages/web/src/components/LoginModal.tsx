@@ -4,6 +4,16 @@ import { useEffect, useState, type ReactNode } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { SiweMessage } from "siwe";
 import { TOKENS } from "@/lib/tokens";
+
+/** Stash the provider the user is about to authenticate with so the
+ *  post-auth effect in Heatmap.tsx can attribute signin_completed. The
+ *  flag is read once when authStatus flips to "authenticated". */
+function markSigninProvider(
+  provider: "siwe" | "resend" | "github" | "discord" | "telegram" | "twitter",
+): void {
+  if (typeof window === "undefined") return;
+  (window as unknown as { __ora_lastProvider?: string }).__ora_lastProvider = provider;
+}
 import {
   DiscordIcon,
   GithubIcon,
@@ -117,6 +127,7 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
           window.location.href = "/account?linked=siwe";
         }
       } else {
+        markSigninProvider("siwe");
         const result = await signIn("siwe", { message: prepared, signature, redirect: false });
         if (result?.error) setError(result.error);
         else onClose();
@@ -133,6 +144,7 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
     setBusy("email");
     setError(null);
     try {
+      markSigninProvider("resend");
       const result = await signIn("resend", { email: emailInput, redirect: false });
       if (result?.error) setError(result.error);
       else setError("✉ Check your inbox for the magic link.");
@@ -285,7 +297,10 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
           )}
           {has("github") && (
             <ProviderButton
-              onClick={() => signIn("github")}
+              onClick={() => {
+                markSigninProvider("github");
+                void signIn("github");
+              }}
               disabled={busy !== null}
               loading={busy === "github"}
               icon={<GithubIcon />}
@@ -295,7 +310,10 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
           )}
           {has("discord") && (
             <ProviderButton
-              onClick={() => signIn("discord")}
+              onClick={() => {
+                markSigninProvider("discord");
+                void signIn("discord");
+              }}
               disabled={busy !== null}
               loading={busy === "discord"}
               icon={<DiscordIcon />}
@@ -305,7 +323,10 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
           )}
           {has("twitter") && (
             <ProviderButton
-              onClick={() => signIn("twitter")}
+              onClick={() => {
+                markSigninProvider("twitter");
+                void signIn("twitter");
+              }}
               disabled={busy !== null}
               loading={busy === "twitter"}
               icon={<XIcon />}
@@ -460,6 +481,7 @@ function TelegramLoginButton({
             window.location.href = "/account?linked=telegram";
           }
         } else {
+          markSigninProvider("telegram");
           const result = await signIn("telegram", {
             payload: JSON.stringify(data),
             redirect: false,

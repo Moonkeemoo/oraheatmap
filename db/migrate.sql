@@ -256,3 +256,55 @@ CREATE TABLE IF NOT EXISTS user_row_orders (
 
 CREATE INDEX IF NOT EXISTS user_row_orders_user_idx
   ON user_row_orders (user_id);
+
+-- ══════════════════════════════════════════
+-- Product analytics — anonymised event log
+-- ══════════════════════════════════════════
+-- First-party event store. Frontend SDK at packages/web/src/lib/analytics.ts
+-- buffers user-facing events and POSTs them in batches to /api/analytics.
+-- Hypertable so it scales the same way signals do; same retention policy
+-- can be applied later when volume justifies it.
+--
+-- Identity model:
+--   session_id — opaque random UUID stored in localStorage. Stable across
+--                page reloads on the same browser, regenerated on a hard
+--                wipe. NOT a fingerprint; no cross-site tracking.
+--   user_id    — Auth.js JWT `sub` when signed in, NULL otherwise.
+--                Same value as user_row_orders.user_id so funnels can join.
+--
+-- Privacy:
+--   We only store the IP's coarse country code (Caddy/Cloudflare can fill
+--   this via header), never the full IP. Path stored as URL pathname only
+--   (no query strings — those can carry PII via referral params). Props is
+--   a JSONB blob the SDK fills with explicit, schema-controlled keys.
+CREATE TABLE IF NOT EXISTS analytics_events (
+  id          BIGSERIAL,
+  ts          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  session_id  TEXT NOT NULL,
+  user_id     TEXT,
+  name        TEXT NOT NULL,                    -- event name, e.g. "pageview", "drill_open"
+  path        TEXT,                             -- URL pathname only, no query string
+  referrer    TEXT,                             -- document.referrer hostname only
+  ua_brief    TEXT,                             -- "Chrome 132 / macOS 14" — brief UA, no fingerprint surface
+  country     TEXT,                             -- 2-letter ISO country code; NULL until edge headers wired
+  props       JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
+SELECT create_hypertable('analytics_events', 'ts',
+  chunk_time_interval => INTERVAL '7 days',
+  if_not_exists => TRUE
+);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_name_ts
+  ON analytics_events (name, ts DESC);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_session_ts
+  ON analytics_events (session_id, ts DESC);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_user_ts
+  ON analytics_events (user_id, ts DESC) WHERE user_id IS NOT NULL;
+
+-- Drop chunks older than 365 days — rolling year of analytics is plenty
+-- for product decisions; further-back rows belong in cold storage if
+-- ever needed. Re-applying is safe (idempotent).
+SELECT add_retention_policy('analytics_events', INTERVAL '365 days', if_not_exists => TRUE);
