@@ -20,7 +20,7 @@
 Простір переповнений (170+ tools, 20+ прямих конкурентів, 3 з них — теж heatmap-и).
 ICE поклала $2B в Polymarket → **дані стали стратегічним активом**, не developer-сторонкою. Для нас це і добре (RTDS стабільніший), і небезпечно (Polymarket може будувати свій consumer-tier).
 
-Перемогти "як ще один whale tracker" — неможливо. Тому позиціюємо не як whale tracker, а як **whale-filtered flow visualizer для prosumer-трейдерів**, з особистістю і чіткою POV. Wedge — щотижневий публічний звіт "що зробили топ-1000 whales" як дистрибуційний двигун, бо у нас немає базової аудиторії.
+Перемогти "як ще один whale tracker" — неможливо. Тому позиціюємо не як whale tracker, а як **whale-filtered flow visualizer для prosumer-трейдерів**, з особистістю і чіткою POV. Wedge — щотижневий публічний звіт "що зробили топ whales" як дистрибуційний двигун, бо у нас немає базової аудиторії.
 
 ---
 
@@ -80,13 +80,13 @@ ICE поклала $2B в Polymarket → **дані стали стратегі�
 
 ## 3. Thesis
 
-> **oraheatmap — це heatmap не маркетів, а конвенції 1,000 китів.
+> **oraheatmap — це heatmap не маркетів, а конвенції 10,000+ китів з Polymarket-лідерборду.
 > Решта інструментів показує що робить натовп. Ми показуємо куди нахиляється кімната з найбільшими гаманцями.**
 
 Це не product description. Це **позиціонування**, яке відрізняє нас від трьох прямих heatmap-конкурентів і від whale tracker-ів-без-візуалізації.
 
 ### Tagline-кандидати на A/B
-1. *"The room of 1,000 whales, in one heatmap."*
+1. *"The room of 10,000+ whales, in one heatmap."*
 2. *"See where the smart room is leaning."*
 3. *"Polymarket flow, whale-filtered."*
 4. *"All other heatmaps show you noise. We show you conviction."* ← найпровокаційніший, найбільше шансів on RT
@@ -95,7 +95,7 @@ ICE поклала $2B в Polymarket → **дані стали стратегі�
 
 ## 4. The wedge
 
-Single-prong: **щотижневий публічний звіт "What the top 1,000 whales did this week"** — Substack/Medium-style, безкоштовний, screenshot-heavy, SEO-tuned.
+Single-prong: **щотижневий публічний звіт "What the top 10,000+ whales did this week"** — Substack/Medium-style, безкоштовний, screenshot-heavy, SEO-tuned.
 
 **Чому це wedge, а не просто "контент":**
 - Зробити продукт-only стратегію без аудиторії = в порожнечу. Звіт створює AUDIENCE передовими циклами, поки продукт встигає визрівати.
@@ -105,7 +105,7 @@ Single-prong: **щотижневий публічний звіт "What the top 1
 - Звіт = вічний SEO актив (на відміну від твітів, які гнуться через тиждень)
 
 **Як виглядає Issue #1:**
-- Заголовок: "What 1,000 Polymarket whales did the week of May X — and where retail missed it"
+- Заголовок: "What 10,000+ Polymarket whales did the week of May X — and where retail missed it"
 - Sections: Top 5 categories by whale flow / Convergence events (5+ whales same market) / Patterns by hour-of-day / Notable whale spotlight (з alias-у одного з топ-25 верифікованих)
 - 4-6 heatmap screenshots з різних cuts
 - Кінець: "see live → oralab.xyz · subscribe weekly"
@@ -123,7 +123,7 @@ Single-prong: **щотижневий публічний звіт "What the top 1
 
 ### Week 2 — Перший залп
 - [ ] **Issue #1 thread publish** — Tuesday 14:00 UTC (peak crypto-twitter EU/US overlap)
-- [ ] **r/Polymarket post** — value-first crosspost ("I tracked the top 1,000 whales for a week — here's what surprised me"). Посилання у коментах, не в body.
+- [ ] **r/Polymarket post** — value-first crosspost ("I tracked the top 10,000+ whales for a week — here's what surprised me"). Посилання у коментах, не в body.
 - [ ] **DM-хвиля 1** — 5 verified-whales (Domahhhh, Car, MrOzi) + 2 high-volume non-verified (debased_PM, friendlyping). Vanity-hook pitch: "ти потрапив у наш weekly report, ось скрін, можна процитувати тебе у наступному?"
 - [ ] **Pinned tweet** на X — Issue #1 thread
 

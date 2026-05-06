@@ -99,6 +99,23 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
     try {
       const eth = (window as unknown as { ethereum?: { request: (req: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum;
       if (!eth) {
+        // No injected wallet. On mobile (no extension possible) bounce
+        // the user into the MetaMask app via the universal deep-link —
+        // metamask.app.link/dapp/<host> opens our site inside MetaMask's
+        // in-app browser, where window.ethereum IS injected and the
+        // user can complete SIWE normally. If MetaMask isn't installed,
+        // the deep-link routes to the App Store / Play Store. Detection:
+        // a mobile UA without window.ethereum can't have a wallet
+        // extension, so the deep-link is the only path forward.
+        const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+        const isMobileBrowser = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Mobile/i.test(ua);
+        if (isMobileBrowser) {
+          const host = window.location.host;
+          // metamask.app.link strips the protocol — pass just host+path.
+          const deeplink = `https://metamask.app.link/dapp/${host}`;
+          window.location.href = deeplink;
+          return;
+        }
         setError("MetaMask (or another browser wallet) not detected. Install one and try again.");
         return;
       }
@@ -458,6 +475,28 @@ function TelegramLoginButton({
       setError("Telegram bot id not configured (NEXT_PUBLIC_TG_LOGIN_BOT_ID).");
       return;
     }
+
+    // Mobile path — full-page redirect to oauth.telegram.org. The
+    // popup-based widget (tg.auth) is silently blocked on iOS Safari,
+    // so on mobile we hand control over to Telegram's hosted page and
+    // come back via /auth/tg-callback. The callback route POSTs to
+    // signIn("telegram") and lands the user back at /app.
+    const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+    const isMobileBrowser = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Mobile/i.test(ua);
+    if (isMobileBrowser) {
+      const origin = window.location.origin;
+      const returnTo = `${origin}/auth/tg-callback${linkMode ? "?mode=link" : ""}`;
+      const url = new URL("https://oauth.telegram.org/auth");
+      url.searchParams.set("bot_id", botId);
+      url.searchParams.set("origin", origin);
+      url.searchParams.set("embed", "0");
+      url.searchParams.set("request_access", "write");
+      url.searchParams.set("return_to", returnTo);
+      markSigninProvider("telegram");
+      window.location.href = url.toString();
+      return;
+    }
+
     type TgLogin = {
       Login?: {
         auth: (
@@ -522,10 +561,16 @@ function TelegramLoginButton({
     });
   }
 
+  // Mobile path skips the widget script entirely (full-page redirect),
+  // so the button shouldn't gate on scriptReady there — that flag only
+  // covers the desktop popup path.
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+  const isMobileBrowser = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Mobile/i.test(ua);
+  const widgetReady = isMobileBrowser ? true : scriptReady;
   return (
     <ProviderButton
       onClick={login}
-      disabled={disabled || !scriptReady || !botId}
+      disabled={disabled || !widgetReady || !botId}
       loading={busy}
       icon={<TelegramIcon />}
     >
