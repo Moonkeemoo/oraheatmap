@@ -990,6 +990,151 @@ export function createApi(deps: ApiDeps) {
       },
     )
     .get(
+      "/api/cell-stats",
+      async ({ query, set }) => {
+        // Per-cell top markets + top whales for an arbitrary scope+window.
+        // Used by MACRO mode tooltip — macro response skips per-cell
+        // aggregates (would dominate the 168-cell payload), so we fetch
+        // them on-demand when the user opens a drawer.
+        //
+        // Scope is (category, optional subcategory, optional conditionId)
+        // matching the LIVE/MACRO drill levels. Window is fromTs/toTs ISO.
+        const cat = query.category;
+        const sub = query.subcategory ?? null;
+        const cid = query.conditionId ?? null;
+        const fromTs = query.fromTs ?? null;
+        const toTs = query.toTs ?? new Date().toISOString();
+
+        const cacheKey = ["cell-stats", cat, sub ?? "", cid ?? "", fromTs ?? "", toTs].join("|");
+        const ttlMs = 60_000;
+        const cc = cacheControlHeader(ttlMs);
+        const cached = highlightsCache.get(cacheKey);
+        if (cached !== undefined) {
+          set.headers["x-cache"] = "hit";
+          set.headers["cache-control"] = cc;
+          return cached;
+        }
+
+        const scopeFilter = cid
+          ? deps.sql`condition_id = ${cid}`
+          : sub
+            ? deps.sql`category = ${cat} AND subcategory = ${sub}`
+            : deps.sql`category = ${cat}`;
+        const fromFilter = fromTs ? deps.sql`AND ts >= ${fromTs}::timestamptz` : deps.sql``;
+        const toFilter = deps.sql`AND ts <= ${toTs}::timestamptz`;
+
+        // Top markets — only when we're not already drilled to a single
+        // condition_id (then there's only one market by definition).
+        type MarketRow = {
+          condition_id: string;
+          market_question: string | null;
+          market_slug: string | null;
+          market_icon: string | null;
+          signals: number | string;
+          volume_usd: number | string;
+          pnl_usd: number | string;
+          win_count: number | string;
+          loss_count: number | string;
+          unique_whales: number | string;
+        };
+        const marketRows = cid
+          ? []
+          : await deps.sql<MarketRow[]>`
+              SELECT
+                condition_id,
+                MAX(market_question) AS market_question,
+                MAX(market_slug)     AS market_slug,
+                MAX(market_icon)     AS market_icon,
+                COUNT(*)::bigint                                              AS signals,
+                COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS volume_usd,
+                COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd,
+                COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS win_count,
+                COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS loss_count,
+                COUNT(DISTINCT whale_addr)::bigint                            AS unique_whales
+              FROM signals
+              WHERE ${scopeFilter} ${fromFilter} ${toFilter}
+                AND condition_id IS NOT NULL
+              GROUP BY condition_id
+              ORDER BY signals DESC
+              LIMIT 6
+            `;
+
+        // Top whales — same window/scope.
+        type WhaleRow = {
+          whale_addr: string;
+          signals: number | string;
+          volume_usd: number | string;
+          pnl_usd: number | string;
+          wins: number | string;
+          losses: number | string;
+        };
+        const whaleRows = await deps.sql<WhaleRow[]>`
+          SELECT
+            whale_addr,
+            COUNT(*)::bigint                                              AS signals,
+            COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS volume_usd,
+            COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd,
+            COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS wins,
+            COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS losses
+          FROM signals
+          WHERE ${scopeFilter} ${fromFilter} ${toFilter}
+            AND whale_addr ~ '^0x[0-9a-f]{40}$'
+          GROUP BY whale_addr
+          ORDER BY volume_usd DESC, signals DESC
+          LIMIT 8
+        `;
+
+        const result = {
+          markets: marketRows.map((m) => {
+            const wins = Number(m.win_count);
+            const losses = Number(m.loss_count);
+            const decided = wins + losses;
+            return {
+              conditionId: m.condition_id,
+              marketQuestion: m.market_question,
+              marketSlug: m.market_slug,
+              marketIcon: m.market_icon,
+              count: Number(m.signals),
+              volume: Number(m.volume_usd),
+              pnl: Number(m.pnl_usd),
+              winRate: decided > 0 ? wins / decided : null,
+              uniqueWhales: Number(m.unique_whales),
+            };
+          }),
+          topWhales: whaleRows.map((w) => {
+            const wins = Number(w.wins);
+            const losses = Number(w.losses);
+            const decided = wins + losses;
+            return {
+              addr: w.whale_addr,
+              alias: whaleAlias(w.whale_addr),
+              color: whaleColor(w.whale_addr),
+              profileImage: whaleAliasInfo(w.whale_addr)?.profileImage ?? null,
+              signals: Number(w.signals),
+              volume: Number(w.volume_usd),
+              pnl: Number(w.pnl_usd),
+              winRate: decided > 0 ? wins / decided : null,
+              wins,
+              losses,
+            };
+          }),
+        };
+        highlightsCache.set(cacheKey, result, ttlMs);
+        set.headers["x-cache"] = "miss";
+        set.headers["cache-control"] = cc;
+        return result;
+      },
+      {
+        query: t.Object({
+          category: t.String(),
+          subcategory: t.Optional(t.String()),
+          conditionId: t.Optional(t.String()),
+          fromTs: t.Optional(t.String()),
+          toTs: t.Optional(t.String()),
+        }),
+      },
+    )
+    .get(
       "/api/whales/search",
       ({ query }) => {
         // Powered by the in-memory alias map (loaded at boot from

@@ -93,6 +93,7 @@ export function Tooltip({
   parentCategory,
   feed,
   highlights,
+  cellStats,
   displayLabel,
   slotIndex,
   originalSlotIdx,
@@ -152,6 +153,14 @@ export function Tooltip({
     loading: boolean;
     range: LiveRange;
   } | null;
+  /** MACRO-only: per-cell top markets + top whales fetched on-demand
+   *  via /api/cell-stats. Macro response itself doesn't carry per-cell
+   *  markets/topWhales (would dominate the 168-cell payload), so the
+   *  drawer shows a "loading…" placeholder while this is in flight. */
+  cellStats?: {
+    data: import("@/hooks/useCellStats").CellStats | null;
+    loading: boolean;
+  } | null;
   /** Override for the small badge text. At L1 omit (badge = category
    *  name from meta.label). At L2 pass the subcategory display label
    *  ("NBA", "Bitcoin") so the badge reflects the row, not the parent
@@ -197,7 +206,19 @@ export function Tooltip({
   const conditionId = isL3 ? category : null;
   const marketHistory = useMarketHistory(conditionId, "max", isL3 && locked);
   const topN = isDrawer ? TOP_N_DRAWER : TOP_N_FLOAT;
-  const sortedMarkets = isPattern ? [] : sortMarkets(cell.markets, metric).slice(0, topN);
+  // In macro mode the cell payload omits markets/topWhales (would
+  // dominate 168-cell response). Pull them from the on-demand
+  // /api/cell-stats fetch wired through cellStats prop instead. Cell
+  // ref on macro carries empty arrays as initialised by assembleHeatmap.
+  const isMacro = mode === "macro";
+  const macroStatsLoading = isMacro && (cellStats?.loading ?? false);
+  const sourceMarkets = isMacro
+    ? (cellStats?.data?.markets ?? [])
+    : cell.markets;
+  const sourceWhales = isMacro
+    ? (cellStats?.data?.topWhales ?? [])
+    : cell.topWhales ?? [];
+  const sortedMarkets = isPattern ? [] : sortMarkets(sourceMarkets, metric).slice(0, topN);
   // Per-cell historical cycles for PATTERN locked tooltip — fires only when
   // we lock so we don't spam the API on every mouse move.
   const cyclesEnabled = isPattern && locked;
@@ -221,7 +242,7 @@ export function Tooltip({
   // match what the heatmap is showing. Hidden in PATTERN mode (no per-cell
   // whale aggregation in the pattern query).
   const cellWhales: ReadonlyArray<WhaleCellSummary> =
-    isPattern ? [] : sortWhales(cell.topWhales ?? [], metric).slice(0, topN);
+    isPattern ? [] : sortWhales(sourceWhales, metric).slice(0, topN);
   // Slot index inside the active row — derived from cellId pattern "{cat}:{slot}"
   // upstream. We get rowCells in display order, so the active slot is the
   // last index for LIVE (NOW) ... actually we don't have direct access to
@@ -643,6 +664,38 @@ export function Tooltip({
             Top markets & whales hidden on {range} — drill into a category to see them.
           </div>
         )}
+
+      {/* MACRO loading state — render once, replaces both Top whales
+          and Top markets sections while /api/cell-stats is in flight.
+          Hidden as soon as data arrives (cellWhales / sortedMarkets
+          will pick up populated arrays). */}
+      {isMacro && macroStatsLoading && cellWhales.length === 0 && sortedMarkets.length === 0 && (
+        <div
+          style={{
+            borderTop: `1px solid ${TOKENS.border}`,
+            paddingTop: 8,
+            marginBottom: 8,
+            fontSize: 11,
+            color: TOKENS.textMuted,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <span
+            aria-hidden
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: 6,
+              background: TOKENS.accent,
+              boxShadow: `0 0 6px ${TOKENS.accent}`,
+              animation: "heroPulse 1.4s ease-in-out infinite",
+            }}
+          />
+          <span>Loading top whales &amp; markets for this slot…</span>
+        </div>
+      )}
 
       {!isPattern && cellWhales.length > 0 && isAuthed && (
         <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>

@@ -9,6 +9,7 @@ import { initAnalytics, track } from "@/lib/analytics";
 import { applySignal } from "@/lib/heatmap-apply";
 import { recordSignal } from "@/lib/live-clock";
 import { useCellFeed } from "@/hooks/useCellFeed";
+import { useCellStats } from "@/hooks/useCellStats";
 import { metricToHighlightKind, useRowHighlights } from "@/hooks/useRowHighlights";
 import { buildScopeKey } from "@/lib/row-order";
 import { TOKENS } from "@/lib/tokens";
@@ -254,6 +255,27 @@ export function Heatmap() {
     scope: highlightsScope,
     metric: highlightsKind,
     enabled: panelCell !== null && mode === "live" && highlightsKind !== null,
+  });
+
+  // MACRO: per-cell top markets + top whales fetched on-demand.
+  // Scope = (drill state) + (the bucket's own time window). Only fires
+  // for the locked drawer cell, not on every hover.
+  const cellStatsScope = (() => {
+    if (!panelCell || !cellFeedScope || mode !== "macro" || !fetchedData) return null;
+    const slot = parseSlotFromCellId(panelCell.cellId);
+    const buckets = fetchedData.buckets;
+    if (slot === null || slot < 0 || slot >= buckets.length) return null;
+    const bucket = buckets[slot]!;
+    const fromTs = bucket.ts ?? null;
+    const nextBucket = buckets[slot + 1];
+    const toTs =
+      nextBucket?.ts ?? fetchedData.windowEnd ?? new Date().toISOString();
+    if (!fromTs) return null;
+    return { ...cellFeedScope, fromTs, toTs };
+  })();
+  const cellStats = useCellStats({
+    scope: cellStatsScope,
+    enabled: panelCell !== null && mode === "macro",
   });
 
   // Optimistic merge — only meaningful in LIVE mode (PATTERN values are
@@ -577,6 +599,11 @@ export function Heatmap() {
                         loading: rowHighlights.loading,
                         range,
                       }
+                    : null
+                }
+                cellStats={
+                  mode === "macro"
+                    ? { data: cellStats.data, loading: cellStats.loading }
                     : null
                 }
                 isAuthed={isAuthed}

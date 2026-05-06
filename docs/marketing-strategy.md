@@ -1,8 +1,17 @@
-# oraheatmap — Marketing Strategy v0.1
+# oraheatmap — Marketing Strategy v0.2
 
 **Date:** 2026-05-06
-**Author:** Claude (research) + Taras (review)
-**Status:** Draft — built from competitive research + market data, not yet validated against real user/whale conversations.
+**Author:** Claude (research) + Taras (decisions)
+**Status:** Locked-in decisions section 0; execution plan in progress.
+
+## 0. Locked-in decisions (2026-05-06)
+
+| # | Decision | Choice | Implication |
+|---|----------|--------|-------------|
+| 1 | Cadence | **Weekly** | Tuesday 14:00 UTC; load-bearing for the whole strategy. |
+| 2 | Tone of voice | **Provocative / opinionated** | Tagline + landing rewritten away from generic "real-time heatmap" framing. |
+| 3 | Publishing platform | **Twitter / X (threads)** | Format = 8-15 tweet thread with screenshots, not 1500-word Medium post. No SEO long-tail, no email subs — compensate via pinned thread + X-follower accumulation. |
+| 4 | Open data | **Nothing public** | Raw data stays proprietary. Citations via screenshots-inside-threads only. Protects against wholesale-copy by Polywhaler/Polysights. |
 
 ---
 
@@ -103,37 +112,38 @@ Single-prong: **щотижневий публічний звіт "What the top 1
 
 ---
 
-## 5. 30-day plan
+## 5. 30-day plan (revised after locked decisions)
 
-### Week 1 — Підготовка
-- [ ] Repo cleanup: лендинг тепер веде на `/app`, але hero-copy оновлюємо під тезу ("Other heatmaps show what the crowd does…")
-- [ ] Setup Substack або Ghost для weekly reports (Substack — дефолт, бо native subscriber growth)
-- [ ] Налаштувати "Receipts" сторінку в продукті — last week's signals + how they resolved (трustbuilder для звітів)
-- [ ] Запустити X-аккаунт продукту якщо ще нема, biо: "1,000-whale flow heatmap → oralab.xyz"
+### Week 1 — Підготовка (Twitter-first)
+- [ ] **X account setup** для продукту: handle, bio "whale-filtered Polymarket flow heatmap → oralab.xyz", header image (heatmap screenshot-mockup), pinned tweet placeholder
+- [ ] **Lander hero copy** оновити під provocative tone ("All other heatmaps show you noise. We show you conviction.") — заміна generic "real-time heatmap" framing
+- [ ] **Issue #1 thread structure** — drafted spec: which 8-15 tweets, which data points, which screenshots
+- [ ] **DM templates rewrite** — vanity hook замість utility hook ("you're in our weekly report — can we quote you?")
+- [ ] **"Receipts" page в продукті** — last week's signals + how they resolved. Trust builder для будь-якого linked-from-thread visitor.
 
 ### Week 2 — Перший залп
-- [ ] **Issue #1 weekly report** — публікація вівторок 14:00 UTC (peak crypto-twitter time)
-- [ ] **r/Polymarket post** — value-first ("I tracked the top 1,000 whales for a week — here's what surprised me"), посилання на report у коментах не в тілі
-- [ ] **Twitter thread** — 8-12 твітів, 1 фінальний з посиланням
-- [ ] **DM-хвиля 1**: 5 топ-3 verified whales + 2 топ-non-verified (Domahhhh, Car, MrOzi, debased_PM, friendlyping). Pitch: "тебе процитували/протегали в звіті, ось скрін, можна процитувати?". Vanity hook замість utility hook.
+- [ ] **Issue #1 thread publish** — Tuesday 14:00 UTC (peak crypto-twitter EU/US overlap)
+- [ ] **r/Polymarket post** — value-first crosspost ("I tracked the top 1,000 whales for a week — here's what surprised me"). Посилання у коментах, не в body.
+- [ ] **DM-хвиля 1** — 5 verified-whales (Domahhhh, Car, MrOzi) + 2 high-volume non-verified (debased_PM, friendlyping). Vanity-hook pitch: "ти потрапив у наш weekly report, ось скрін, можна процитувати тебе у наступному?"
+- [ ] **Pinned tweet** на X — Issue #1 thread
 
 ### Week 3 — Цикл і перші уроки
-- [ ] **Issue #2** — вибрати кут із Issue #1 що залетів найкраще, поглибити
-- [ ] **PM newsletter outreach**: NewsPoly, news.polymarket.com — pitch як гостьовий контент
-- [ ] **DM-хвиля 2**: ще 5 китів з list-у, тестуємо a/b-формулювання
-- [ ] Метрики: subs growth, X follower growth, oralab.xyz unique visitors, signups
+- [ ] **Issue #2 thread** — вибрати кут з Issue #1 що залетів найкраще, поглибити
+- [ ] **PM newsletter outreach**: NewsPoly, news.polymarket.com — pitch як гостьовий thread-summary або співавторство
+- [ ] **DM-хвиля 2** — ще 5 китів з list-у, тестуємо a/b формулювання hook-у
+- [ ] **Метрики**: X follower growth, oralab.xyz unique visitors, signups, RT/QT count, thread engagement
 
 ### Week 4 — Подвійна ставка на що залетіло
-- [ ] **Issue #3** — поглиблюємо найкращий формат
-- [ ] **Discord-стратегія**: вступаємо в офіційний Polymarket Discord (103K), у PolyZone/PolyToolz/PolyOdds, тільки value-add постимо (без promo) → перші органічні DM-и про наш продукт
-- [ ] **Огляд першого місяця** — open-data dump: оприлюднюємо weekly aggregates у GitHub. Citation-bait, link-juice, builder-credibility.
+- [ ] **Issue #3 thread** — поглиблюємо формат що показав найбільший engagement
+- [ ] **Discord стратегія**: вступаємо в офіційний Polymarket Discord (103K) і PolyZone/PolyToolz/PolyOdds. Тільки value-add пости (data findings без promo) → органічні згадки.
+- [ ] **Перший month-review thread** — підбиття підсумків місяця, найкращі знахідки. Це сам по собі stand-alone artifact для X.
 
-**KPI на 30 днів (вистачить для go/no-go):**
-- 200+ subs на Substack
-- 100+ X followers
+**KPI на 30 днів (go/no-go):**
+- 100+ X followers на product account
 - 5,000+ unique visitors на /app
 - 50+ signups (auth-tier)
-- 1+ whale RT/quote (якщо 0 — стратегія DM-feature не працює, перепакуємо)
+- 1+ whale RT/quote (якщо 0 — vanity-hook не працює, перепакуємо)
+- Issue #1 thread: 50+ likes, 5+ RT, 1+ quote (бенчмарк для порівняння Issue #2 і #3)
 
 ---
 
