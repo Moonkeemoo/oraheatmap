@@ -237,6 +237,21 @@ export function Cell({
             textShadow: "0 1px 2px rgba(0,0,0,0.5)",
             position: "relative",
             zIndex: 1,
+            // PATTERN trend cells get a dim pill backdrop so the
+            // green/red value reads cleanly on yellow/green tints
+            // where the foreground colour would otherwise vanish.
+            // Non-trend cells stay un-pilled to keep the heatmap
+            // visually quiet by default.
+            ...(trend
+              ? {
+                  background: "rgba(13, 17, 23, 0.55)",
+                  padding: "3px 8px",
+                  borderRadius: 6,
+                  // Subtle outline that picks up the trend colour at
+                  // low opacity — extra reading help without shouting.
+                  boxShadow: `inset 0 0 0 1px ${trend === "up" ? "rgba(63,185,80,0.35)" : "rgba(248,81,73,0.35)"}`,
+                }
+              : {}),
           }}
         >
           {trend && (
