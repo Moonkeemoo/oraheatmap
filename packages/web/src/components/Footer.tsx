@@ -1,7 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { track } from "@/lib/analytics";
 import { TOKENS } from "@/lib/tokens";
+import { XIcon } from "./ProviderIcons";
+
+const X_URL = "https://x.com/oralabxyz";
 
 /**
  * Footer for landing, legal pages, and the app shell. Two visual modes:
@@ -30,7 +34,18 @@ export function Footer({ compact = false }: { compact?: boolean }) {
       >
         © {new Date().getFullYear()} oralab ·{" "}
         <Link href="/privacy" style={compactLink}>Privacy</Link> ·{" "}
-        <Link href="/terms" style={compactLink}>Terms</Link> · Not affiliated with Polymarket
+        <Link href="/terms" style={compactLink}>Terms</Link> ·{" "}
+        <a
+          href={X_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="oralab on X"
+          onClick={() => track.externalClick("twitter")}
+          style={{ ...compactLink, display: "inline-flex", verticalAlign: "middle" }}
+        >
+          <XIcon size={11} />
+        </a>{" "}
+        · Not affiliated with Polymarket
       </footer>
     );
   }
@@ -61,11 +76,27 @@ export function Footer({ compact = false }: { compact?: boolean }) {
         <span style={{ color: TOKENS.textMuted }}>
           © {new Date().getFullYear()} oralab · Not affiliated with Polymarket.
         </span>
-        <nav style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+        <nav style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
           <Link href="/" style={fullLink}>Home</Link>
           <Link href="/app" style={fullLink}>App</Link>
           <Link href="/privacy" style={fullLink}>Privacy</Link>
           <Link href="/terms" style={fullLink}>Terms</Link>
+          <a
+            href={X_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="oralab on X"
+            onClick={() => track.externalClick("twitter")}
+            style={{
+              ...fullLink,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+            }}
+          >
+            <XIcon size={14} />
+            <span>@oralabxyz</span>
+          </a>
         </nav>
       </div>
     </footer>

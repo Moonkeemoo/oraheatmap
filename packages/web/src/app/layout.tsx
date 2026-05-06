@@ -70,6 +70,10 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: SITE_TITLE,
     description: SITE_DESCRIPTION,
+    // Account that owns the site / created the content. When someone
+    // tweets a link to oralab.xyz the card surfaces "via @oralabxyz".
+    site: "@oralabxyz",
+    creator: "@oralabxyz",
   },
   robots: {
     index: true,

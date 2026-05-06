@@ -171,6 +171,12 @@ export function BurgerMenu({ onRequestLogin }: { onRequestLogin?: () => void } =
           <ItemLink label="Privacy" href="/privacy" onClose={() => setOpen(false)} />
           <ItemLink label="Terms" href="/terms" onClose={() => setOpen(false)} />
           <ItemLink
+            label="Follow on X"
+            href="https://x.com/oralabxyz"
+            external
+            onClose={() => setOpen(false)}
+          />
+          <ItemLink
             label="Send feedback"
             href="mailto:hello@oralab.xyz"
             external
