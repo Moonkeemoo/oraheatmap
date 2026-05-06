@@ -2,9 +2,14 @@
 
 import Link from "next/link";
 import { BrandLogo } from "@/components/BrandLogo";
-import { BurgerMenu } from "@/components/BurgerMenu";
 import { TOKENS } from "@/lib/tokens";
 
+/**
+ * Landing nav — intentionally minimal. Single CTA → /app where Sign-in
+ * and the burger menu live inside the dashboard chrome, so duplicating
+ * them here only added visual noise without giving the user a different
+ * destination.
+ */
 export function Nav() {
   return (
     <nav
@@ -32,46 +37,31 @@ export function Nav() {
         <Link href="/" style={{ textDecoration: "none", display: "inline-flex" }}>
           <BrandLogo size="compact" />
         </Link>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <Link
-            href="/app"
-            style={{
-              color: TOKENS.textSec,
-              textDecoration: "none",
-              fontSize: 13,
-              fontWeight: 600,
-              letterSpacing: 0.2,
-            }}
-          >
-            Sign in
-          </Link>
-          <Link
-            href="/app"
-            style={{
-              background: TOKENS.accent,
-              color: "#1a1410",
-              fontWeight: 800,
-              fontSize: 12,
-              letterSpacing: 0.4,
-              textTransform: "uppercase",
-              padding: "9px 16px",
-              borderRadius: 8,
-              textDecoration: "none",
-              transition: "filter .12s, transform .12s",
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLAnchorElement).style.filter = "brightness(1.1)";
-              (e.currentTarget as HTMLAnchorElement).style.transform = "translateY(-1px)";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLAnchorElement).style.filter = "none";
-              (e.currentTarget as HTMLAnchorElement).style.transform = "translateY(0)";
-            }}
-          >
-            Open heatmap
-          </Link>
-          <BurgerMenu />
-        </div>
+        <Link
+          href="/app"
+          style={{
+            background: TOKENS.accent,
+            color: "#1a1410",
+            fontWeight: 800,
+            fontSize: 12,
+            letterSpacing: 0.4,
+            textTransform: "uppercase",
+            padding: "9px 16px",
+            borderRadius: 8,
+            textDecoration: "none",
+            transition: "filter .12s, transform .12s",
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLAnchorElement).style.filter = "brightness(1.1)";
+            (e.currentTarget as HTMLAnchorElement).style.transform = "translateY(-1px)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLAnchorElement).style.filter = "none";
+            (e.currentTarget as HTMLAnchorElement).style.transform = "translateY(0)";
+          }}
+        >
+          Open heatmap
+        </Link>
       </div>
     </nav>
   );
