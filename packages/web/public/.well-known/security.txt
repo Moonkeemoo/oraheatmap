@@ -1,0 +1,12 @@
+# oralab.xyz — vulnerability disclosure (RFC 9116)
+# If you've found a security issue with the dashboard or API, please reach
+# out via the contact below before publishing. We'll acknowledge within
+# 5 business days. Coordinated disclosure preferred — give us a reasonable
+# window (typically 30–90 days) to triage and ship a fix before going
+# public, especially for issues that could affect user funds, accounts,
+# or expose personal data.
+
+Contact: mailto:hello@oralab.xyz
+Expires: 2027-05-06T00:00:00.000Z
+Preferred-Languages: en, uk
+Canonical: https://oralab.xyz/.well-known/security.txt
