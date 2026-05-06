@@ -697,6 +697,8 @@ export function Heatmap() {
         <StatsBar
           data={displayData}
           trackedCount={displayData.trackedWhales}
+          isAuthed={isAuthed}
+          onRequestLogin={() => requestLogin("stats")}
           onWhaleClick={(addr) => {
             track.whaleDrawerOpen("stats", addr);
             setWhaleProfileAddr(addr);

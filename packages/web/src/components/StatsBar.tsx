@@ -281,11 +281,18 @@ export function StatsBar({
   data,
   trackedCount,
   onWhaleClick,
+  isAuthed,
+  onRequestLogin,
 }: {
   data: HeatmapResponse;
   trackedCount: number;
   /** Open the per-whale profile drawer for the clicked address. */
   onWhaleClick: (addr: string) => void;
+  /** When false, every KPI's popover is replaced by a single sign-in CTA
+   *  and the Top Whale onClick redirects to the login modal — keeps
+   *  unauth UX consistent across the bar (was ad-hoc per item). */
+  isAuthed: boolean;
+  onRequestLogin: () => void;
 }) {
   const num = data.buckets.length;
 
@@ -402,6 +409,40 @@ export function StatsBar({
   // Hover state — only one popover open at a time; index into the items array.
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const isMobile = useIsMobile();
+
+  // Single sign-in CTA used for every popover when the user isn't
+  // authenticated. Keeps the bar's UX consistent — every KPI either
+  // expands or it doesn't, instead of "PnL opens but Top Whale prompts
+  // to log in".
+  const renderLockedPopover = (): ReactNode => (
+    <button
+      onClick={onRequestLogin}
+      style={{
+        background: TOKENS.panel2,
+        border: `1px solid ${TOKENS.borderHi}`,
+        color: TOKENS.text,
+        fontFamily: "inherit",
+        fontSize: 11,
+        fontWeight: 600,
+        padding: "10px 12px",
+        borderRadius: 6,
+        width: "100%",
+        cursor: "pointer",
+        textAlign: "left",
+        lineHeight: 1.4,
+        transition: "filter .12s",
+      }}
+      onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.filter = "brightness(1.15)")}
+      onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.filter = "none")}
+    >
+      <span style={{ display: "block", color: TOKENS.text, fontWeight: 700, marginBottom: 2 }}>
+        🔒 Sign in to unlock
+      </span>
+      <span style={{ display: "block", color: TOKENS.textSec, fontSize: 10, fontWeight: 500 }}>
+        Per-category breakdowns &amp; whale lists
+      </span>
+    </button>
+  );
 
   // ─── Generic per-row ranking popover ──────────────────────────────────
   // One renderer drives the breakdown for Signals, Volume, PnL, Win Rate.
@@ -634,6 +675,15 @@ export function StatsBar({
     />
   );
 
+  // Substitute every authed popover with the single login CTA when
+  // the user isn't signed in. `lockedPopoverWidth` keeps the prompt
+  // narrow (260px) so it sits closer to the source card on mobile.
+  const lockedPopoverWidth = 260;
+  const gate = (real: () => ReactNode, w: number): { popover: () => ReactNode; popoverWidth: number } =>
+    isAuthed
+      ? { popover: real, popoverWidth: w }
+      : { popover: renderLockedPopover, popoverWidth: lockedPopoverWidth };
+
   const items: StatItem[] = [
     {
       label: isPattern ? "Avg Signals / Day" : "Total Signals",
@@ -641,8 +691,7 @@ export function StatsBar({
       delta: isPattern ? undefined : { val: sigDelta, dir: sigDelta >= 0 ? "up" : "down" },
       spark: { values: trendSignals, color: TOKENS.link },
       tooltip: "Number of whale trades captured in this window.",
-      popover: renderSignalsPopover,
-      popoverWidth: 320,
+      ...gate(renderSignalsPopover, 320),
     },
     {
       label: isPattern ? "Avg Volume / Day" : "Total Volume",
@@ -651,8 +700,7 @@ export function StatsBar({
       spark: { values: trendVolume, color: TOKENS.accent },
       tooltip:
         "USD value of BUY-side trades only — money entering whale positions.",
-      popover: renderVolumePopover,
-      popoverWidth: 320,
+      ...gate(renderVolumePopover, 320),
     },
     {
       label: isPattern ? "Avg PnL / Day" : "Total PnL",
@@ -662,8 +710,7 @@ export function StatsBar({
       spark: { values: trendPnl, color: totalPnl >= 0 ? TOKENS.pos : TOKENS.neg },
       tooltip:
         "Realized profit/loss summed across all SELL and SETTLEMENT events in this window.",
-      popover: renderPnlPopover,
-      popoverWidth: 360,
+      ...gate(renderPnlPopover, 360),
     },
     {
       label: "Win Rate",
@@ -672,8 +719,7 @@ export function StatsBar({
       sub: isPattern ? "avg over slots" : "by exits",
       tooltip:
         "Share of exits (SELL or SETTLEMENT) that closed in profit.",
-      popover: renderWinRatePopover,
-      popoverWidth: 320,
+      ...gate(renderWinRatePopover, 320),
     },
     isPattern
       ? {
@@ -690,9 +736,10 @@ export function StatsBar({
             whale: { color: t.topWhale.color, alias: t.topWhale.alias },
             sub: "by USD entered",
             tooltip: `${t.topWhale.alias.startsWith("0x") ? "address (no leaderboard alias)" : "Polymarket username"}\n${t.topWhale.addr}`,
-            popover: renderTopWhalesPopover,
-            popoverWidth: 380,
-            onClick: () => onWhaleClick(t.topWhale!.addr),
+            ...gate(renderTopWhalesPopover, 380),
+            onClick: isAuthed
+              ? () => onWhaleClick(t.topWhale!.addr)
+              : onRequestLogin,
           }
         : { label: "Top Whale", value: "—" },
     isPattern
@@ -710,8 +757,7 @@ export function StatsBar({
           bar: trackedCount > 0 ? Math.min(1, (t?.activeWhales ?? 0) / trackedCount) : 0,
           tooltip:
             "Distinct whales from the corpus that traded at least once in this window.",
-          popover: renderActiveWhalesPopover,
-          popoverWidth: 380,
+          ...gate(renderActiveWhalesPopover, 380),
         },
   ];
 

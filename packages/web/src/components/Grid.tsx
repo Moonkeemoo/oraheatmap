@@ -226,10 +226,12 @@ function RowLabelBadge({
   meta,
   clickableRow,
   onRowClick,
+  isMobile,
 }: {
   meta: RowMeta;
   clickableRow: boolean;
   onRowClick?: (rowKey: string) => void;
+  isMobile?: boolean;
 }) {
   const { isL3, isResolved, rowColor, rowLabel, rawLabel, l3Url } = meta;
   const isInteractive = clickableRow || l3Url !== null;
@@ -247,17 +249,20 @@ function RowLabelBadge({
     : "none";
   // Reserve room on the right for the corner-pinned affordance icon so the
   // text never visually overlaps it. 18px is enough for both › and ↗ at
-  // their current sizes; non-interactive rows skip the reserve.
-  const padRight = isInteractive ? 18 : 8;
+  // their current sizes; non-interactive rows skip the reserve. Mobile
+  // shrinks this aggressively so 7-letter L1 labels ("CULTURE",
+  // "POLITICS", "ECONOMICS") survive the narrow label column.
+  const padRight = isInteractive ? (isMobile ? 12 : 18) : (isMobile ? 4 : 8);
+  const padLeft = isMobile ? 5 : 8;
   const badgeStyle: React.CSSProperties = {
     background: rowColor,
     color: "#fff",
     border: "none",
     fontFamily: "inherit",
-    fontSize: 10,
+    fontSize: isMobile && !isL3 ? 11 : 10,
     fontWeight: isL3 ? 600 : 700,
-    letterSpacing: isL3 ? 0.2 : 0.6,
-    padding: `5px ${padRight}px 5px 8px`,
+    letterSpacing: isL3 ? 0.2 : isMobile ? 0.4 : 0.6,
+    padding: `5px ${padRight}px 5px ${padLeft}px`,
     borderRadius: 4,
     textTransform: isL3 ? "none" : "uppercase",
     textAlign: isL3 ? ("left" as const) : ("center" as const),
@@ -687,6 +692,11 @@ export function Grid({
   ): React.ReactNode => {
     const meta = makeRowMeta(cat, data);
     const clickableRow = !meta.isL3 && onRowClick !== undefined && !options.isDragOverlay;
+    // Hide the lock-icon affordance entirely when reorder is disabled —
+    // it eats label width without offering anything beyond the toast
+    // CTAs already wired into the rest of the UI. Drag handle still
+    // renders for authenticated users (drag-to-reorder works on touch).
+    const showHandle = options.reorderEnabled;
     return (
       <>
         <div
@@ -694,18 +704,21 @@ export function Grid({
             display: "flex",
             alignItems: "center",
             justifyContent: "flex-start",
-            gap: 4,
-            paddingRight: 10,
+            gap: showHandle ? 4 : 0,
+            paddingRight: isMobile ? 6 : 10,
           }}
         >
-          <DragHandle
-            reorderEnabled={options.reorderEnabled}
-            onRequestLogin={onRequestLogin}
-            listeners={options.listeners}
-            attributes={options.attributes}
-          />
+          {showHandle && (
+            <DragHandle
+              reorderEnabled={options.reorderEnabled}
+              onRequestLogin={onRequestLogin}
+              listeners={options.listeners}
+              attributes={options.attributes}
+            />
+          )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <RowLabelBadge
+              isMobile={isMobile}
               meta={meta}
               clickableRow={clickableRow}
               onRowClick={onRowClick}
@@ -770,7 +783,7 @@ export function Grid({
   // Time row (header) gets MORE height on mobile so labels can rotate
   // 90° and read top-to-bottom — horizontally they'd collide.
   const labelColW = isMobile
-    ? isL3Grid ? 110 : 100
+    ? isL3Grid ? 120 : 108
     : isL3Grid ? LABEL_W_L3 : LABEL_W;
   const minRowH = isMobile
     ? isL3Grid ? 36 : 28
@@ -847,28 +860,25 @@ export function Grid({
                   }}
                 >
                   {isNow ? (
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: isMobile ? 3 : 5,
-                        // Stack the now-dot above the label vertically
-                        // when the row is rotated, otherwise the dot
-                        // collides with the rotated text baseline.
-                        flexDirection: isMobile ? "column" : "row",
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: 6,
-                          background: TOKENS.pos,
-                          boxShadow: `0 0 6px ${TOKENS.pos}`,
-                        }}
-                      />
-                      {lbl}
-                    </span>
+                    isMobile ? (
+                      // Mobile: dot was visually orphaned next to the
+                      // rotated label. Drop it — the green-bold colour
+                      // already telegraphs "this is now". Cleaner read.
+                      lbl
+                    ) : (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                        <span
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: 6,
+                            background: TOKENS.pos,
+                            boxShadow: `0 0 6px ${TOKENS.pos}`,
+                          }}
+                        />
+                        {lbl}
+                      </span>
+                    )
                   ) : (
                     lbl
                   )}

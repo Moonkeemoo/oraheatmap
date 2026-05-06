@@ -64,12 +64,19 @@ function Pill({
       disabled={disabled}
       title={title}
       style={{
-        background: active && !disabled ? TOKENS.accent : "transparent",
+        // Compact (mobile) active state uses a tinted background +
+        // colored border + colored text instead of the desktop's
+        // full-saturation accent fill. Reads as "selected" without
+        // dominating the row visually — matches the tab-strip pattern
+        // in MetricTab. Desktop look unchanged.
+        background: active && !disabled
+          ? compact ? `${TOKENS.accent}1f` : TOKENS.accent
+          : "transparent",
         border: `1px solid ${active && !disabled ? TOKENS.accent : TOKENS.border}`,
         color: disabled
           ? TOKENS.textMuted
           : active
-            ? "#1a1410"
+            ? compact ? TOKENS.accent : "#1a1410"
             : TOKENS.textSec,
         opacity: disabled ? 0.45 : 1,
         fontFamily: TOKENS.font,
@@ -261,9 +268,13 @@ export function Header({
           key={m}
           onClick={() => (isAuthed ? setMode(m) : onRequestLogin())}
           style={{
-            background: active ? activeColor : "transparent",
+            // Tinted-bg + colored-text active state (matches Pill compact
+            // and MetricTab compact). Uses an 8-bit hex alpha suffix
+            // (e.g. `${color}26` ≈ 15% opacity) so the tint stays
+            // legible against the dark panel without going neon.
+            background: active ? `${activeColor}26` : "transparent",
             border: "none",
-            color: active ? "#0d1117" : TOKENS.textSec,
+            color: active ? activeColor : TOKENS.textSec,
             fontFamily: TOKENS.font,
             fontSize: 10,
             fontWeight: 800,
@@ -272,6 +283,7 @@ export function Header({
             padding: "5px 10px",
             borderRadius: 5,
             cursor: "pointer",
+            boxShadow: active ? `inset 0 0 0 1px ${activeColor}66` : "none",
           }}
         >
           {label}
@@ -297,6 +309,14 @@ export function Header({
           minWidth: 0,
           boxSizing: "border-box",
           background: TOKENS.bg,
+          // Pin to the top of the viewport on mobile so the brand row +
+          // controls stay reachable while the heatmap pane scrolls
+          // vertically underneath. Required because iOS Safari's address
+          // bar resizes the visual viewport, which can otherwise scroll
+          // the whole document and push our header out of view.
+          position: "sticky",
+          top: 0,
+          zIndex: 10,
         }}
       >
         {/* Row 1 — burger + LiveStatus + brand mark on the right. */}

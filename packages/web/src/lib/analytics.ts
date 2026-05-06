@@ -82,7 +82,8 @@ type EventPayload = {
       | "drill_locked"
       | "cell_open"
       | "whale_drawer"
-      | "reorder";
+      | "reorder"
+      | "stats";
   };
   signin_modal_closed: { dwellMs: number; triggerSource: string };
   signin_completed: {
