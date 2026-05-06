@@ -61,11 +61,30 @@ export type WhalePnlPoint = {
   cumulativePnl: number;
 };
 
+/** Composite "trader reputation" score on the 90-day window.
+ *  Single 0-100 number that combines realized PnL magnitude, win
+ *  rate, and sample-size confidence into something the UI can show
+ *  as a "profile level". Pure server-side compute so the UI doesn't
+ *  have to re-derive the formula. */
+export type WhaleReputation = {
+  score: number; // 0..100, integer
+  /** 90-day realized PnL (USD). */
+  realizedPnl90d: number;
+  /** Trade count over the 90-day window — drives the trust factor. */
+  trades90d: number;
+  /** Win rate over decided exits in the 90-day window. NULL when no
+   *  resolved trades — the score falls back to neutral in that case. */
+  winRate90d: number | null;
+};
+
 export type WhaleProfile = {
   addr: string;
   range: HeatmapRange;
   windowMinutes: number;
   stats: WhaleProfileStats;
+  /** Reputation score on the 90-day window — independent of `range`,
+   *  same lookback as pnlHistory so the score reads "current form". */
+  reputation: WhaleReputation;
   categoryMix: ReadonlyArray<WhaleCategorySplit>;
   openPositions: ReadonlyArray<WhaleOpenPosition>;
   recentTrades: ReadonlyArray<WhaleRecentTrade>;
@@ -74,6 +93,48 @@ export type WhaleProfile = {
    *  the active heatmap range (which is a much narrower window). */
   pnlHistory: ReadonlyArray<WhalePnlPoint>;
 };
+
+/**
+ * Reputation score formula. 50 = neutral baseline, then nudged by
+ * three signals all multiplied by a "trust factor" so wallets with
+ * <10 trades stay close to 50 instead of swinging to 0/100 on noise.
+ *
+ *   trustFactor = clamp(0..1, log10(1 + trades) / log10(101))
+ *     0 trades = 0,  100 trades ≈ 1
+ *
+ *   pnlSignal  = sign(pnl) × clamp(0..1, log10(1 + |pnl| / 1000) / log10(101))
+ *     |$1k| ≈ 0.15,  |$100k| ≈ 0.74,  |$1M+| ≈ 1
+ *
+ *   winSignal  = (winRate − 0.5) × 2     // -1..+1, NULL → 0
+ *
+ *   score = 50 + (pnlSignal × 35 + winSignal × 15) × trustFactor
+ *           clamped to 0..100 and rounded
+ *
+ * Tuning targets:
+ *   100 trades, +$500k, 70% wins  → ≈ 91
+ *    10 trades, +$50k,  60% wins  → ≈ 66
+ *     5 trades, -$10k,  30% wins  → ≈ 40
+ *     0 trades                    → 50 (neutral)
+ */
+function computeReputation(input: {
+  pnl: number;
+  trades: number;
+  winRate: number | null;
+}): number {
+  const trustFactor = Math.min(
+    1,
+    Math.max(0, Math.log10(1 + input.trades) / Math.log10(101)),
+  );
+  const pnlAbs = Math.abs(input.pnl);
+  const pnlMagnitude = Math.min(
+    1,
+    Math.log10(1 + pnlAbs / 1000) / Math.log10(101),
+  );
+  const pnlSignal = (input.pnl >= 0 ? 1 : -1) * pnlMagnitude;
+  const winSignal = input.winRate === null ? 0 : (input.winRate - 0.5) * 2;
+  const raw = 50 + (pnlSignal * 35 + winSignal * 15) * trustFactor;
+  return Math.max(0, Math.min(100, Math.round(raw)));
+}
 
 const RECENT_TRADES_LIMIT = 50;
 const OPEN_POSITIONS_LIMIT = 10;
@@ -137,8 +198,9 @@ export async function fetchWhaleProfile(
 
   // Window-wide stats + per-category split + recent trades all hit the same
   // (whale_addr, ts) index. Run them in parallel — including the wider
-  // 90-day pnl history for the balance-growth chart.
-  const [statsRows, categoryRows, posRows, tradeRows, pnlRows] = await Promise.all([
+  // 90-day pnl history for the balance-growth chart and the matching
+  // 90-day stats roll-up that powers the reputation score.
+  const [statsRows, rep90Rows, categoryRows, posRows, tradeRows, pnlRows] = await Promise.all([
     sql<StatsRow[]>`
       SELECT
         COUNT(*)::bigint                                                       AS signals,
@@ -149,6 +211,19 @@ export async function fetchWhaleProfile(
       FROM signals
       WHERE whale_addr = ${addr}
         AND ts >= NOW() - (${windowInterval}::interval)
+    `,
+    // 90-day reputation stats — independent of `range` so the score
+    // reads "current form" the same way the balance-growth chart does.
+    sql<StatsRow[]>`
+      SELECT
+        COUNT(*)::bigint                                                       AS signals,
+        COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)             AS volume_usd,
+        COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd,
+        COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint                       AS win_count,
+        COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                       AS loss_count
+      FROM signals
+      WHERE whale_addr = ${addr}
+        AND ts >= NOW() - (${`${PNL_HISTORY_DAYS} days`}::interval)
     `,
     sql<CatRow[]>`
       SELECT
@@ -222,6 +297,20 @@ export async function fetchWhaleProfile(
     winRate: decided > 0 ? wins / decided : null,
   };
 
+  const r90 = rep90Rows[0];
+  const wins90 = num(r90?.win_count);
+  const losses90 = num(r90?.loss_count);
+  const decided90 = wins90 + losses90;
+  const trades90 = num(r90?.signals);
+  const pnl90 = num(r90?.pnl_usd);
+  const winRate90 = decided90 > 0 ? wins90 / decided90 : null;
+  const reputation: WhaleReputation = {
+    score: computeReputation({ pnl: pnl90, trades: trades90, winRate: winRate90 }),
+    realizedPnl90d: pnl90,
+    trades90d: trades90,
+    winRate90d: winRate90,
+  };
+
   const categoryMix: WhaleCategorySplit[] = categoryRows.map((r) => ({
     category: r.category,
     volume: num(r.volume_usd),
@@ -265,6 +354,7 @@ export async function fetchWhaleProfile(
     range,
     windowMinutes: cfg.windowMinutes,
     stats,
+    reputation,
     categoryMix,
     openPositions,
     recentTrades,

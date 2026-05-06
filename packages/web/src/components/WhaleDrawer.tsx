@@ -223,6 +223,7 @@ function DrawerBody({
                   ✓
                 </span>
               )}
+              <ReputationBadge reputation={data.reputation} />
             </div>
             <CopyableAddress addr={data.addr} />
             {data.xHandle && (
@@ -548,5 +549,69 @@ function CopyableAddress({ addr }: { addr: string }) {
     >
       {short} 📋
     </button>
+  );
+}
+
+/**
+ * Profile-level badge — one prominent number in the drawer header
+ * derived from the 90-day reputation score the API computes. Reads
+ * as "trader trust" at a glance, similar to how a game shows a
+ * character level. Tier colour shifts at 70 / 50 / 30:
+ *
+ *   ≥70  green  — strong recent form (high PnL + decent winRate +
+ *                 enough trades to back the avg)
+ *   50-69 yellow — typical trader, no strong signal either way
+ *   30-49 muted  — underwater or not enough sample
+ *   <30   red    — losing money on the 90d window
+ *
+ * Hover tooltip surfaces the inputs (PnL, trades, win rate) so the
+ * user can sanity-check the score without leaving the drawer.
+ */
+function ReputationBadge({
+  reputation,
+}: {
+  reputation: WhaleProfile["reputation"];
+}) {
+  const { score } = reputation;
+  const tier = score >= 70 ? "high" : score >= 50 ? "mid" : score >= 30 ? "low" : "neg";
+  const palette = {
+    high: { bg: "rgba(63,185,80,0.16)", border: "rgba(63,185,80,0.45)", color: TOKENS.pos },
+    mid:  { bg: "rgba(240,180,41,0.14)", border: "rgba(240,180,41,0.45)", color: TOKENS.accent },
+    low:  { bg: "rgba(125,133,144,0.12)", border: TOKENS.borderHi, color: TOKENS.textSec },
+    neg:  { bg: "rgba(248,81,73,0.14)", border: "rgba(248,81,73,0.45)", color: TOKENS.neg },
+  }[tier];
+  const pnlLabel =
+    reputation.realizedPnl90d >= 0
+      ? `+${fmtMoneyShort(reputation.realizedPnl90d)}`
+      : `−${fmtMoneyShort(Math.abs(reputation.realizedPnl90d))}`;
+  const winLabel =
+    reputation.winRate90d === null
+      ? "no exits"
+      : `${Math.round(reputation.winRate90d * 100)}% wins`;
+  const title = `Reputation ${score}/100 · 90d window\n${reputation.trades90d} trades · ${pnlLabel} · ${winLabel}`;
+  return (
+    <span
+      title={title}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        padding: "2px 8px",
+        marginLeft: 4,
+        borderRadius: 999,
+        background: palette.bg,
+        border: `1px solid ${palette.border}`,
+        color: palette.color,
+        fontFamily: TOKENS.mono,
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: 0.3,
+        lineHeight: 1.3,
+        verticalAlign: "middle",
+      }}
+    >
+      <span style={{ fontSize: 9, opacity: 0.7, letterSpacing: 0.6 }}>LVL</span>
+      <span style={{ fontVariantNumeric: "tabular-nums" }}>{score}</span>
+    </span>
   );
 }

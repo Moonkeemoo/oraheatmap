@@ -177,6 +177,15 @@ export type WhaleProfile = {
     pnl: number;
     winRate: number | null;
   };
+  /** 90-day composite "trader reputation" — single 0-100 number that
+   *  the drawer renders as a profile-level badge. Independent of the
+   *  active heatmap range so the score reads "current form". */
+  reputation: {
+    score: number;
+    realizedPnl90d: number;
+    trades90d: number;
+    winRate90d: number | null;
+  };
   categoryMix: ReadonlyArray<{ category: string; volume: number; signals: number }>;
   openPositions: ReadonlyArray<{
     assetId: string;
