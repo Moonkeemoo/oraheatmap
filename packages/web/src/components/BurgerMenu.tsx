@@ -177,6 +177,12 @@ export function BurgerMenu({ onRequestLogin }: { onRequestLogin?: () => void } =
             onClose={() => setOpen(false)}
           />
           <ItemLink
+            label="Open in Telegram"
+            href="https://t.me/Oralab_bot"
+            external
+            onClose={() => setOpen(false)}
+          />
+          <ItemLink
             label="Send feedback"
             href="mailto:hello@oralab.xyz"
             external

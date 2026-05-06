@@ -158,6 +158,38 @@ export function Hero() {
               Open the heatmap
               <span aria-hidden="true">→</span>
             </Link>
+            <a
+              href="https://t.me/Oralab_bot"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                background: "transparent",
+                color: TOKENS.text,
+                fontWeight: 700,
+                fontSize: 14,
+                letterSpacing: 0.4,
+                textTransform: "uppercase",
+                padding: "16px 22px",
+                borderRadius: 10,
+                textDecoration: "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                border: `1px solid ${TOKENS.borderHi}`,
+                transition: "background .12s, transform .12s",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLAnchorElement).style.background = "rgba(88,166,255,0.08)";
+                (e.currentTarget as HTMLAnchorElement).style.transform = "translateY(-1px)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLAnchorElement).style.background = "transparent";
+                (e.currentTarget as HTMLAnchorElement).style.transform = "translateY(0)";
+              }}
+            >
+              Open in Telegram
+              <span aria-hidden="true">↗</span>
+            </a>
             <Link
               href="#how"
               style={{

@@ -3,9 +3,14 @@
 import Link from "next/link";
 import { track } from "@/lib/analytics";
 import { TOKENS } from "@/lib/tokens";
-import { XIcon } from "./ProviderIcons";
+import { TelegramIcon, XIcon } from "./ProviderIcons";
 
 const X_URL = "https://x.com/oralabxyz";
+// Telegram bot launches our Mini App via the BotFather-registered short
+// name (oralabapp). Sharing the bot link directly is friendlier than
+// the t.me/Oralab_bot/oralabapp deep-link — TG resolves it the same way
+// and the user sees the bot profile first.
+const TG_URL = "https://t.me/Oralab_bot";
 
 /**
  * Footer for landing, legal pages, and the app shell. Two visual modes:
@@ -44,6 +49,17 @@ export function Footer({ compact = false }: { compact?: boolean }) {
           style={{ ...compactLink, display: "inline-flex", verticalAlign: "middle" }}
         >
           <XIcon size={11} />
+        </a>{" "}
+        ·{" "}
+        <a
+          href={TG_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="oralab Telegram bot"
+          onClick={() => track.externalClick("telegram")}
+          style={{ ...compactLink, display: "inline-flex", verticalAlign: "middle" }}
+        >
+          <TelegramIcon size={11} />
         </a>{" "}
         · Not affiliated with Polymarket
       </footer>
@@ -96,6 +112,22 @@ export function Footer({ compact = false }: { compact?: boolean }) {
           >
             <XIcon size={14} />
             <span>@oralabxyz</span>
+          </a>
+          <a
+            href={TG_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="oralab Telegram bot"
+            onClick={() => track.externalClick("telegram")}
+            style={{
+              ...fullLink,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+            }}
+          >
+            <TelegramIcon size={14} />
+            <span>@Oralab_bot</span>
           </a>
         </nav>
       </div>

@@ -69,7 +69,7 @@ type EventPayload = {
     /** Polymarket event slug; null if missing on the row. */
     marketSlug: string | null;
   };
-  external_click: { target: "polymarket" | "twitter" | "discord" | "github" };
+  external_click: { target: "polymarket" | "twitter" | "discord" | "github" | "telegram" };
 
   /** Auth funnel */
   signin_modal_opened: {

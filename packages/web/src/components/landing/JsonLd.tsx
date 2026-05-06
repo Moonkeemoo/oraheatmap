@@ -34,6 +34,7 @@ export function JsonLd() {
         logo: { "@type": "ImageObject", url: `${SITE_URL}/favicon.svg` },
         sameAs: [
           "https://x.com/oralabxyz",
+          "https://t.me/Oralab_bot",
           // Add GitHub / Discord URLs here once they're live.
         ],
       },

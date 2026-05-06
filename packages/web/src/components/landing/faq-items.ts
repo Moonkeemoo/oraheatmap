@@ -27,6 +27,10 @@ export const FAQ_ITEMS: ReadonlyArray<QA> = [
     a: "Coming with Pro tier — Telegram alerts when N+ tracked whales converge on the same market in a short window, plus per-whale alerts for traders you want to mirror. Whale convergence is one of the strongest signals we see and gets buried during heavy news cycles unless something pings you.",
   },
   {
+    q: "Is there a Telegram version?",
+    a: "Yes — open @Oralab_bot in Telegram or tap \"Open in Telegram\" on the landing page. The full heatmap runs as a native Mini App: same data, same drill-downs, signs you in automatically via Telegram. Convenient when you live in TG and don't want to switch tabs every time you check whale flow.",
+  },
+  {
     q: "Are you affiliated with Polymarket?",
     a: "No. oralab is an independent project. We read public data through Polymarket's public APIs and on-chain feeds. No partnership, no endorsement, no commercial relationship.",
   },
