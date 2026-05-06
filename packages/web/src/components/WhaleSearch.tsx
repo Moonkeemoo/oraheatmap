@@ -86,11 +86,83 @@ export function WhaleSearch({
     looksLikeFullAddr && !hits.some((h) => h.addr.toLowerCase() === trimmed.toLowerCase());
 
   return (
-    <div onMouseDown={(e) => e.stopPropagation()}>
+    // Input pinned at bottom; default content / search results render
+    // ABOVE it. The parent KpiPopover is bottom-anchored to the stat
+    // card, so when the result list grows or shrinks the input stays
+    // put on screen — the popover top edge moves up/down instead. This
+    // matters because typing into a top-aligned input moved the input
+    // out from under the cursor, dropping hover and closing the popover.
+    <div
+      onMouseDown={(e) => e.stopPropagation()}
+      style={{ display: "flex", flexDirection: "column" }}
+    >
+      <div style={{ marginBottom: 10 }}>
+        {!showResults && defaultContent}
+
+        {showResults && loading && hits.length === 0 && (
+          <div style={{ fontSize: 11, color: TOKENS.textMuted, padding: "6px 4px" }}>
+            searching…
+          </div>
+        )}
+
+        {showResults && !loading && hits.length === 0 && !offCorpusAddr && (
+          <div style={{ fontSize: 11, color: TOKENS.textMuted, padding: "6px 4px", lineHeight: 1.5 }}>
+            No whale on the watchlist matches{" "}
+            <code style={{ background: TOKENS.panel2, padding: "1px 4px", borderRadius: 3 }}>
+              {trimmed.length > 30 ? `${trimmed.slice(0, 28)}…` : trimmed}
+            </code>
+            .
+            {ADDR_RE_PARTIAL.test(trimmed) && trimmed.length < 42 && (
+              <> Type the full 42-char address to open it anyway.</>
+            )}
+          </div>
+        )}
+
+        {showResults && hits.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            {hits.map((h, i) => (
+              <ResultRow key={h.addr} hit={h} index={i} onPick={() => onPick(h.addr)} />
+            ))}
+          </div>
+        )}
+
+        {showResults && offCorpusAddr && (
+          <button
+            type="button"
+            onClick={() => onPick(trimmed.toLowerCase())}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              width: "100%",
+              marginTop: hits.length > 0 ? 8 : 0,
+              padding: "8px 10px",
+              background: TOKENS.panel2,
+              border: `1px dashed ${TOKENS.borderHi}`,
+              borderRadius: 6,
+              color: TOKENS.text,
+              fontSize: 11,
+              fontFamily: TOKENS.font,
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+          >
+            <span style={{ fontSize: 13 }}>↗</span>
+            <span>
+              Open <code style={{ fontFamily: TOKENS.mono }}>{trimmed.slice(0, 6)}…{trimmed.slice(-4)}</code>
+              {hits.length > 0 ? " anyway" : " (off-watchlist)"}
+            </span>
+          </button>
+        )}
+      </div>
+
+      {/* Sticky-ish bottom input — always at the same spot relative to
+          the popover's bottom edge. Mouse stays put while typing. */}
       <div
         style={{
           position: "relative",
-          marginBottom: 10,
+          paddingTop: 8,
+          borderTop: `1px solid ${TOKENS.border}`,
         }}
       >
         <input
@@ -137,7 +209,7 @@ export function WhaleSearch({
           style={{
             position: "absolute",
             left: 9,
-            top: "50%",
+            top: "calc(50% + 4px)",
             transform: "translateY(-50%)",
             color: TOKENS.textMuted,
             fontSize: 12,
@@ -147,64 +219,6 @@ export function WhaleSearch({
           🔍
         </span>
       </div>
-
-      {!showResults && defaultContent}
-
-      {showResults && loading && hits.length === 0 && (
-        <div style={{ fontSize: 11, color: TOKENS.textMuted, padding: "6px 4px" }}>
-          searching…
-        </div>
-      )}
-
-      {showResults && !loading && hits.length === 0 && !offCorpusAddr && (
-        <div style={{ fontSize: 11, color: TOKENS.textMuted, padding: "6px 4px", lineHeight: 1.5 }}>
-          No whale on the watchlist matches{" "}
-          <code style={{ background: TOKENS.panel2, padding: "1px 4px", borderRadius: 3 }}>
-            {trimmed.length > 30 ? `${trimmed.slice(0, 28)}…` : trimmed}
-          </code>
-          .
-          {ADDR_RE_PARTIAL.test(trimmed) && trimmed.length < 42 && (
-            <> Type the full 42-char address to open it anyway.</>
-          )}
-        </div>
-      )}
-
-      {showResults && hits.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-          {hits.map((h, i) => (
-            <ResultRow key={h.addr} hit={h} index={i} onPick={() => onPick(h.addr)} />
-          ))}
-        </div>
-      )}
-
-      {showResults && offCorpusAddr && (
-        <button
-          type="button"
-          onClick={() => onPick(trimmed.toLowerCase())}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            width: "100%",
-            marginTop: hits.length > 0 ? 8 : 0,
-            padding: "8px 10px",
-            background: TOKENS.panel2,
-            border: `1px dashed ${TOKENS.borderHi}`,
-            borderRadius: 6,
-            color: TOKENS.text,
-            fontSize: 11,
-            fontFamily: TOKENS.font,
-            cursor: "pointer",
-            textAlign: "left",
-          }}
-        >
-          <span style={{ fontSize: 13 }}>↗</span>
-          <span>
-            Open <code style={{ fontFamily: TOKENS.mono }}>{trimmed.slice(0, 6)}…{trimmed.slice(-4)}</code>
-            {hits.length > 0 ? " anyway" : " (off-watchlist)"}
-          </span>
-        </button>
-      )}
     </div>
   );
 }
