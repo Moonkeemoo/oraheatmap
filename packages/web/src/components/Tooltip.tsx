@@ -1148,11 +1148,13 @@ export function Tooltip({
         </div>
       )}
 
-      {/* Live feed — drawer-only. Renders below the top markets / probability
-          chart blocks so the heavy aggregations stay above the fold.
+      {/* Live feed — drawer-only, LIVE mode only. PATTERN cells aggregate
+          across many cycles so a chronological feed below them mixes
+          unrelated time windows; MACRO cells are historical-density
+          views where "live" arrivals don't relate to the cell anyway.
           Auth-gated: unauthed users see the consolidated single login
           plaque above and not this widget. */}
-      {isDrawer && feed && isAuthed && (
+      {isDrawer && feed && isAuthed && mode === "live" && (
         <div style={{ marginTop: 16, borderTop: `1px solid ${TOKENS.border}`, paddingTop: 12 }}>
           <div
             style={{

@@ -267,7 +267,13 @@ export function Heatmap() {
         : // L1: panelCell.category is the actual category
           { category: panelCell.category, subcategory: null, conditionId: null }
     : null;
-  const cellFeed = useCellFeed({ scope: cellFeedScope, enabled: panelCell !== null });
+  // Live feed only renders in LIVE mode (Tooltip silences it for
+  // PATTERN / MACRO drawers — see comment there). Disable the hook
+  // too so we don't pay the SSE-tap cost for a widget that won't paint.
+  const cellFeed = useCellFeed({
+    scope: cellFeedScope,
+    enabled: panelCell !== null && mode === "live",
+  });
   const [flashByCell, setFlashByCell] = useState<FlashByCell>({});
   const [heatByCell, setHeatByCell] = useState<HeatByCell>({});
   const [pendingSignals, setPendingSignals] = useState<SignalEvent[]>([]);
