@@ -36,16 +36,16 @@ export const RANGE_CONFIG: Readonly<Record<HeatmapRange, RangeConfig>> = Object.
 });
 
 // ─── Macro view ──────────────────────────────────────────────────────────────
-// Macro mode keeps the same fine bucket size as a LIVE range but expands
-// the visible window ~24×, producing a dense matrix where image-density
-// is the signal. Phase 1 ships only the 5-min × 24-hour configuration
-// (288 buckets); other configurations land in subsequent phases.
+// Macro mode trades fine-grained "now" focus for a wider span — keep
+// LIVE-24h's bucket size (close to 1h) but expand the window ~7× to a
+// full week. The matrix becomes a 168-cell hour × day map where image
+// density carries the signal — no per-cell numbers, no time axis.
 //
-// Reads directly from signals_5min CAGG — bucket size matches one-to-one
-// so no re-bucketing math is needed.
-export type MacroRange = "1h"; // proxy name for "1h-equivalent zoom out"
+// Reads directly from signals_hourly CAGG; bucket size matches 1:1 so
+// no re-bucketing math is needed.
+export type MacroRange = "1h"; // legacy key — represents "the 1-hour-bucket × 7-day-window macro"
 export const MACRO_CONFIG: Readonly<Record<MacroRange, RangeConfig>> = Object.freeze({
-  "1h": { bucketMinutes: 5 * MIN, windowMinutes: 24 * HOUR, slots: 288, source: "raw" },
+  "1h": { bucketMinutes: 1 * HOUR, windowMinutes: 7 * DAY, slots: 168, source: "hourly_agg" },
 });
 
 // ─── Wire types ──────────────────────────────────────────────────────────────
@@ -490,8 +490,8 @@ export async function queryHeatmapAggRows(
 }
 
 /**
- * Macro-mode aggregation. 5-minute × 24-hour window (288 buckets per row).
- * Reads signals_5min CAGG directly — bucket size matches 1:1 so no
+ * Macro-mode aggregation. 1-hour × 7-day window (168 buckets per row).
+ * Reads signals_hourly CAGG directly — bucket size matches 1:1 so no
  * re-bucketing. Drill modes fall back to raw signals because the CAGG
  * doesn't carry subcategory / condition_id.
  */
@@ -549,7 +549,7 @@ export async function queryMacroAggRows(
     `;
     return rows;
   }
-  // L1: top-level. Read signals_5min CAGG directly — exact bucket match.
+  // L1: top-level. Read signals_hourly CAGG directly — exact bucket match.
   const rows = await sql<AggRow[]>`
     SELECT
       to_char(bucket AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
@@ -560,7 +560,7 @@ export async function queryMacroAggRows(
       win_count,
       loss_count,
       unique_whales
-    FROM signals_5min
+    FROM signals_hourly
     WHERE bucket >= NOW() - (${windowInterval}::interval) AND bucket <= NOW()
     ORDER BY bucket
   `;

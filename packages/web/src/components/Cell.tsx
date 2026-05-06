@@ -225,7 +225,7 @@ export function Cell({
           : "none",
         backgroundSize: !compact && visualEmpty ? "6px 6px" : "auto",
         border: !compact && visualEmpty ? `1px solid ${TOKENS.border}` : "none",
-        borderRadius: compact ? 1 : 7,
+        borderRadius: compact ? 2 : 7,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",

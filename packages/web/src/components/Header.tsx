@@ -165,7 +165,7 @@ function ModeToggle({
         TOKENS.link,
         locked
           ? "Sign in to switch modes"
-          : "Density view — last 24h at 5-min granularity, no labels, image carries the signal",
+          : "Density view — last 7 days at hourly granularity, no labels, image carries the signal",
       )}
     </div>
   );

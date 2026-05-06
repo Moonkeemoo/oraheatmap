@@ -143,7 +143,7 @@ const landingStatsCache = new TtlCache<unknown>(2);
  *  payload feels live to the user. */
 function heatmapTtlMs(mode: string, range: string | undefined): number {
   if (mode === "pattern") return 300_000; // 5 min — averages move slowly
-  if (mode === "macro") return 30_000; // 5min CAGG refresh ~1min, 30s feels live without thrashing
+  if (mode === "macro") return 60_000; // 1h × 7d — cells barely shift minute-to-minute, 1min cache is plenty
   switch (range) {
     case "1h":
       return 30_000; // client polls 10s; one poll out of 3 will be a fresh fetch

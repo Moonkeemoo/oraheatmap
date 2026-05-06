@@ -636,7 +636,7 @@ export function Grid({
           gridTemplateRows: isMacro
             ? `repeat(${displayCategories.length}, minmax(36px, 1fr))`
             : `${TIME_ROW_H}px repeat(${displayCategories.length}, minmax(${minRowH}px, 1fr))`,
-          gap: isMacro ? 1 : 4,
+          gap: isMacro ? 2 : 4,
           width: "100%",
           height: "100%",
           position: "relative",
