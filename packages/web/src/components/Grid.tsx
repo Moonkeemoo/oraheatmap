@@ -401,6 +401,113 @@ function SortableRow({
   );
 }
 
+/** Macro-mode top row: one label per calendar day, spanning that day's
+ *  24 hourly cells (or fewer at the window edges). Each label shows
+ *  weekday + DD/MM in the viewer's local timezone so the user can
+ *  recognise "today / yesterday / Mon" without parsing UTC offsets. */
+function MacroDayHeader({
+  buckets,
+  gap,
+}: {
+  buckets: ReadonlyArray<HeatmapBucket>;
+  gap: number;
+}) {
+  // Walk the buckets and group adjacent ones with the same local
+  // calendar day. Returns the index span each label should cover so
+  // grid-column-span lines up with the heatmap cells below.
+  const groups: Array<{ start: number; count: number; date: Date }> = [];
+  for (let i = 0; i < buckets.length; i++) {
+    const ts = buckets[i]?.ts;
+    if (!ts) continue;
+    const d = new Date(ts);
+    const dayKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const last = groups[groups.length - 1];
+    if (last && lastDayKey(last.date) === dayKey) {
+      last.count++;
+    } else {
+      groups.push({ start: i, count: 1, date: d });
+    }
+  }
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+  return (
+    <div
+      style={{
+        gridColumn: "1 / -1",
+        display: "grid",
+        gridTemplateColumns: "subgrid",
+        gap,
+      }}
+    >
+      <div />
+      {groups.map((g, gi) => {
+        const isToday = lastDayKey(g.date) === todayKey;
+        return (
+          <div
+            key={gi}
+            style={{
+              gridColumn: `span ${g.count}`,
+              minWidth: 0,
+              fontSize: 9,
+              fontFamily: TOKENS.mono,
+              color: isToday ? TOKENS.pos : TOKENS.textMuted,
+              fontWeight: isToday ? 700 : 500,
+              letterSpacing: 0.4,
+              textTransform: "uppercase",
+              // Borderless small chip — sits visually above its
+              // group of cells without competing for attention.
+              padding: "2px 6px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-start",
+              borderLeft: gi === 0 ? "none" : `1px solid ${TOKENS.border}`,
+              overflow: "hidden",
+              whiteSpace: "nowrap",
+            }}
+            title={g.date.toLocaleDateString(undefined, {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            })}
+          >
+            {isToday && (
+              <span
+                style={{
+                  width: 5,
+                  height: 5,
+                  borderRadius: 5,
+                  background: TOKENS.pos,
+                  boxShadow: `0 0 5px ${TOKENS.pos}`,
+                  marginRight: 5,
+                  flexShrink: 0,
+                }}
+              />
+            )}
+            {fmtMacroDay(g.date, isToday)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function lastDayKey(d: Date): string {
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+const WEEKDAY_SHORT: ReadonlyArray<string> = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function fmtMacroDay(d: Date, isToday: boolean): string {
+  const wd = WEEKDAY_SHORT[d.getDay()];
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  // Leading "TODAY" beats the date for the most recent day so the
+  // user's eye locks onto the now-edge instantly.
+  if (isToday) return `TODAY · ${dd}/${mm}`;
+  return `${wd} · ${dd}/${mm}`;
+}
+
 export function Grid({
   data,
   metric,
@@ -630,11 +737,12 @@ export function Grid({
         style={{
           display: "grid",
           gridTemplateColumns: `${labelColW}px repeat(${num}, minmax(0, 1fr))`,
-          // Macro: no time-row + tighter rows + 1px gaps. The matrix
-          // becomes a barcode-like density field where image carries
-          // the signal — labels would be impossible at this scale anyway.
+          // Macro keeps a top row too, but uses it for day-range labels
+          // grouped across each day's 24 hourly cells (instead of the
+          // per-bucket time labels in LIVE / PATTERN). Slightly shorter
+          // header row since it carries less text.
           gridTemplateRows: isMacro
-            ? `repeat(${displayCategories.length}, minmax(36px, 1fr))`
+            ? `${TIME_ROW_H - 4}px repeat(${displayCategories.length}, minmax(36px, 1fr))`
             : `${TIME_ROW_H}px repeat(${displayCategories.length}, minmax(${minRowH}px, 1fr))`,
           gap: isMacro ? 2 : 4,
           width: "100%",
@@ -644,7 +752,6 @@ export function Grid({
           boxSizing: "border-box",
         }}
       >
-        {/* Header row — time labels (skipped entirely in macro mode) */}
         {!isMacro && (
           <div
             style={{
@@ -693,6 +800,8 @@ export function Grid({
             })}
           </div>
         )}
+
+        {isMacro && <MacroDayHeader buckets={buckets} gap={2} />}
 
         <SortableContext items={displayCategories} strategy={verticalListSortingStrategy}>
           {displayCategories.map((cat) => (
