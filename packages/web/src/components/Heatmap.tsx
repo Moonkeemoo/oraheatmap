@@ -38,6 +38,10 @@ type HoverState = {
   category: string;
   slotLabel: string;
   cellId: string;
+  /** Server-side index in data.cells[cat] (BEFORE display rotation) —
+   *  PATTERN-cycles fetch needs this to compute the right slot when
+   *  the cell ref goes stale across SSE refreshes. */
+  originalSlotIdx: number;
 };
 
 /** Per-(category × slot index) flash counter. Keyed by `${cat}:${slot}` so that
@@ -564,6 +568,7 @@ export function Heatmap() {
                     : null
                 }
                 slotIndex={parseSlotFromCellId(panelCell.cellId)}
+                originalSlotIdx={panelCell.originalSlotIdx}
                 feed={{ entries: cellFeed.entries, loading: cellFeed.loading }}
                 highlights={
                   mode === "live" && highlightsKind
@@ -628,6 +633,7 @@ export function Heatmap() {
                     : null
                 }
                 slotIndex={parseSlotFromCellId(hover.cellId)}
+                originalSlotIdx={hover.originalSlotIdx}
                 isAuthed={isAuthed}
                 onRequestLogin={() => requestLogin("cell_open")}
                 onWhaleClick={(addr) => {

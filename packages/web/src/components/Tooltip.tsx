@@ -95,6 +95,7 @@ export function Tooltip({
   highlights,
   displayLabel,
   slotIndex,
+  originalSlotIdx,
   renderAs = "float",
   onClose,
 }: {
@@ -161,6 +162,10 @@ export function Tooltip({
    *  cell-reference identity goes stale across SSE updates and the
    *  fallback findIndex returns -1, which silently hides the sparkline. */
   slotIndex?: number | null;
+  /** Server-side slot index (raw position in data.cells[cat] before
+   *  display rotation). PATTERN cycles use this directly so a stale
+   *  cell reference after an SSE refresh doesn't collapse to slot 0. */
+  originalSlotIdx?: number | null;
   /** Polymarket icon URL for the L3 header. NULL at L1/L2. */
   headerIcon?: string | null;
   /** Full (un-shortened) market question for the L3 header. NULL at L1/L2. */
@@ -196,12 +201,19 @@ export function Tooltip({
   // Per-cell historical cycles for PATTERN locked tooltip — fires only when
   // we lock so we don't spam the API on every mouse move.
   const cyclesEnabled = isPattern && locked;
+  // Use the explicit originalSlotIdx prop when available — survives SSE
+  // refreshes that replace cell objects (otherwise findIndex returns -1
+  // and we'd query slot 0 every time, breaking the histogram).
+  const serverSlotForCycles =
+    originalSlotIdx !== null && originalSlotIdx !== undefined
+      ? originalSlotIdx
+      : Math.max(0, rowCells.findIndex((c) => c === cell));
   const cyclesArgs = cyclesEnabled
     ? {
         kind: patternKind,
         category,
         subcategory: drillSubcategory ?? null,
-        slot: rowIndexToServerSlot(patternKind, Math.max(0, rowCells.findIndex((c) => c === cell))),
+        slot: rowIndexToServerSlot(patternKind, serverSlotForCycles),
       }
     : null;
   const cycles = useCellCycles(cyclesArgs, cyclesEnabled);

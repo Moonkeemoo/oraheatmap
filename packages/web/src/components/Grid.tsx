@@ -562,8 +562,8 @@ export function Grid({
 }: {
   data: HeatmapResponse;
   metric: HeatmapMetric;
-  onHover: (h: { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string; cellId: string } | null) => void;
-  onClick: (h: { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string; cellId: string }) => void;
+  onHover: (h: { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string; cellId: string; originalSlotIdx: number } | null) => void;
+  onClick: (h: { cell: HeatmapCell; anchor: TooltipAnchor; category: string; slotLabel: string; cellId: string; originalSlotIdx: number }) => void;
   onRowClick?: (rowKey: string) => void;
   lockedCellId: string | null;
   flashByCell: FlashByCell;
@@ -741,14 +741,15 @@ export function Grid({
                   : (h) =>
                       onHover(
                         h
-                          ? { ...h, category: cat, slotLabel, cellId }
+                          ? { ...h, category: cat, slotLabel, cellId, originalSlotIdx: originalIdx }
                           : null,
                       )
               }
               onClick={
                 options.isDragOverlay
                   ? () => {}
-                  : (h) => onClick({ ...h, category: cat, slotLabel, cellId })
+                  : (h) =>
+                      onClick({ ...h, category: cat, slotLabel, cellId, originalSlotIdx: originalIdx })
               }
             />
           );

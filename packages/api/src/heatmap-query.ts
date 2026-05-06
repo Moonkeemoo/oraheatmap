@@ -920,10 +920,9 @@ export async function fetchResolvedMarkets(
 /** Top whale across the whole window by total USD entered (BUY only). */
 export async function fetchTopWhale(
   sql: Sql,
-  range: HeatmapRange,
+  windowMinutes: number,
 ): Promise<string | null> {
-  const cfg = RANGE_CONFIG[range];
-  const windowInterval = `${cfg.windowMinutes} minutes`;
+  const windowInterval = `${windowMinutes} minutes`;
   const rows = await sql<{ whale_addr: string }[]>`
     SELECT whale_addr
     FROM signals
@@ -948,12 +947,11 @@ export type TopWhaleRow = {
 
 export async function queryTopWhales(
   sql: Sql,
-  range: HeatmapRange,
+  windowMinutes: number,
   drillCategory: Category | null,
   limit: number,
 ): Promise<ReadonlyArray<TopWhaleRow>> {
-  const cfg = RANGE_CONFIG[range];
-  const windowInterval = `${cfg.windowMinutes} minutes`;
+  const windowInterval = `${windowMinutes} minutes`;
   // Some upstream payloads put non-wallet identifiers in the `user` field
   // (e.g. "0xADDR-TIMESTAMP" composites). Skip anything that isn't a
   // canonical 42-char 0x-prefixed lowercase hex so the popover stays clean.
@@ -1009,10 +1007,9 @@ export async function fetchDataSpan(
 /** DISTINCT whales seen in window (any trade kind). */
 export async function fetchUniqueWhalesInWindow(
   sql: Sql,
-  range: HeatmapRange,
+  windowMinutes: number,
 ): Promise<number> {
-  const cfg = RANGE_CONFIG[range];
-  const windowInterval = `${cfg.windowMinutes} minutes`;
+  const windowInterval = `${windowMinutes} minutes`;
   const rows = await sql<{ n: string | number }[]>`
     SELECT COUNT(DISTINCT whale_addr) AS n
     FROM signals

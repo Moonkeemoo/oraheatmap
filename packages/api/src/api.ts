@@ -628,12 +628,23 @@ export function createApi(deps: ApiDeps) {
             | "day-12w";
           const macroCfg = MACRO_CONFIG[macroKind];
           const macroBuckets = buildBuckets(now, macroCfg.bucketMinutes, macroCfg.slots);
-          const aggRows = await queryMacroAggRows(
-            deps.sql,
-            macroKind,
-            isDrill ? drillCategory : null,
-            drillSubcategory,
-          );
+          const [aggRows, macroTopWhaleAddr, macroUniqueWhales, macroTopWhaleRows] =
+            await Promise.all([
+              queryMacroAggRows(
+                deps.sql,
+                macroKind,
+                isDrill ? drillCategory : null,
+                drillSubcategory,
+              ),
+              fetchTopWhale(deps.sql, macroCfg.windowMinutes),
+              fetchUniqueWhalesInWindow(deps.sql, macroCfg.windowMinutes),
+              queryTopWhales(
+                deps.sql,
+                macroCfg.windowMinutes,
+                isDrill ? drillCategory : null,
+                TOP_WHALES_LIMIT,
+              ),
+            ]);
 
           // L2 → row keys are subcategory slugs; L3 → row keys are
           // condition_ids. Build the row-label map server-side so the
@@ -695,6 +706,35 @@ export function createApi(deps: ApiDeps) {
             { drillCategory: isDrill ? drillCategory : null, rowKeys },
             [], // no whale rows
           );
+          // Hydrate StatsBar fields exactly like LIVE: top whale (decorated
+          // with alias + colour + avatar), top-N leaderboard, unique whales
+          // in the macro window. activeWhales = uniqueWhales for macro
+          // (we don't separate "active in any window slot" vs "any window
+          // signal" — at macro scope they collapse to the same number).
+          const macroTopWhale = macroTopWhaleAddr
+            ? {
+                addr: macroTopWhaleAddr,
+                alias: whaleAlias(macroTopWhaleAddr),
+                color: whaleColor(macroTopWhaleAddr),
+                profileImage: whaleAliasInfo(macroTopWhaleAddr)?.profileImage ?? null,
+              }
+            : null;
+          const macroTopWhalesDecorated = macroTopWhaleRows.map((r) => {
+            const addr = r.whale_addr;
+            return {
+              addr,
+              alias: whaleAlias(addr),
+              color: whaleColor(addr),
+              profileImage: whaleAliasInfo(addr)?.profileImage ?? null,
+              signals: typeof r.signals === "number" ? r.signals : Number(r.signals),
+              volume: typeof r.volume_usd === "number" ? r.volume_usd : Number(r.volume_usd),
+              pnl: r.pnl_usd === null
+                ? 0
+                : typeof r.pnl_usd === "number"
+                  ? r.pnl_usd
+                  : Number(r.pnl_usd),
+            };
+          });
           const macroResponse = {
             ...grid,
             mode: "macro" as const,
@@ -710,7 +750,13 @@ export function createApi(deps: ApiDeps) {
             marketIcons,
             marketQuestions,
             resolvedRows,
-            topWhales: null,
+            topWhales: macroTopWhalesDecorated,
+            totals: {
+              ...grid.totals,
+              uniqueWhales: macroUniqueWhales,
+              activeWhales: macroUniqueWhales,
+              topWhale: macroTopWhale,
+            },
             metric,
             dataSpan,
           };
@@ -742,11 +788,11 @@ export function createApi(deps: ApiDeps) {
                   TOP_MARKETS_PER_CELL,
                   isDrill ? drillCategory : null,
                 ),
-            fetchTopWhale(deps.sql, range),
-            fetchUniqueWhalesInWindow(deps.sql, range),
+            fetchTopWhale(deps.sql, RANGE_CONFIG[range].windowMinutes),
+            fetchUniqueWhalesInWindow(deps.sql, RANGE_CONFIG[range].windowMinutes),
             queryTopWhales(
               deps.sql,
-              range,
+              RANGE_CONFIG[range].windowMinutes,
               isDrill ? drillCategory : null,
               TOP_WHALES_LIMIT,
             ),
