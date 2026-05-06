@@ -34,11 +34,13 @@ function StatCell({
   divider,
   hovered,
   onHoverChange,
+  isMobile,
 }: {
   item: StatItem;
   divider: boolean;
   hovered: boolean;
   onHoverChange: (h: boolean) => void;
+  isMobile?: boolean;
 }) {
   const interactive = item.tooltip || item.popover;
   // Tap-toggle the popover on touch. iOS Safari fires a synthetic
@@ -71,7 +73,13 @@ function StatCell({
       }}
     >
       {hovered && item.popover && (
-        <KpiPopover width={item.popoverWidth ?? 320}>{item.popover()}</KpiPopover>
+        <KpiPopover
+          width={item.popoverWidth ?? 320}
+          isMobile={isMobile}
+          onClose={() => onHoverChange(false)}
+        >
+          {item.popover()}
+        </KpiPopover>
       )}
       {divider && (
         <div
@@ -218,10 +226,75 @@ function StatCell({
   );
 }
 
-/** Floating popover anchored above the stat card. Appears on hover so the user
- *  can drill into a single number without clicking — much richer than a
- *  native title= tooltip. */
-function KpiPopover({ width, children }: { width: number; children: ReactNode }) {
+/** Floating popover anchored above the stat card. Appears on hover (desktop)
+ *  or tap (mobile) so the user can drill into a single number — much richer
+ *  than a native title= tooltip. On mobile renders as a bottom-sheet because
+ *  the parent strip's overflow-x: auto otherwise clips an absolute-positioned
+ *  popover regardless of overflow-y: visible. */
+function KpiPopover({
+  width,
+  children,
+  isMobile,
+  onClose,
+}: {
+  width: number;
+  children: ReactNode;
+  isMobile?: boolean;
+  onClose?: () => void;
+}) {
+  if (isMobile) {
+    return (
+      <>
+        <div
+          onClick={onClose}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.55)",
+            zIndex: 50,
+            animation: "tipIn .18s ease-out",
+          }}
+        />
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: "fixed",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: "100vw",
+            maxHeight: "75vh",
+            background: TOKENS.panel,
+            borderTop: `1px solid ${TOKENS.borderHi}`,
+            borderTopLeftRadius: 16,
+            borderTopRightRadius: 16,
+            boxShadow: "0 -20px 60px rgba(0,0,0,0.6)",
+            zIndex: 51,
+            padding: "12px 16px",
+            paddingBottom: "max(env(safe-area-inset-bottom, 16px), 16px)",
+            fontFamily: TOKENS.font,
+            color: TOKENS.text,
+            animation: "drawerInBottom .22s ease-out",
+            overflowY: "auto",
+            boxSizing: "border-box",
+          }}
+        >
+          <div
+            aria-hidden
+            style={{
+              alignSelf: "center",
+              width: 40,
+              height: 4,
+              borderRadius: 4,
+              background: TOKENS.border,
+              margin: "0 auto 12px",
+            }}
+          />
+          {children}
+        </div>
+      </>
+    );
+  }
   return (
     <div
       style={{
@@ -812,6 +885,7 @@ export function StatsBar({
             <StatCell
               item={it}
               divider={false}
+              isMobile
               hovered={hoveredIdx === i}
               onHoverChange={(h) => {
                 if (h) setHoveredIdx(i);

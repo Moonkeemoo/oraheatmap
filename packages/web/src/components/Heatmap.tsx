@@ -130,6 +130,22 @@ export function Heatmap() {
     initAnalytics();
   }, []);
 
+  // Lock body scroll while the heatmap shell is mounted. Without this,
+  // mobile Safari's address-bar resize events let the document itself
+  // scroll a few px and the Header drifts off the top edge despite
+  // the 100dvh shell. Restore on unmount so /privacy / /terms etc. can
+  // still scroll normally when the user navigates away.
+  useEffect(() => {
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overscrollBehavior;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overscrollBehavior = "none";
+    return () => {
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overscrollBehavior = prevHtml;
+    };
+  }, []);
+
   // Detect a fresh sign-in: when authStatus flips from "unauthenticated"
   // to "authenticated", attribute the conversion to whichever modal-open
   // happened last. signinModalOpened markers stash the open timestamp so

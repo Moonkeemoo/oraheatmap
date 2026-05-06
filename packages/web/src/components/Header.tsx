@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { TOKENS } from "@/lib/tokens";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -5,6 +6,7 @@ import type { HeatmapMetric, LiveRange, MacroKind, Mode, PatternKind } from "@/l
 import { BrandLogo } from "./BrandLogo";
 import { BurgerMenu } from "./BurgerMenu";
 import { LiveStatus } from "./LiveStatus";
+import { MobileFiltersChip, MobileFiltersSheet } from "./MobileFilters";
 import { ScaleLegend } from "./ScaleLegend";
 
 const LIVE_RANGES: ReadonlyArray<LiveRange> = ["1h", "24h", "12d", "12w"];
@@ -254,188 +256,32 @@ export function Header({
   };
 
   // ── Mobile layout ─────────────────────────────────────────────────────
-  // Three stacked rows: brand row (burger + logo), mode + sub-toggle pills,
-  // metric pills with horizontal-scroll overflow. ScaleLegend hidden —
-  // it doesn't fit and is the lowest-utility piece of chrome on mobile.
+  // Two-row chrome: brand row (burger + LiveStatus + logo) and a single
+  // chip summarising the current mode/range/metric selection. Tapping
+  // the chip opens MobileFiltersSheet — a bottom-sheet picker with
+  // accordion rows for each control. Replaces the older 3-row layout
+  // (mode toggle / sub-pills / metric pills strip) which crowded out
+  // the heatmap on small viewports.
   if (isMobile) {
-    // Render a compact ModeToggle inline so each button's padding/font
-    // can shrink without affecting the desktop ModeToggle component.
-    const renderModeBtn = (m: Mode, label: string, activeColor: string): React.ReactNode => {
-      const active = mode === m;
-      const locked = !isAuthed && !active;
-      return (
-        <button
-          key={m}
-          onClick={() => (isAuthed ? setMode(m) : onRequestLogin())}
-          style={{
-            // Tinted-bg + colored-text active state (matches Pill compact
-            // and MetricTab compact). Uses an 8-bit hex alpha suffix
-            // (e.g. `${color}26` ≈ 15% opacity) so the tint stays
-            // legible against the dark panel without going neon.
-            background: active ? `${activeColor}26` : "transparent",
-            border: "none",
-            color: active ? activeColor : TOKENS.textSec,
-            fontFamily: TOKENS.font,
-            fontSize: 10,
-            fontWeight: 800,
-            letterSpacing: 0.3,
-            textTransform: "uppercase",
-            padding: "5px 10px",
-            borderRadius: 5,
-            cursor: "pointer",
-            boxShadow: active ? `inset 0 0 0 1px ${activeColor}66` : "none",
-          }}
-        >
-          {label}
-          {locked && <span style={{ marginLeft: 3, opacity: 0.6 }}>🔒</span>}
-        </button>
-      );
-    };
-
+    // Setters pass through raw — the sheet does its own per-value
+    // auth gate (LIVE/1h/volume free, everything else locked) so we
+    // don't want the global `gate()` wrapper here, which forces
+    // login on every set including the free defaults.
     return (
-      <div
-        style={{
-          // Notch / status-bar safe inset on iOS Safari, Android Chrome.
-          // Falls back to 8px on browsers without env(safe-area-inset-*).
-          paddingTop: "max(env(safe-area-inset-top, 8px), 8px)",
-          paddingLeft: "max(env(safe-area-inset-left, 10px), 10px)",
-          paddingRight: "max(env(safe-area-inset-right, 10px), 10px)",
-          paddingBottom: 6,
-          borderBottom: `1px solid ${TOKENS.border}`,
-          display: "flex",
-          flexDirection: "column",
-          gap: 6,
-          flexShrink: 0,
-          minWidth: 0,
-          boxSizing: "border-box",
-          background: TOKENS.bg,
-          // Pin to the top of the viewport on mobile so the brand row +
-          // controls stay reachable while the heatmap pane scrolls
-          // vertically underneath. Required because iOS Safari's address
-          // bar resizes the visual viewport, which can otherwise scroll
-          // the whole document and push our header out of view.
-          position: "sticky",
-          top: 0,
-          zIndex: 10,
-        }}
-      >
-        {/* Row 1 — burger + LiveStatus + brand mark on the right. */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 8,
-          }}
-        >
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <BurgerMenu onRequestLogin={onRequestLogin} />
-            <LiveStatus />
-          </div>
-          <BrandLogo size="compact" />
-        </div>
-
-        {/* Row 2 — compact ModeToggle (LIVE/PATTERN/MACRO) + sub-pills
-            (range / pattern-kind / macro-kind), all on one row that
-            horizontally pans if a mode's sub-pills overflow. */}
-        <div style={mobileScrollRowStyle}>
-          <div
-            style={{
-              display: "flex",
-              gap: 0,
-              background: TOKENS.panel,
-              padding: 2,
-              borderRadius: 6,
-              border: `1px solid ${TOKENS.border}`,
-            }}
-          >
-            {renderModeBtn("live", "LIVE", TOKENS.pos)}
-            {renderModeBtn("pattern", "PATTERN", TOKENS.accent)}
-            {renderModeBtn("macro", "MACRO", TOKENS.link)}
-          </div>
-          {mode === "live" && (
-            <div style={{ display: "flex", gap: 4 }}>
-              {LIVE_RANGES.map((r) => (
-                <Pill
-                  key={r}
-                  compact
-                  active={range === r}
-                  onClick={() => (isAuthed ? setRange(r) : onRequestLogin())}
-                >
-                  {r}
-                  {!isAuthed && range !== r && (
-                    <span style={{ marginLeft: 3, opacity: 0.6 }}>🔒</span>
-                  )}
-                </Pill>
-              ))}
-            </div>
-          )}
-          {mode === "pattern" && (
-            <div style={{ display: "flex", gap: 4 }}>
-              {PATTERN_KINDS.map((p) => (
-                <Pill
-                  key={p.kind}
-                  compact
-                  active={patternKind === p.kind}
-                  onClick={() => (isAuthed ? setPatternKind(p.kind) : onRequestLogin())}
-                >
-                  {p.label}
-                  {!isAuthed && patternKind !== p.kind && (
-                    <span style={{ marginLeft: 3, opacity: 0.6 }}>🔒</span>
-                  )}
-                </Pill>
-              ))}
-            </div>
-          )}
-          {mode === "macro" && (
-            <div style={{ display: "flex", gap: 4 }}>
-              {MACRO_KINDS.map((m) => (
-                <Pill
-                  key={m.kind}
-                  compact
-                  active={macroKind === m.kind}
-                  onClick={() => (isAuthed ? setMacroKind(m.kind) : onRequestLogin())}
-                >
-                  {m.label}
-                  {!isAuthed && macroKind !== m.kind && (
-                    <span style={{ marginLeft: 3, opacity: 0.6 }}>🔒</span>
-                  )}
-                </Pill>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Row 3 — metric pills. */}
-        <div style={mobileScrollRowStyle}>
-          <div
-            style={{
-              display: "flex",
-              gap: 0,
-              background: TOKENS.panel,
-              padding: 2,
-              borderRadius: 6,
-              border: `1px solid ${TOKENS.border}`,
-            }}
-          >
-            {METRICS.map((m) => {
-              const isActive = metric === m.id;
-              const locked = !isAuthed && !isActive;
-              return (
-                <MetricTab
-                  key={m.id}
-                  compact
-                  active={isActive}
-                  onClick={() => (isAuthed ? setMetric(m.id) : onRequestLogin())}
-                >
-                  {m.label}
-                  {locked && <span style={{ marginLeft: 2, opacity: 0.6 }}>🔒</span>}
-                </MetricTab>
-              );
-            })}
-          </div>
-        </div>
-      </div>
+      <MobileHeader
+        mode={mode}
+        setMode={setMode}
+        range={range}
+        setRange={setRange}
+        patternKind={patternKind}
+        setPatternKind={setPatternKind}
+        macroKind={macroKind}
+        setMacroKind={setMacroKind}
+        metric={metric}
+        setMetric={setMetric}
+        isAuthed={isAuthed}
+        onRequestLogin={onRequestLogin}
+      />
     );
   }
 
@@ -704,5 +550,103 @@ export function UserChip({
         ✕
       </span>
     </button>
+  );
+}
+
+
+// ── MobileHeader ──────────────────────────────────────────────────────
+// Renders the two-row mobile chrome: brand row + filter chip. Owns the
+// sheet open/closed state so the surrounding Header stays a thin
+// dispatcher between desktop and mobile layouts.
+function MobileHeader({
+  mode,
+  setMode,
+  range,
+  setRange,
+  patternKind,
+  setPatternKind,
+  macroKind,
+  setMacroKind,
+  metric,
+  setMetric,
+  isAuthed,
+  onRequestLogin,
+}: {
+  mode: Mode;
+  setMode: (m: Mode) => void;
+  range: LiveRange;
+  setRange: (r: LiveRange) => void;
+  patternKind: PatternKind;
+  setPatternKind: (k: PatternKind) => void;
+  macroKind: MacroKind;
+  setMacroKind: (k: MacroKind) => void;
+  metric: HeatmapMetric;
+  setMetric: (m: HeatmapMetric) => void;
+  isAuthed: boolean;
+  onRequestLogin: () => void;
+}) {
+  const [sheetOpen, setSheetOpen] = useState(false);
+  return (
+    <>
+      <div
+        style={{
+          paddingTop: "max(env(safe-area-inset-top, 8px), 8px)",
+          paddingLeft: "max(env(safe-area-inset-left, 12px), 12px)",
+          paddingRight: "max(env(safe-area-inset-right, 12px), 12px)",
+          paddingBottom: 8,
+          borderBottom: `1px solid ${TOKENS.border}`,
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          flexShrink: 0,
+          minWidth: 0,
+          boxSizing: "border-box",
+          background: TOKENS.bg,
+        }}
+      >
+        {/* Row 1 — burger + LiveStatus + brand mark on the right. */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+          }}
+        >
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <BurgerMenu onRequestLogin={onRequestLogin} />
+            <LiveStatus />
+          </div>
+          <BrandLogo size="compact" />
+        </div>
+
+        {/* Row 2 — filter chip. Tap → opens MobileFiltersSheet. */}
+        <MobileFiltersChip
+          mode={mode}
+          range={range}
+          patternKind={patternKind}
+          macroKind={macroKind}
+          metric={metric}
+          onOpen={() => setSheetOpen(true)}
+        />
+      </div>
+
+      <MobileFiltersSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        mode={mode}
+        setMode={setMode}
+        range={range}
+        setRange={setRange}
+        patternKind={patternKind}
+        setPatternKind={setPatternKind}
+        macroKind={macroKind}
+        setMacroKind={setMacroKind}
+        metric={metric}
+        setMetric={setMetric}
+        isAuthed={isAuthed}
+        onRequestLogin={onRequestLogin}
+      />
+    </>
   );
 }
