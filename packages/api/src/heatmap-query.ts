@@ -100,6 +100,30 @@ export type HeatmapCell = {
   /** Top whales by USD volume in this cell. Empty for the same heavy ranges
    *  as `markets`. UI surfaces clickable rows that open the whale drawer. */
   topWhales: WhaleSummary[];
+  /** PATTERN-only — full-window cycle averages. The cell's main fields
+   *  carry the most-recent cycle's value (the headline number); this
+   *  block carries the average across all cycles in the lookback so
+   *  Cell.tsx can render the avg in the delta paren. */
+  full?: {
+    count: number;
+    volume: number;
+    pnl: number;
+    winRate: number | null;
+    uniqueWhales: number;
+  };
+  /** PATTERN-only — current minus avg per metric. Drives the ▲/▼
+   *  arrow + sign-coloured paren under the headline. */
+  delta?: {
+    count: number;
+    volume: number;
+    pnl: number;
+    winRate: number | null;
+    uniqueWhales: number;
+  };
+  /** PATTERN-only — number of cycles aggregated (e.g. 30 for HOUR-of-day,
+   *  12 for DOW). Surfaced in the cell tooltip to communicate the
+   *  reliability of the avg. */
+  sampleCount?: number;
 };
 
 export type WhaleSummary = {
@@ -622,35 +646,57 @@ export async function queryWhalesMacroAggRows(
 /**
  * Whales × PATTERN aggregation. Per (whale_addr, slot) where slot is
  *   - hour-of-day → UTC hour / 2 (12 slots, 0..11)
- *   - day-of-week → ISO dow − 1 stored as JS getDay (0..6 with Sun=0)
- * Average across cycles in the lookback (default 90d).
+ *   - day-of-week → JS dow (0..6, Sun=0)
  *
- * Returns per-slot rows shaped like AggRow but with `bucket` holding
- * the slot index encoded as a fake ISO-ish marker so assembleHeatmap
- * can dedupe them against the synthetic pattern bucket array the
- * caller supplies.
+ * Returns rich rows with BOTH the most-recent-cycle value (`current_*`,
+ * what the cell shows as the headline number) and the cycle-averaged
+ * baseline (`avg_*`, surfaced in cell.full + cell.delta computation).
+ * Mirrors the trades-pattern shape so Cell.tsx can render the same
+ * arrow + delta paren UX for whales rows.
  */
+export type WhalesPatternRow = {
+  slot: number;
+  whale_addr: string;
+  current_count: number;
+  current_volume: number;
+  current_pnl: number;
+  current_wins: number;
+  current_losses: number;
+  avg_count: number;
+  avg_volume: number;
+  avg_pnl: number;
+  total_wins: number;
+  total_losses: number;
+  sample_count: number;
+};
+
 export async function queryWhalesPatternAggRows(
   sql: Sql,
   kind: "hour-of-day" | "day-of-week",
   topAddrs: ReadonlyArray<string>,
   lookbackDays = 90,
-): Promise<ReadonlyArray<AggRow>> {
+): Promise<ReadonlyArray<WhalesPatternRow>> {
   if (topAddrs.length === 0) return [];
   const slotExpr =
     kind === "hour-of-day"
       ? sql`(EXTRACT(hour FROM ts AT TIME ZONE 'UTC')::int / 2)`
       : sql`EXTRACT(dow FROM ts AT TIME ZONE 'UTC')::int`;
-  type SlotRow = {
-    slot: number | string;
+  type DbRow = {
     whale_addr: string;
+    slot: number | string;
+    current_count: number | string | null;
+    current_volume: number | string | null;
+    current_pnl: number | string | null;
+    current_wins: number | string | null;
+    current_losses: number | string | null;
     avg_count: number | string;
     avg_volume: number | string;
     avg_pnl: number | string;
     total_wins: number | string;
     total_losses: number | string;
+    sample_count: number | string;
   };
-  const rows = await sql<SlotRow[]>`
+  const rows = await sql<DbRow[]>`
     WITH per_whale_cycle AS (
       SELECT
         whale_addr,
@@ -668,35 +714,44 @@ export async function queryWhalesPatternAggRows(
         AND ts <= NOW()
         AND whale_addr = ANY(${topAddrs as string[]}::text[])
       GROUP BY whale_addr, cycle, slot
+    ),
+    ranked AS (
+      SELECT *,
+        ROW_NUMBER() OVER (PARTITION BY whale_addr, slot ORDER BY cycle DESC) AS rn
+      FROM per_whale_cycle
     )
     SELECT
       whale_addr,
-      slot::int               AS slot,
-      AVG(slot_count)::numeric  AS avg_count,
-      AVG(slot_volume)::numeric AS avg_volume,
-      AVG(slot_pnl)::numeric    AS avg_pnl,
-      SUM(slot_wins)::bigint    AS total_wins,
-      SUM(slot_losses)::bigint  AS total_losses
-    FROM per_whale_cycle
+      slot::int                                          AS slot,
+      MAX(slot_count)  FILTER (WHERE rn = 1)             AS current_count,
+      MAX(slot_volume) FILTER (WHERE rn = 1)             AS current_volume,
+      MAX(slot_pnl)    FILTER (WHERE rn = 1)             AS current_pnl,
+      MAX(slot_wins)   FILTER (WHERE rn = 1)             AS current_wins,
+      MAX(slot_losses) FILTER (WHERE rn = 1)             AS current_losses,
+      AVG(slot_count)::numeric                            AS avg_count,
+      AVG(slot_volume)::numeric                           AS avg_volume,
+      AVG(slot_pnl)::numeric                              AS avg_pnl,
+      SUM(slot_wins)::bigint                              AS total_wins,
+      SUM(slot_losses)::bigint                            AS total_losses,
+      COUNT(*)::bigint                                    AS sample_count
+    FROM ranked
     GROUP BY whale_addr, slot
   `;
-  // Translate slot rows → AggRow shape with synthetic bucket strings
-  // matching the slot-index buckets the API caller will build.
-  return rows.map((r) => {
-    const slot = Number(r.slot);
-    const wins = Number(r.total_wins);
-    const losses = Number(r.total_losses);
-    return {
-      bucket: `slot:${slot}`,
-      category: r.whale_addr,
-      signal_count: Number(r.avg_count),
-      buy_volume_usd: Number(r.avg_volume),
-      realized_pnl_sum: Number(r.avg_pnl),
-      win_count: wins,
-      loss_count: losses,
-      unique_whales: 1,
-    };
-  });
+  return rows.map((r) => ({
+    whale_addr: r.whale_addr,
+    slot: Number(r.slot),
+    current_count: r.current_count === null ? 0 : Number(r.current_count),
+    current_volume: r.current_volume === null ? 0 : Number(r.current_volume),
+    current_pnl: r.current_pnl === null ? 0 : Number(r.current_pnl),
+    current_wins: r.current_wins === null ? 0 : Number(r.current_wins),
+    current_losses: r.current_losses === null ? 0 : Number(r.current_losses),
+    avg_count: Number(r.avg_count),
+    avg_volume: Number(r.avg_volume),
+    avg_pnl: Number(r.avg_pnl),
+    total_wins: Number(r.total_wins),
+    total_losses: Number(r.total_losses),
+    sample_count: Number(r.sample_count),
+  }));
 }
 
 /**

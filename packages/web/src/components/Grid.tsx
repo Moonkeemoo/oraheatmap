@@ -744,7 +744,15 @@ export function Grid({
     },
   ): React.ReactNode => {
     const meta = makeRowMeta(cat, data);
-    const clickableRow = !meta.isL3 && onRowClick !== undefined && !options.isDragOverlay;
+    // Whales subject — rows are individual whales, no L2/L3 drill.
+    // The row label shouldn't render the › chevron affordance (drill
+    // hint) since clicking it doesn't drill anywhere; that frees up
+    // ~12px of label width for the alias text.
+    const clickableRow =
+      data.subject !== "whales" &&
+      !meta.isL3 &&
+      onRowClick !== undefined &&
+      !options.isDragOverlay;
     // Hide the explicit drag-handle column on mobile — the 6-dot grip
     // is too small to tap reliably on touch. Mobile drags via long-
     // press on the colored badge itself (TouchSensor's 250ms delay
@@ -849,9 +857,22 @@ export function Grid({
   // before the grid starts scrolling internally. Same shrink applies
   // on mobile where vertical real estate is tightest.
   const isWhales = data.subject === "whales";
+  // Whales mode pushes the label column wider on mobile — long
+  // aliases like LABRADFORDSMITH / DIMSUMCONNECT were truncating to
+  // 7-8 chars in the 108px slot. Bump to ~140px for whales, taking
+  // some room from the cell grid (which now has 50 narrow rows
+  // anyway, so per-cell width matters less).
   const labelColW = isMobile
-    ? isL3Grid ? 120 : 108
-    : isL3Grid ? LABEL_W_L3 : LABEL_W;
+    ? isWhales
+      ? 140
+      : isL3Grid
+        ? 120
+        : 108
+    : isWhales
+      ? 150
+      : isL3Grid
+        ? LABEL_W_L3
+        : LABEL_W;
   const minRowH = isWhales
     ? isMobile ? 22 : 26
     : isMobile

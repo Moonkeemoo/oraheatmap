@@ -11,6 +11,7 @@ import {
   fetchResolvedMarkets,
   fetchTopWhale,
   fetchUniqueWhalesInWindow,
+  type HeatmapCell,
   type HeatmapRange,
   MACRO_CONFIG,
   queryHeatmapAggRows,
@@ -790,65 +791,107 @@ export function createApi(deps: ApiDeps) {
           const topAddrs = await queryTopWhalesByReputation(deps.sql);
           const range: HeatmapRange = query.range ?? "1h";
 
-          // Build buckets + agg rows by mode. assembleHeatmap is the
-          // same path for all three; only the bucket array shape and
-          // aggregation source differ.
+          // Build buckets + cells by mode. PATTERN gets a custom
+          // assembly path because each cell needs current_*+avg_* +
+          // delta+sampleCount populated (mirrors trades pattern), so
+          // the standard single-value AggRow shape isn't enough.
           let buckets: ReadonlyArray<{ ts: string; index: number }>;
-          let whalesAggRows: ReadonlyArray<{
-            bucket: string;
-            category: string;
-            signal_count: number | string;
-            buy_volume_usd: number | string;
-            realized_pnl_sum: number | string | null;
-            win_count: number | string;
-            loss_count: number | string;
-            unique_whales: number | string;
-          }>;
           let assembleRange: HeatmapRange = range;
+          let cells: Record<string, HeatmapCell[]> = {};
           if (mode === "macro") {
             const macroKind = (query.macroKind ?? "hour-week") as
               | "hour-week"
               | "day-12w";
             const macroCfg = MACRO_CONFIG[macroKind];
             buckets = buildBuckets(now, macroCfg.bucketMinutes, macroCfg.slots);
-            whalesAggRows = await queryWhalesMacroAggRows(
+            const aggRows = await queryWhalesMacroAggRows(
               deps.sql,
               macroKind,
               topAddrs,
             );
-            assembleRange = "1h"; // assembleHeatmap range arg unused for macro shape
+            assembleRange = "1h";
+            cells = assembleHeatmap(
+              aggRows,
+              [],
+              buckets,
+              assembleRange,
+              now,
+              { rowKeys: topAddrs as string[] },
+              [],
+            ).cells as Record<string, HeatmapCell[]>;
           } else if (mode === "pattern") {
             const kind = (query.kind ?? "hour-of-day") as
               | "hour-of-day"
               | "day-of-week";
-            // 12 hour-of-day slots OR 7 day-of-week slots — synthetic
-            // "slot:N" bucket strings match what queryWhalesPatternAggRows
-            // emits, so assembleHeatmap can dedupe rows against them.
             const slotCount = kind === "hour-of-day" ? 12 : 7;
             buckets = Array.from({ length: slotCount }, (_, i) => ({
               ts: `slot:${i}`,
               index: i,
             }));
-            whalesAggRows = await queryWhalesPatternAggRows(
+            const patternRows = await queryWhalesPatternAggRows(
               deps.sql,
               kind,
               topAddrs,
             );
+            // Manual assembly — cell.count/volume/pnl/winRate hold
+            // the most-recent-cycle values (the headline number in the
+            // cell). cell.full carries the cycle-averaged baseline so
+            // Cell.tsx can render the avg in the delta paren. cell.delta
+            // = current − avg, drives the ▲/▼ arrow + sign-coloured
+            // percent paren same as trades pattern.
+            for (const addr of topAddrs) {
+              cells[addr] = Array.from({ length: slotCount }, () => ({
+                count: 0, volume: 0, pnl: 0, winRate: null, uniqueWhales: 1,
+                markets: [], topWhales: [],
+              }));
+            }
+            for (const r of patternRows) {
+              const row = cells[r.whale_addr];
+              if (!row || r.slot < 0 || r.slot >= slotCount) continue;
+              const decidedCur = r.current_wins + r.current_losses;
+              const curWR = decidedCur > 0 ? r.current_wins / decidedCur : null;
+              const decidedAvg = r.total_wins + r.total_losses;
+              const avgWR = decidedAvg > 0 ? r.total_wins / decidedAvg : null;
+              row[r.slot] = {
+                count: r.current_count,
+                volume: r.current_volume,
+                pnl: r.current_pnl,
+                winRate: curWR,
+                uniqueWhales: 1,
+                markets: [],
+                topWhales: [],
+                full: {
+                  count: r.avg_count,
+                  volume: r.avg_volume,
+                  pnl: r.avg_pnl,
+                  winRate: avgWR,
+                  uniqueWhales: 1,
+                },
+                delta: {
+                  count: r.current_count - r.avg_count,
+                  volume: r.current_volume - r.avg_volume,
+                  pnl: r.current_pnl - r.avg_pnl,
+                  winRate:
+                    curWR !== null && avgWR !== null ? curWR - avgWR : null,
+                  uniqueWhales: 0,
+                },
+                sampleCount: r.sample_count,
+              };
+            }
           } else {
             const cfg = RANGE_CONFIG[range];
             buckets = buildBuckets(now, cfg.bucketMinutes, cfg.slots);
             const live = await queryWhalesAggRows(deps.sql, range, topAddrs);
-            whalesAggRows = live.rows;
+            cells = assembleHeatmap(
+              live.rows,
+              [],
+              buckets,
+              range,
+              now,
+              { rowKeys: topAddrs as string[] },
+              [],
+            ).cells as Record<string, HeatmapCell[]>;
           }
-          const grid = assembleHeatmap(
-            whalesAggRows,
-            [],
-            buckets,
-            assembleRange,
-            now,
-            { rowKeys: topAddrs as string[] },
-            [],
-          );
           // 90-day reputation inputs for the top addrs — same window
           // and formula as the LVL badge in WhaleDrawer. Single batch
           // query keyed on the top-N set, computed per-whale in JS so
@@ -901,10 +944,19 @@ export function createApi(deps: ApiDeps) {
             };
           }
           const whalesResponse = {
-            ...grid,
+            generatedAt: new Date().toISOString(),
+            range: assembleRange,
+            windowEnd: now.toISOString(),
+            windowStart: new Date(now.getTime() - 60 * 60_000).toISOString(),
+            windowMinutes: 60,
+            bucketMinutes: 5,
+            drillCategory: null,
+            categories: topAddrs as ReadonlyArray<string>,
+            buckets,
+            cells,
+            totals: null,
             mode,
             subject: "whales" as const,
-            range,
             // Surface kind / macroKind so the client knows which
             // pattern / macro variant the response represents.
             ...(mode === "pattern"
