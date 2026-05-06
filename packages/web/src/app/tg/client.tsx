@@ -13,12 +13,32 @@ type TelegramWebApp = {
   initDataUnsafe?: { user?: { id?: number; username?: string } };
   ready: () => void;
   expand: () => void;
+  /** TG-reported visible height inside the WebView. Different from
+   *  100dvh: TG accounts for its own bottom panel, the keyboard, and
+   *  fullscreen-mode safe areas. When this value changes (keyboard
+   *  open, swipe-collapse, fullscreen toggle) `viewportChanged` fires
+   *  and we resize the app shell so StatsBar stays on-screen. */
+  viewportHeight: number;
+  viewportStableHeight: number;
+  onEvent?: (event: string, cb: () => void) => void;
+  offEvent?: (event: string, cb: () => void) => void;
   /** Background colour shown behind the WebView while it loads. */
   setBackgroundColor?: (color: string) => void;
   setHeaderColor?: (color: string) => void;
   /** Detected app theme — "dark" or "light". We're a dark app, so we
    *  ignore this for now; v1.x can adapt if there's demand. */
   colorScheme?: "light" | "dark";
+  /** Bot API 8.0+ — request the "no TG chrome" fullscreen mode. The
+   *  BotFather Launch Mode = Fullscreen sets this as the default
+   *  behaviour, but the API call is the explicit/programmatic path
+   *  and is safe to call even when the launch mode handles it
+   *  automatically (no-ops on platforms that don't support it). */
+  requestFullscreen?: () => void;
+  isFullscreen?: boolean;
+  /** Bot API 7.7+ — silence the "swipe-down to close" gesture so a
+   *  user dragging across our scrollable middle pane doesn't close
+   *  the Mini App by accident. */
+  disableVerticalSwipes?: () => void;
 };
 
 declare global {
@@ -77,10 +97,29 @@ export function TgMiniApp() {
         // and request full viewport — the heatmap needs every px.
         wa.ready();
         wa.expand();
+        // Bot API 8.0+ Launch Mode = Fullscreen handshake. Both
+        // calls no-op on older clients / desktop, safe to call.
+        wa.requestFullscreen?.();
+        wa.disableVerticalSwipes?.();
         // Match our app shell colours so the seam between native
         // chrome and our content is invisible.
         wa.setBackgroundColor?.(TOKENS.bg);
         wa.setHeaderColor?.(TOKENS.bg);
+
+        // Mark the body so the .app-shell CSS can switch from 100dvh
+        // (works for plain mobile Safari) to the TG-reported viewport
+        // height (which actually accounts for fullscreen safe areas
+        // and the bottom panel). Without this swap the StatsBar gets
+        // pushed below the fold in TG fullscreen mode.
+        document.body.classList.add("tg-mini-app");
+        const syncViewport = (): void => {
+          document.documentElement.style.setProperty(
+            "--tg-viewport-height",
+            `${wa.viewportStableHeight || wa.viewportHeight}px`,
+          );
+        };
+        syncViewport();
+        wa.onEvent?.("viewportChanged", syncViewport);
 
         // No initData ⇒ page opened outside Telegram (someone shared
         // the URL to a regular browser). Show a hint, don't try to

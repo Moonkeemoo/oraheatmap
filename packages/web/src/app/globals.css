@@ -67,3 +67,13 @@ body {
   height: 100vh;
   height: 100dvh;
 }
+
+/* Telegram Mini App context — TG WebView reports viewport height via
+   Telegram.WebApp.viewportHeight, which respects fullscreen safe-area
+   insets and the bottom panel. /tg client.tsx writes this to
+   --tg-viewport-height on every viewportChanged event; we prefer it
+   here so StatsBar + Footer stay above the fold instead of getting
+   clipped by 100dvh's slightly-too-tall measurement inside TG. */
+body.tg-mini-app .app-shell {
+  height: var(--tg-viewport-height, 100dvh);
+}
