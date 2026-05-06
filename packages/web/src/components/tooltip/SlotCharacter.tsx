@@ -112,7 +112,7 @@ export function SlotCharacter({
         }}
       >
         <span>Slot character</span>
-        <span style={{ color: TOKENS.textSec }}>
+        <span style={{ color: TOKENS.textSec, fontFamily: TOKENS.mono }}>
           {character.totalTrades} trades · {character.uniqueWhales} whales
         </span>
       </div>
@@ -213,10 +213,9 @@ function Row({
     >
       <span
         style={{
-          fontSize: 10,
+          fontSize: 11,
           color: TOKENS.textMuted,
-          fontFamily: TOKENS.mono,
-          letterSpacing: 0.4,
+          fontWeight: 500,
         }}
       >
         {label}

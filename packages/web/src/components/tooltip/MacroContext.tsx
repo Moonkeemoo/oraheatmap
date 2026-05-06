@@ -182,10 +182,9 @@ function Row({ label, right }: { label: string; right: React.ReactNode }) {
     >
       <span
         style={{
-          fontSize: 10,
+          fontSize: 11,
           color: TOKENS.textMuted,
-          fontFamily: TOKENS.mono,
-          letterSpacing: 0.4,
+          fontWeight: 500,
         }}
       >
         {label}
