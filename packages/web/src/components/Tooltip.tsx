@@ -524,7 +524,7 @@ export function Tooltip({
             <span>Market probability</span>
             <span style={{ color: TOKENS.textSec }}>ALL</span>
           </div>
-          {marketHistory.loading && <DrawerLoading variant="block" label="loading chart" />}
+          {marketHistory.loading && <DrawerLoading variant="block" />}
           {marketHistory.error && (
             <div style={{ fontSize: 11, color: TOKENS.neg, padding: "8px 0" }}>
               {marketHistory.error}
@@ -681,7 +681,7 @@ export function Tooltip({
             <span>Past cycles · {patternKind === "hour-of-day" ? "30 days" : "12 weeks"}</span>
             <span style={{ color: TOKENS.textSec }}>{metric === "signals" ? "trades" : metric}</span>
           </div>
-          {cycles.loading && <DrawerLoading variant="block" label="loading cycles" />}
+          {cycles.loading && <DrawerLoading variant="block" />}
           {cycles.error && (
             <div style={{ fontSize: 11, color: TOKENS.neg, padding: "8px 0" }}>
               {cycles.error}

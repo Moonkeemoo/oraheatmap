@@ -51,13 +51,6 @@ body {
   100% { background-position:  200% 0; }
 }
 
-/* Brand-coloured loading wave used inside drawer panels. Each cell
-   pulses opacity + scale; staggered animation-delay makes a brighter
-   spot travel L→R like the heatmap's "now" sweep. */
-@keyframes drawerWave {
-  0%, 100% { opacity: 0.25; transform: scale(0.85); }
-  50%      { opacity: 1;    transform: scale(1.05); }
-}
 /* Hide horizontal-scroll bars in WebKit. Used by Header's mobile pill
    strips where overflow-x: auto + scrollbar-width: none already hides
    the bar in Firefox / standards browsers but not in iOS Safari. */

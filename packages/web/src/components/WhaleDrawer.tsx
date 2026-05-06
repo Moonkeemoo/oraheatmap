@@ -127,7 +127,7 @@ export function WhaleDrawer({
         {data && <DrawerBody data={data} range={range} onClose={onClose} onBack={onBack} />}
         {!data && loading && (
           <div style={{ padding: 20 }}>
-            <DrawerLoading variant="block" label="loading whale profile" />
+            <DrawerLoading variant="block" />
           </div>
         )}
         {!data && error && (
