@@ -686,7 +686,7 @@ export function StatsBar({
         ? {
             label: "Top Whale",
             whale: { color: t.topWhale.color, alias: t.topWhale.alias },
-            sub: "by USD entered · click to open profile",
+            sub: "by USD entered",
             tooltip: `${t.topWhale.alias.startsWith("0x") ? "address (no leaderboard alias)" : "Polymarket username"}\n${t.topWhale.addr}`,
             popover: renderTopWhalesPopover,
             popoverWidth: 380,
