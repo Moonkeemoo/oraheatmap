@@ -760,19 +760,23 @@ export function Grid({
     );
   };
 
-  // Mobile shrinks label column + row height ~30% so cells get more pixels.
-  // Cells also pick up a min-width floor (CELL_MIN_W) so the grid grows
-  // wider than the viewport on macro / drill, and the heatmap container's
-  // overflow-x: auto kicks in to scroll. Compact mode (heat-only, no value
-  // text) is forced for every mode, not just macro — values don't fit
-  // legibly below ~28px wide cells.
+  // Mobile sizing — label column wide enough to show full L1 names
+  // ("POLITICS"), cells get a small min-width floor that lets 12 LIVE
+  // buckets fit inside iPhone-SE-class viewports without horizontal
+  // scroll. MACRO 168 cells will still overflow the viewport and the
+  // heatmap container's overflow-x: auto picks them up.
+  // Compact mode (heat-only, no value text) is forced for every mode
+  // on mobile — values don't fit legibly below ~28px wide cells.
+  // Time row (header) gets MORE height on mobile so labels can rotate
+  // 90° and read top-to-bottom — horizontally they'd collide.
   const labelColW = isMobile
-    ? isL3Grid ? 110 : 90
+    ? isL3Grid ? 110 : 100
     : isL3Grid ? LABEL_W_L3 : LABEL_W;
   const minRowH = isMobile
-    ? isL3Grid ? 36 : 30
+    ? isL3Grid ? 36 : 28
     : isL3Grid ? MIN_ROW_H_L3 : MIN_ROW_H;
-  const cellMinW = isMobile ? 22 : 0;
+  const cellMinW = isMobile ? 14 : 0;
+  const timeRowH = isMobile ? 44 : TIME_ROW_H;
 
   return (
     <DndContext
@@ -793,8 +797,8 @@ export function Grid({
           // per-bucket time labels in LIVE / PATTERN). Slightly shorter
           // header row since it carries less text.
           gridTemplateRows: isMacro
-            ? `${TIME_ROW_H - 4}px repeat(${displayCategories.length}, minmax(36px, 1fr))`
-            : `${TIME_ROW_H}px repeat(${displayCategories.length}, minmax(${minRowH}px, 1fr))`,
+            ? `${(isMobile ? timeRowH : TIME_ROW_H) - 4}px repeat(${displayCategories.length}, minmax(36px, 1fr))`
+            : `${timeRowH}px repeat(${displayCategories.length}, minmax(${minRowH}px, 1fr))`,
           gap: isMacro ? 2 : 4,
           width: "100%",
           height: "100%",
@@ -820,7 +824,7 @@ export function Grid({
                 <div
                   key={i}
                   style={{
-                    fontSize: 10,
+                    fontSize: isMobile ? 9 : 10,
                     fontFamily: TOKENS.mono,
                     color: isNow ? TOKENS.pos : TOKENS.textSec,
                     fontWeight: isNow ? 700 : 500,
@@ -828,10 +832,32 @@ export function Grid({
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
+                    // Mobile rotates labels 90° (writingMode) so "08:00",
+                    // "Mon", "Wk 06" etc. fit in 14-22px wide cells without
+                    // wrapping or truncating. Reads bottom-to-top so the
+                    // anchor (where text starts) lines up with the cell.
+                    ...(isMobile
+                      ? {
+                          writingMode: "vertical-rl",
+                          transform: "rotate(180deg)",
+                          whiteSpace: "nowrap",
+                          lineHeight: 1,
+                        }
+                      : null),
                   }}
                 >
                   {isNow ? (
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: isMobile ? 3 : 5,
+                        // Stack the now-dot above the label vertically
+                        // when the row is rotated, otherwise the dot
+                        // collides with the rotated text baseline.
+                        flexDirection: isMobile ? "column" : "row",
+                      }}
+                    >
                       <span
                         style={{
                           width: 6,

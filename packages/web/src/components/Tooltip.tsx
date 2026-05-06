@@ -529,8 +529,10 @@ export function Tooltip({
 
       {/* Top highlights — drawer-only, range-scoped (not cell-bucket).
           Sits below the row sparkline so the user reads the trend shape
-          first, then the standout events that drove it. */}
-      {isDrawer && highlights && !isPattern && (
+          first, then the standout events that drove it. Auth-gated:
+          unauthed users see the consolidated single login plaque
+          further down rather than this widget at all. */}
+      {isDrawer && highlights && !isPattern && isAuthed && (
         <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
           <div
             style={{
@@ -796,62 +798,13 @@ export function Tooltip({
         </div>
       )}
 
-      {!isPattern && cellWhales.length > 0 && !isAuthed && (
+      {/* Single consolidated sign-in plaque — replaces the per-widget
+          "Sign in to see top whales" / "Sign in to see top markets" /
+          highlights / live-feed teasers with one CTA. Renders only when
+          there's actually gated content to unlock (counts > 0); avoids
+          a dangling plaque on empty cells. */}
+      {!isPattern && !isAuthed && (cellWhales.length > 0 || sortedMarkets.length > 0) && (
         <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
-          <div
-            style={{
-              fontSize: 9,
-              letterSpacing: 0.5,
-              color: TOKENS.textMuted,
-              textTransform: "uppercase",
-              marginBottom: 6,
-              fontWeight: 600,
-              display: "flex",
-              justifyContent: "space-between",
-            }}
-          >
-            <span>Top whales</span>
-            <span style={{ color: TOKENS.textSec }}>🔒 sign in</span>
-          </div>
-          {locked && (
-            <button
-              onClick={onRequestLogin}
-              style={{
-                background: TOKENS.panel2,
-                border: `1px solid ${TOKENS.borderHi}`,
-                color: TOKENS.text,
-                fontFamily: "inherit",
-                fontSize: 11,
-                fontWeight: 600,
-                padding: "8px 10px",
-                borderRadius: 6,
-                width: "100%",
-                cursor: "pointer",
-              }}
-            >
-              Sign in to see {cellWhales.length} top whale{cellWhales.length === 1 ? "" : "s"} →
-            </button>
-          )}
-        </div>
-      )}
-
-      {!isPattern && sortedMarkets.length > 0 && !isAuthed && (
-        <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8 }}>
-          <div
-            style={{
-              fontSize: 9,
-              letterSpacing: 0.5,
-              color: TOKENS.textMuted,
-              textTransform: "uppercase",
-              marginBottom: 6,
-              fontWeight: 600,
-              display: "flex",
-              justifyContent: "space-between",
-            }}
-          >
-            <span>Top markets</span>
-            <span style={{ color: TOKENS.textSec }}>🔒 sign in</span>
-          </div>
           {locked ? (
             <button
               onClick={onRequestLogin}
@@ -862,20 +815,27 @@ export function Tooltip({
                 fontFamily: "inherit",
                 fontSize: 11,
                 fontWeight: 600,
-                padding: "8px 10px",
+                padding: "10px 12px",
                 borderRadius: 6,
                 width: "100%",
                 cursor: "pointer",
                 transition: "filter .12s",
+                lineHeight: 1.4,
+                textAlign: "left",
               }}
               onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.filter = "brightness(1.2)")}
               onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.filter = "none")}
             >
-              Sign in to see {sortedMarkets.length} top market{sortedMarkets.length === 1 ? "" : "s"} →
+              <span style={{ display: "block", color: TOKENS.text, fontWeight: 700, marginBottom: 2 }}>
+                🔒 Sign in to unlock
+              </span>
+              <span style={{ display: "block", color: TOKENS.textSec, fontSize: 10, fontWeight: 500 }}>
+                Top whales · top markets · highlights · live feed
+              </span>
             </button>
           ) : (
             <div style={{ fontSize: 11, color: TOKENS.textSec, lineHeight: 1.4 }}>
-              {sortedMarkets.length} market{sortedMarkets.length === 1 ? "" : "s"} hidden — click cell to lock, then sign in
+              🔒 Click cell to lock, then sign in to see top whales, markets, highlights, and the live feed.
             </div>
           )}
         </div>
@@ -982,8 +942,10 @@ export function Tooltip({
       )}
 
       {/* Live feed — drawer-only. Renders below the top markets / probability
-          chart blocks so the heavy aggregations stay above the fold. */}
-      {isDrawer && feed && (
+          chart blocks so the heavy aggregations stay above the fold.
+          Auth-gated: unauthed users see the consolidated single login
+          plaque above and not this widget. */}
+      {isDrawer && feed && isAuthed && (
         <div style={{ marginTop: 16, borderTop: `1px solid ${TOKENS.border}`, paddingTop: 12 }}>
           <div
             style={{

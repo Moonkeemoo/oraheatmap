@@ -47,12 +47,16 @@ function Pill({
   disabled,
   title,
   children,
+  compact,
 }: {
   active: boolean;
   onClick?: () => void;
   disabled?: boolean;
   title?: string;
   children: React.ReactNode;
+  /** Mobile size — tighter padding + smaller font + no minWidth so the
+   *  pills don't dominate a 360px viewport. */
+  compact?: boolean;
 }) {
   return (
     <button
@@ -69,15 +73,15 @@ function Pill({
             : TOKENS.textSec,
         opacity: disabled ? 0.45 : 1,
         fontFamily: TOKENS.font,
-        fontSize: 11,
+        fontSize: compact ? 10 : 11,
         fontWeight: 700,
-        letterSpacing: 0.5,
+        letterSpacing: compact ? 0.3 : 0.5,
         textTransform: "uppercase",
-        padding: "6px 12px",
+        padding: compact ? "4px 9px" : "6px 12px",
         borderRadius: 999,
         cursor: disabled ? "not-allowed" : "pointer",
         transition: "all .12s",
-        minWidth: 44,
+        minWidth: compact ? 0 : 44,
       }}
     >
       {children}
@@ -90,11 +94,13 @@ function MetricTab({
   onClick,
   title,
   children,
+  compact,
 }: {
   active: boolean;
   onClick: () => void;
   title?: string;
   children: React.ReactNode;
+  compact?: boolean;
 }) {
   return (
     <button
@@ -105,11 +111,11 @@ function MetricTab({
         border: "none",
         color: active ? TOKENS.text : TOKENS.textSec,
         fontFamily: TOKENS.font,
-        fontSize: 11,
+        fontSize: compact ? 10 : 11,
         fontWeight: 700,
-        letterSpacing: 0.5,
+        letterSpacing: compact ? 0.3 : 0.5,
         textTransform: "uppercase",
-        padding: "7px 14px",
+        padding: compact ? "5px 10px" : "7px 14px",
         borderRadius: 6,
         cursor: "pointer",
         transition: "all .12s",
@@ -245,14 +251,48 @@ export function Header({
   // metric pills with horizontal-scroll overflow. ScaleLegend hidden —
   // it doesn't fit and is the lowest-utility piece of chrome on mobile.
   if (isMobile) {
+    // Render a compact ModeToggle inline so each button's padding/font
+    // can shrink without affecting the desktop ModeToggle component.
+    const renderModeBtn = (m: Mode, label: string, activeColor: string): React.ReactNode => {
+      const active = mode === m;
+      const locked = !isAuthed && !active;
+      return (
+        <button
+          key={m}
+          onClick={() => (isAuthed ? setMode(m) : onRequestLogin())}
+          style={{
+            background: active ? activeColor : "transparent",
+            border: "none",
+            color: active ? "#0d1117" : TOKENS.textSec,
+            fontFamily: TOKENS.font,
+            fontSize: 10,
+            fontWeight: 800,
+            letterSpacing: 0.3,
+            textTransform: "uppercase",
+            padding: "5px 10px",
+            borderRadius: 5,
+            cursor: "pointer",
+          }}
+        >
+          {label}
+          {locked && <span style={{ marginLeft: 3, opacity: 0.6 }}>🔒</span>}
+        </button>
+      );
+    };
+
     return (
       <div
         style={{
-          padding: "10px 12px 8px",
+          // Notch / status-bar safe inset on iOS Safari, Android Chrome.
+          // Falls back to 8px on browsers without env(safe-area-inset-*).
+          paddingTop: "max(env(safe-area-inset-top, 8px), 8px)",
+          paddingLeft: "max(env(safe-area-inset-left, 10px), 10px)",
+          paddingRight: "max(env(safe-area-inset-right, 10px), 10px)",
+          paddingBottom: 6,
           borderBottom: `1px solid ${TOKENS.border}`,
           display: "flex",
           flexDirection: "column",
-          gap: 8,
+          gap: 6,
           flexShrink: 0,
           minWidth: 0,
           boxSizing: "border-box",
@@ -268,66 +308,77 @@ export function Header({
             gap: 8,
           }}
         >
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
             <BurgerMenu onRequestLogin={onRequestLogin} />
             <LiveStatus />
           </div>
           <BrandLogo size="compact" />
         </div>
 
-        {/* Row 2 — mode toggle + sub-pills (range / pattern-kind / macro-kind).
-            Single horizontal-scroll strip so narrow phones can pan if the
-            current mode's sub-pills push the row past the viewport edge. */}
+        {/* Row 2 — compact ModeToggle (LIVE/PATTERN/MACRO) + sub-pills
+            (range / pattern-kind / macro-kind), all on one row that
+            horizontally pans if a mode's sub-pills overflow. */}
         <div style={mobileScrollRowStyle}>
-          <ModeToggle
-            mode={mode}
-            setMode={gate(setMode)}
-            daysOfData={daysOfData}
-            locked={!isAuthed}
-          />
+          <div
+            style={{
+              display: "flex",
+              gap: 0,
+              background: TOKENS.panel,
+              padding: 2,
+              borderRadius: 6,
+              border: `1px solid ${TOKENS.border}`,
+            }}
+          >
+            {renderModeBtn("live", "LIVE", TOKENS.pos)}
+            {renderModeBtn("pattern", "PATTERN", TOKENS.accent)}
+            {renderModeBtn("macro", "MACRO", TOKENS.link)}
+          </div>
           {mode === "live" && (
-            <div style={{ display: "flex", gap: 5 }}>
+            <div style={{ display: "flex", gap: 4 }}>
               {LIVE_RANGES.map((r) => (
                 <Pill
                   key={r}
+                  compact
                   active={range === r}
                   onClick={() => (isAuthed ? setRange(r) : onRequestLogin())}
                 >
                   {r}
                   {!isAuthed && range !== r && (
-                    <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>
+                    <span style={{ marginLeft: 3, opacity: 0.6 }}>🔒</span>
                   )}
                 </Pill>
               ))}
             </div>
           )}
           {mode === "pattern" && (
-            <div style={{ display: "flex", gap: 5 }}>
+            <div style={{ display: "flex", gap: 4 }}>
               {PATTERN_KINDS.map((p) => (
                 <Pill
                   key={p.kind}
+                  compact
                   active={patternKind === p.kind}
                   onClick={() => (isAuthed ? setPatternKind(p.kind) : onRequestLogin())}
                 >
                   {p.label}
                   {!isAuthed && patternKind !== p.kind && (
-                    <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>
+                    <span style={{ marginLeft: 3, opacity: 0.6 }}>🔒</span>
                   )}
                 </Pill>
               ))}
             </div>
           )}
           {mode === "macro" && (
-            <div style={{ display: "flex", gap: 5 }}>
+            <div style={{ display: "flex", gap: 4 }}>
               {MACRO_KINDS.map((m) => (
                 <Pill
                   key={m.kind}
+                  compact
                   active={macroKind === m.kind}
                   onClick={() => (isAuthed ? setMacroKind(m.kind) : onRequestLogin())}
                 >
                   {m.label}
                   {!isAuthed && macroKind !== m.kind && (
-                    <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>
+                    <span style={{ marginLeft: 3, opacity: 0.6 }}>🔒</span>
                   )}
                 </Pill>
               ))}
@@ -335,15 +386,15 @@ export function Header({
           )}
         </div>
 
-        {/* Row 3 — metric pills, also horizontal-scroll. */}
+        {/* Row 3 — metric pills. */}
         <div style={mobileScrollRowStyle}>
           <div
             style={{
               display: "flex",
               gap: 0,
               background: TOKENS.panel,
-              padding: 3,
-              borderRadius: 8,
+              padding: 2,
+              borderRadius: 6,
               border: `1px solid ${TOKENS.border}`,
             }}
           >
@@ -353,11 +404,12 @@ export function Header({
               return (
                 <MetricTab
                   key={m.id}
+                  compact
                   active={isActive}
                   onClick={() => (isAuthed ? setMetric(m.id) : onRequestLogin())}
                 >
                   {m.label}
-                  {locked && <span style={{ marginLeft: 3, opacity: 0.6 }}>🔒</span>}
+                  {locked && <span style={{ marginLeft: 2, opacity: 0.6 }}>🔒</span>}
                 </MetricTab>
               );
             })}

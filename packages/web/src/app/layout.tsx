@@ -102,6 +102,10 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: "#0d1117",
+  // viewport-fit=cover enables env(safe-area-inset-*) on iOS Safari so
+  // the header can clear the notch / status bar on iPhone X-class devices
+  // and the StatsBar can clear the home-indicator on iOS.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

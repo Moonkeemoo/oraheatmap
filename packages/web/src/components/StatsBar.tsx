@@ -727,9 +727,10 @@ export function StatsBar({
         style={{
           borderTop: `1px solid ${TOKENS.border}`,
           background: TOKENS.panel,
-          padding: "10px 12px",
+          padding: "6px 10px",
+          paddingBottom: "max(env(safe-area-inset-bottom, 6px), 6px)",
           display: "flex",
-          gap: 14,
+          gap: 10,
           overflowX: "auto",
           overflowY: "visible",
           WebkitOverflowScrolling: "touch",
@@ -738,7 +739,7 @@ export function StatsBar({
         }}
       >
         {items.map((it, i) => (
-          <div key={it.label} style={{ flex: "0 0 auto", minWidth: 130 }}>
+          <div key={it.label} style={{ flex: "0 0 auto", minWidth: 100 }}>
             <StatCell
               item={it}
               divider={false}
