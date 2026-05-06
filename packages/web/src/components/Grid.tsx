@@ -6,7 +6,8 @@ import {
   DragOverlay,
   type DragEndEvent,
   type DragStartEvent,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
@@ -227,11 +228,19 @@ function RowLabelBadge({
   clickableRow,
   onRowClick,
   isMobile,
+  dragListeners,
+  dragAttributes,
 }: {
   meta: RowMeta;
   clickableRow: boolean;
   onRowClick?: (rowKey: string) => void;
   isMobile?: boolean;
+  /** dnd-kit useSortable listeners — when present, the badge acts as
+   *  the drag source. Mobile only: long-press on the badge starts a
+   *  reorder drag (TouchSensor 250ms delay activation). Desktop drags
+   *  through a separate grip column instead. */
+  dragListeners?: Record<string, (event: unknown) => void>;
+  dragAttributes?: Record<string, unknown>;
 }) {
   const { isL3, isResolved, rowColor, rowLabel, rawLabel, l3Url } = meta;
   const isInteractive = clickableRow || l3Url !== null;
@@ -322,6 +331,14 @@ function RowLabelBadge({
     : clickableRow
       ? "drill"
       : null;
+  // touch-action: none disables the browser's default touch handling
+  // (scroll / zoom / select) on the draggable badge so dnd-kit's
+  // long-press detector gets clean pointer events. Only set when the
+  // badge is actually wired as a drag source — otherwise we'd block
+  // the user from scrolling the page by touching a non-draggable row.
+  const draggableStyle: React.CSSProperties = dragListeners
+    ? { ...badgeStyle, touchAction: "none", userSelect: "none" }
+    : badgeStyle;
   if (l3Url) {
     return (
       <a
@@ -329,9 +346,11 @@ function RowLabelBadge({
         target="_blank"
         rel="noopener noreferrer"
         title={titleText}
-        style={badgeStyle}
+        style={draggableStyle}
         onMouseEnter={onEnter}
         onMouseLeave={onLeave}
+        {...(dragAttributes ?? {})}
+        {...(dragListeners ?? {})}
       >
         {rowLabel}
         {affordanceKind && <ClickAffordance kind={affordanceKind} />}
@@ -344,9 +363,11 @@ function RowLabelBadge({
       onClick={clickableRow ? () => onRowClick?.(meta.cat) : undefined}
       disabled={!clickableRow}
       title={titleText}
-      style={badgeStyle}
+      style={draggableStyle}
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
+      {...(dragAttributes ?? {})}
+      {...(dragListeners ?? {})}
     >
       {rowLabel}
       {affordanceKind && <ClickAffordance kind={affordanceKind} />}
@@ -655,10 +676,17 @@ export function Grid({
 
   const isL3Grid = data.drillSubcategory !== null;
 
-  // Pointer sensor with an activation distance so a short click on the
-  // handle still registers as a click (no accidental drag start).
+  // Split mouse + touch so each input modality can have its own
+  // activation rule:
+  //  - Mouse: 4px movement starts a drag (existing behaviour, precise).
+  //  - Touch: 250ms hold + 5px tolerance — long-press to drag, quick
+  //    tap still fires the badge's onClick (drill into category).
+  // Mobile uses the colored badge itself as the drag source (the tiny
+  // 6-dot grip column was unhittable on touch). Long-press is the
+  // iOS-native pattern for "I want to rearrange these".
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
   );
 
   const [activeKey, setActiveKey] = useState<string | null>(null);
@@ -692,11 +720,18 @@ export function Grid({
   ): React.ReactNode => {
     const meta = makeRowMeta(cat, data);
     const clickableRow = !meta.isL3 && onRowClick !== undefined && !options.isDragOverlay;
-    // Hide the lock-icon affordance entirely when reorder is disabled —
-    // it eats label width without offering anything beyond the toast
-    // CTAs already wired into the rest of the UI. Drag handle still
-    // renders for authenticated users (drag-to-reorder works on touch).
-    const showHandle = options.reorderEnabled;
+    // Hide the explicit drag-handle column on mobile — the 6-dot grip
+    // is too small to tap reliably on touch. Mobile drags via long-
+    // press on the colored badge itself (TouchSensor's 250ms delay
+    // activation in the parent DndContext). Desktop keeps the precise
+    // grip column for mouse users.
+    const showHandle = options.reorderEnabled && !isMobile;
+    // On mobile the badge IS the drag source — pass listeners/attrs
+    // through. Desktop keeps them on the grip column above.
+    const badgeDragListeners =
+      isMobile && options.reorderEnabled ? options.listeners : undefined;
+    const badgeDragAttributes =
+      isMobile && options.reorderEnabled ? options.attributes : undefined;
     return (
       <>
         <div
@@ -722,6 +757,8 @@ export function Grid({
               meta={meta}
               clickableRow={clickableRow}
               onRowClick={onRowClick}
+              dragListeners={badgeDragListeners}
+              dragAttributes={badgeDragAttributes}
             />
           </div>
         </div>
