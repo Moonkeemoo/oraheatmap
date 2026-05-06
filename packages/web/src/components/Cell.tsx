@@ -100,18 +100,24 @@ export function Cell({
   const avg = showDelta && !isEmpty ? avgForMetric(metric, cell) : null;
   // PATTERN cell: paint the value green when current > lookback avg,
   // red when below, and prepend ▲/▼. Applied to every non-empty cell
-  // in PATTERN — each column already shows current-vs-avg natively
-  // (current is the recent-half mean, parens is the full lookback),
-  // so the same comparison is meaningful everywhere, not just NOW.
+  // in PATTERN — each column already shows current-vs-avg natively.
+  //
+  // Equality / near-equality is intentionally null (no arrow, default
+  // colour). When the backend has only one half of lookback data
+  // populated, `avg` falls back to the same value as `cur` — pretending
+  // there's a trend would be misleading. Use a relative tolerance so
+  // floating-point rounding noise (e.g. cur=100.0001, avg=100.0002)
+  // doesn't fake a direction either.
   const cur = !isEmpty ? recentForMetric(metric, cell) : null;
-  const isPatternTrend = showDelta && !isEmpty && cur !== null && avg !== null;
-  const trend: "up" | "down" | null = isPatternTrend
-    ? cur > avg
-      ? "up"
-      : cur < avg
-        ? "down"
-        : null
-    : null;
+  const trend: "up" | "down" | null = (() => {
+    if (!showDelta || isEmpty || cur === null || avg === null) return null;
+    const diff = cur - avg;
+    const ref = Math.max(Math.abs(cur), Math.abs(avg));
+    // <0.5% relative diff OR <1 absolute on integer-y metrics → treat as equal.
+    const tolerance = Math.max(ref * 0.005, metric === "winrate" ? 0.001 : 1);
+    if (Math.abs(diff) < tolerance) return null;
+    return diff > 0 ? "up" : "down";
+  })();
   const valColor = isEmpty
     ? TOKENS.text
     : trend === "up"
