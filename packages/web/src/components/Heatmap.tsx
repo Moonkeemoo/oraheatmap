@@ -101,10 +101,12 @@ function flashSlotIndex(
 
 export function Heatmap() {
   const [mode, setMode] = useState<Mode>("live");
-  // Default view: 24h × volume — most informative single-glance combination
-  // for an unauthenticated visitor (volume = "where is money flowing today").
-  // Every other range/mode/kind/metric requires auth.
-  const [range, setRange] = useState<LiveRange>("24h");
+  // Default view: 1h × volume — the freshest possible take, lands on the
+  // page as a "live signals NOW" hook for anonymous visitors. Every
+  // other range (24h / 12d / 12w) and mode/kind/metric requires auth.
+  // Was 24h up to 2026-05-06; 1h reads more "real-time", which is the
+  // value-prop pitch and easier on the cold cache (smaller payload).
+  const [range, setRange] = useState<LiveRange>("1h");
   const [patternKind, setPatternKind] = useState<PatternKind>("hour-of-day");
   const [metric, setMetric] = useState<HeatmapMetric>("volume");
   const [drillCategory, setDrillCategory] = useState<Category | null>(null);

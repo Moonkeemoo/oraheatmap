@@ -165,7 +165,7 @@ and v2.0 (TG Stars + TON). Apply the SAME gate matrix across all payment rails.
 
 | Feature | Free (anon) | Free (auth) | **Pro ($9/mo or $79/yr)** |
 |---|---|---|---|
-| LIVE 24h × volume L1 | ✅ | ✅ | ✅ |
+| LIVE 1h × volume L1 | ✅ | ✅ | ✅ |
 | All ranges (1h/24h/12d/12w) | ❌ | ✅ | ✅ |
 | All metrics (PNL, VOLUME, СИГНАЛИ, WIN RATE) | ❌ | ✅ | ✅ |
 | PATTERN mode (HOUR + DOW) | ❌ | ✅ | ✅ |

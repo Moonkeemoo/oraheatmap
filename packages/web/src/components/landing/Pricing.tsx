@@ -23,7 +23,7 @@ const FREE_ANON: Tier = {
   cta: "Open heatmap",
   ctaHref: "/app",
   features: [
-    "Live 24h heatmap, by volume",
+    "Live 1h heatmap, by volume",
     "Top-level categories only",
     "Real-time signal ticker",
     "Public Privacy / Terms / Receipts",
