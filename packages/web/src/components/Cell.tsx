@@ -50,6 +50,11 @@ function avgForMetric(metric: HeatmapMetric, cell: HeatmapCell): number | null {
 function fmtAvg(metric: HeatmapMetric, avg: number | null): string {
   if (avg === null) return "—";
   if (metric === "winrate") return Math.round(avg * 100) + "%";
+  // Signed display for PnL avg — match the headline value's "+/-" prefix.
+  if (metric === "pnl") {
+    const v = fmtCellValue(avg);
+    return avg > 0 ? `+${v}` : v;
+  }
   return fmtCellValue(avg);
 }
 

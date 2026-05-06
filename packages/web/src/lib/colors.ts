@@ -74,7 +74,13 @@ import { fmtCellValue } from "./format";
 
 export function getCellValue(metric: HeatmapMetric, cell: HeatmapCell): string {
   if (cell.count === 0) return "";
-  if (metric === "pnl") return fmtCellValue(cell.pnl);
+  if (metric === "pnl") {
+    // PnL is signed — fmtCellValue already prepends "-" on negatives,
+    // mirror with an explicit "+" on positives so the user reads
+    // direction at a glance instead of hunting for a missing minus.
+    const v = fmtCellValue(cell.pnl);
+    return cell.pnl > 0 ? `+${v}` : v;
+  }
   if (metric === "volume") return fmtCellValue(cell.volume);
   // PATTERN serves AVG count per cycle (fractional) — abbreviate the same
   // way as pnl/volume so we don't render "5850.333333333333".
