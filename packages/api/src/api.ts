@@ -619,8 +619,9 @@ export function createApi(deps: ApiDeps) {
         // macro mode — dense matrix. Two configs by macroKind:
         //   hour-week (default) → 1h × 7d × 168 cells
         //   day-12w             → 1d × 12w × 84 cells
-        // Skips per-cell top-markets / top-whales — at this density they'd
-        // dominate the payload and never render anyway.
+        // Drill behaves the same as LIVE: L1 → L2 (subcategories) → L3
+        // (per-market). Skips per-cell top-markets / top-whales — at this
+        // density they'd dominate the payload and never render anyway.
         if (mode === "macro") {
           const macroKind = (query.macroKind ?? "hour-week") as
             | "hour-week"
@@ -633,13 +634,65 @@ export function createApi(deps: ApiDeps) {
             isDrill ? drillCategory : null,
             drillSubcategory,
           );
+
+          // L2 → row keys are subcategory slugs; L3 → row keys are
+          // condition_ids. Build the row-label map server-side so the
+          // grid can render readable rows without a second round-trip.
+          let rowKeys: string[] | undefined;
+          let rowLabels: Record<string, string> | null = null;
+          let marketSlugs: Record<string, string | null> | null = null;
+          let marketIcons: Record<string, string | null> | null = null;
+          let marketQuestions: Record<string, string | null> | null = null;
+          let resolvedRows: ReadonlyArray<string> = [];
+          if (isDrillL3) {
+            // L3 — top markets in the (category, subcategory). Pull the
+            // densest by signal count, capped at MAX_MARKETS_IN_DRILL.
+            const topMarketsRows = await deps.sql<
+              { condition_id: string; signals: number | string }[]
+            >`
+              SELECT condition_id, COUNT(*)::bigint AS signals
+              FROM signals
+              WHERE ts >= NOW() - (${macroCfg.windowMinutes} * INTERVAL '1 minute')
+                AND category = ${drillCategory}
+                AND subcategory = ${drillSubcategory}
+                AND condition_id IS NOT NULL
+              GROUP BY condition_id
+              ORDER BY signals DESC
+              LIMIT ${MAX_MARKETS_IN_DRILL}
+            `;
+            const conditionIds = topMarketsRows.map((r) => r.condition_id);
+            const meta = conditionIds.length > 0
+              ? await fetchMarketMeta(deps.sql, conditionIds)
+              : {};
+            rowKeys = conditionIds;
+            rowLabels = Object.fromEntries(
+              conditionIds.map((cid) => [cid, meta[cid]?.question ?? cid]),
+            );
+            marketSlugs = Object.fromEntries(
+              conditionIds.map((cid) => [cid, meta[cid]?.slug ?? null]),
+            );
+            marketIcons = Object.fromEntries(
+              conditionIds.map((cid) => [cid, meta[cid]?.icon ?? null]),
+            );
+            marketQuestions = Object.fromEntries(
+              conditionIds.map((cid) => [cid, meta[cid]?.question ?? null]),
+            );
+            const resolvedSet = await fetchResolvedMarkets(deps.sql, conditionIds);
+            resolvedRows = conditionIds.filter((cid) => resolvedSet.has(cid));
+          } else if (isDrill) {
+            rowKeys = drillRules.map((r) => r.slug);
+            rowLabels = Object.fromEntries(
+              drillRules.map((r) => [r.slug, SUBCATEGORY_LABELS[r.slug] ?? r.slug]),
+            );
+          }
+
           const grid = assembleHeatmap(
             aggRows,
-            [], // no markets
+            [], // no per-cell markets in macro
             macroBuckets,
             "1h", // range arg unused for macro shape
             now,
-            { drillCategory: isDrill ? drillCategory : null },
+            { drillCategory: isDrill ? drillCategory : null, rowKeys },
             [], // no whale rows
           );
           const macroResponse = {
@@ -652,11 +705,11 @@ export function createApi(deps: ApiDeps) {
             drillSubcategoryLabel: drillSubcategory
               ? SUBCATEGORY_LABELS[drillSubcategory] ?? drillSubcategory
               : null,
-            subcategoryLabels: null,
-            marketSlugs: null,
-            marketIcons: null,
-            marketQuestions: null,
-            resolvedRows: [],
+            subcategoryLabels: rowLabels,
+            marketSlugs,
+            marketIcons,
+            marketQuestions,
+            resolvedRows,
             topWhales: null,
             metric,
             dataSpan,

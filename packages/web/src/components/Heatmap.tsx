@@ -222,8 +222,10 @@ export function Heatmap() {
     macroKind: mode === "macro" ? macroKind : undefined,
     lookbackDays: mode === "pattern" ? 30 : undefined,
     drillCategory,
-    // L3 (per-market) only meaningful in LIVE mode for now.
-    drillSubcategory: mode === "live" ? drillSubcategory : null,
+    // L3 (per-market) drill: LIVE + MACRO. PATTERN doesn't carry
+    // condition-id-level aggregates and the cycle-overlay chart shape
+    // doesn't make sense per-market.
+    drillSubcategory: mode === "pattern" ? null : drillSubcategory,
   });
 
   // Whenever a fresh fetch arrives, drop the optimistic queue.
