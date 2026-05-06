@@ -97,6 +97,24 @@ function makeRowMeta(
   cat: string,
   data: HeatmapResponse,
 ): RowMeta {
+  // Whales mode — row keys are whale addresses, not category slugs.
+  // Use the per-row meta the API ships inline (alias / colour /
+  // avatar). Truncate long aliases to keep the row chip narrow,
+  // analogous to the L1 category pill width.
+  if (data.mode === "whales") {
+    const meta = data.whaleMeta?.[cat];
+    const alias = meta?.alias ?? shortenAddress(cat);
+    return {
+      cat,
+      rowColor: meta?.color ?? "#7d8590",
+      rowLabel: alias,
+      rawLabel: alias,
+      isResolved: false,
+      isL3: false,
+      isDrillRow: false,
+      l3Url: null,
+    };
+  }
   const isDrillRow = data.drillCategory !== null;
   const isL3 = data.drillSubcategory !== null;
   const isResolved = isL3 && data.resolvedRows.includes(cat);
@@ -118,6 +136,11 @@ function makeRowMeta(
     isDrillRow,
     l3Url,
   };
+}
+
+function shortenAddress(addr: string): string {
+  if (!addr.startsWith("0x") || addr.length < 12) return addr;
+  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
 
 /** A grip-icon. Only renders an interactive handle when reorderEnabled.

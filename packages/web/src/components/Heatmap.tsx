@@ -155,6 +155,16 @@ export function Heatmap() {
     initAnalytics();
   }, []);
 
+  // Whales mode rows ARE whales, so the WHALES metric (per-cell
+  // distinct whale count) collapses to 1 everywhere — meaningless.
+  // Snap metric to volume when entering whales mode if the user was
+  // viewing the whales metric.
+  useEffect(() => {
+    if (mode === "whales" && metric === "whales") {
+      setMetric("volume");
+    }
+  }, [mode, metric]);
+
   // Sync filter state → URL. Defaults are omitted so the URL stays
   // tidy ("/app" alone) while user is on the canonical view; any
   // non-default pick gets a query param. router.replace (not push)
@@ -304,7 +314,7 @@ export function Heatmap() {
 
   const { data: fetchedData, loading, error } = useHeatmap({
     mode,
-    range: mode === "live" ? range : undefined,
+    range: mode === "live" || mode === "whales" ? range : undefined,
     kind: mode === "pattern" ? patternKind : undefined,
     macroKind: mode === "macro" ? macroKind : undefined,
     lookbackDays: mode === "pattern" ? 30 : undefined,
@@ -591,6 +601,17 @@ export function Heatmap() {
                   metric={metric}
                   onHover={(h) => setHover(h)}
                   onClick={(h) => {
+                    // Whales mode: rows ARE whale addresses, so a cell
+                    // click on (whale × bucket) doesn't have a "cell
+                    // tooltip" worth showing — open that whale's full
+                    // profile drawer instead (same as clicking the
+                    // whale's row label). Skip the panelCell flow.
+                    if (mode === "whales") {
+                      track.whaleDrawerOpen("cell", h.category);
+                      setPanelCell(null);
+                      setWhaleProfileAddr(h.category);
+                      return;
+                    }
                     // Toggle: clicking the same cell again closes the panel.
                     // Clicking a different cell SWAPS content (instead of
                     // close-then-open) — Tooltip re-renders with new props.

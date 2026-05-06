@@ -142,6 +142,18 @@ export type HeatmapResponse = {
   buckets: ReadonlyArray<{ ts: string; index: number }>;
   cells: Record<string, ReadonlyArray<HeatmapCell>>;
   totals: HeatmapTotals;
+  /** Whales-mode only — display metadata for each whale-keyed row.
+   *  In other modes rows are categories / subcategories / markets and
+   *  the UI renders them via categoryMeta lookups. Whale addresses
+   *  aren't in that map, so the API ships per-whale meta inline. */
+  whaleMeta?: Record<
+    string,
+    {
+      alias: string;
+      color: string;
+      profileImage: string | null;
+    }
+  >;
 };
 
 // ─── DB row shapes ───────────────────────────────────────────────────────────
@@ -504,6 +516,64 @@ export async function queryHeatmapAggRows(
     ORDER BY 1
   `;
   return rows;
+}
+
+/**
+ * Whales-mode aggregation. Same time grid as LIVE (4 ranges × 12
+ * buckets), but rows are the top-N whale addresses ranked by BUY
+ * volume in the window. Used by the "Whales × Time" view to surface
+ * each whale's "schedule" — which hour of which day they're active
+ * in — directly on the heatmap. Aggregates from raw signals (CAGG
+ * doesn't carry whale_addr).
+ */
+const WHALES_TOP_N = 15;
+
+export async function queryWhalesAggRows(
+  sql: Sql,
+  range: HeatmapRange,
+): Promise<{ rows: ReadonlyArray<AggRow>; topAddrs: ReadonlyArray<string> }> {
+  const cfg = RANGE_CONFIG[range];
+  const bucketInterval = `${cfg.bucketMinutes} minutes`;
+  const windowInterval = `${cfg.windowMinutes} minutes`;
+
+  // First pass — pick the top-N whales by BUY volume in the window.
+  // Filter to the 0x[hex]{40} shape so we don't pull in the synthetic
+  // composite addresses (CLAUDE.md SIG-7) that occasionally leak into
+  // raw signals.
+  type AddrRow = { whale_addr: string };
+  const topRows = await sql<AddrRow[]>`
+    SELECT whale_addr
+    FROM signals
+    WHERE ts >= NOW() - (${windowInterval}::interval)
+      AND ts <= NOW()
+      AND whale_addr ~ '^0x[0-9a-f]{40}$'
+    GROUP BY whale_addr
+    ORDER BY COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0) DESC
+    LIMIT ${WHALES_TOP_N}
+  `;
+  const topAddrs = topRows.map((r) => r.whale_addr);
+  if (topAddrs.length === 0) return { rows: [], topAddrs };
+
+  // Second pass — per (whale, bucket) aggregation, scoped to the
+  // top-N set so the cardinality stays bounded.
+  const rows = await sql<AggRow[]>`
+    SELECT
+      to_char(time_bucket(${bucketInterval}::interval, ts) AT TIME ZONE 'UTC',
+              'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
+      whale_addr                                                    AS category,
+      COUNT(*)::bigint                                              AS signal_count,
+      COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS buy_volume_usd,
+      COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS realized_pnl_sum,
+      COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS win_count,
+      COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS loss_count,
+      1::bigint                                                      AS unique_whales
+    FROM signals
+    WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
+      AND whale_addr = ANY(${topAddrs}::text[])
+    GROUP BY bucket, whale_addr
+    ORDER BY bucket
+  `;
+  return { rows, topAddrs };
 }
 
 /**

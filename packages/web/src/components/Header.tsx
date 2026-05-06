@@ -202,6 +202,14 @@ function ModeToggle({
           ? "Sign in to switch modes"
           : "Density view — last 7 days at hourly granularity, no labels, image carries the signal",
       )}
+      {renderBtn(
+        "whales",
+        "WHALES",
+        TOKENS.neg,
+        locked
+          ? "Sign in to switch modes"
+          : "Top whales × time grid — see each whale's schedule of activity in the heatmap idiom",
+      )}
     </div>
   );
 }

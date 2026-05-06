@@ -40,6 +40,7 @@ const MODES: ReadonlyArray<ModeMeta> = [
   { id: "live", label: "LIVE", color: TOKENS.pos },
   { id: "pattern", label: "PATTERN", color: TOKENS.accent },
   { id: "macro", label: "MACRO", color: TOKENS.link },
+  { id: "whales", label: "WHALES", color: TOKENS.neg },
 ];
 
 const LIVE_RANGES: ReadonlyArray<LiveRange> = ["1h", "24h", "12d", "12w"];
@@ -72,7 +73,8 @@ function rangeText(
   patternKind: PatternKind,
   macroKind: MacroKind,
 ): string {
-  if (mode === "live") return range.toUpperCase();
+  // WHALES uses the LIVE range set since it's the same time grid.
+  if (mode === "live" || mode === "whales") return range.toUpperCase();
   if (mode === "pattern") {
     return PATTERN_KINDS.find((p) => p.id === patternKind)?.label ?? "HOUR";
   }
@@ -239,7 +241,9 @@ export function MobileFiltersSheet({
       ? TOKENS.pos
       : mode === "pattern"
         ? TOKENS.accent
-        : TOKENS.link;
+        : mode === "whales"
+          ? TOKENS.neg
+          : TOKENS.link;
 
   // Unauth users get LIVE/1h/volume free; everything else opens login.
   // Same gating logic as the desktop Header — keep it explicit so the
@@ -362,7 +366,7 @@ export function MobileFiltersSheet({
           onToggle={() => setExpanded(expanded === "range" ? null : "range")}
         >
           <PillRow>
-            {mode === "live" &&
+            {(mode === "live" || mode === "whales") &&
               LIVE_RANGES.map((r) => (
                 <Pill
                   key={r}
@@ -416,7 +420,13 @@ export function MobileFiltersSheet({
           onToggle={() => setExpanded(expanded === "metric" ? null : "metric")}
         >
           <PillRow>
-            {METRICS.map((mt) => (
+            {METRICS.filter(
+              // WHALES metric is the convergence count of distinct
+              // whales per cell — meaningless when each row IS one
+              // whale (every cell would tautologically read 1). Drop
+              // it from the picker in whales mode.
+              (mt) => !(mode === "whales" && mt.id === "whales"),
+            ).map((mt) => (
               <Pill
                 key={mt.id}
                 active={metric === mt.id}

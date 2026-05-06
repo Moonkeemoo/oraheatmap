@@ -11,7 +11,7 @@ export type Category =
   | "Climate"
   | "Other";
 
-export type Mode = "live" | "pattern" | "macro";
+export type Mode = "live" | "pattern" | "macro" | "whales";
 export type MacroKind = "hour-week" | "day-12w";
 
 export type LiveRange = "1h" | "24h" | "12d" | "12w";
@@ -158,6 +158,18 @@ export type HeatmapResponse = {
   totals: HeatmapTotals | null;
   metric: HeatmapMetric;
   dataSpan: { earliestTs: string | null; daysOfData: number };
+  /** Whales-mode only — display metadata for each whale-keyed row.
+   *  Categories array holds whale addresses; this map fills in the
+   *  alias / colour / avatar so the row label can render the whale
+   *  identity instead of running the addresses through categoryMeta. */
+  whaleMeta?: Record<
+    string,
+    {
+      alias: string;
+      color: string;
+      profileImage: string | null;
+    }
+  >;
 };
 
 // ─── /api/whale — whale profile drawer ──────────────────────────────────────

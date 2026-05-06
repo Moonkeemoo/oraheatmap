@@ -15,6 +15,7 @@ import {
   MACRO_CONFIG,
   queryHeatmapAggRows,
   queryMacroAggRows,
+  queryWhalesAggRows,
   queryTopMarketsPerCell,
   queryTopWhales,
   queryTopWhalesPerCell,
@@ -766,6 +767,54 @@ export function createApi(deps: ApiDeps) {
           return macroResponse;
         }
 
+        // whales mode — top-N whales × time. Same time grid as LIVE
+        // (4 ranges × 12 buckets) but rows are whale addresses ranked
+        // by BUY volume in the window. Visual idiom is identical to
+        // LIVE; the UI swaps category-pill labels for whale-row
+        // labels (avatar + alias + LVL badge) when it sees mode === "whales".
+        if (mode === "whales") {
+          const range: HeatmapRange = query.range ?? "1h";
+          const cfg = RANGE_CONFIG[range];
+          const buckets = buildBuckets(now, cfg.bucketMinutes, cfg.slots);
+          const { rows: whalesAggRows, topAddrs } = await queryWhalesAggRows(
+            deps.sql,
+            range,
+          );
+          const grid = assembleHeatmap(
+            whalesAggRows,
+            [],
+            buckets,
+            range,
+            now,
+            { rowKeys: topAddrs as string[] },
+            [],
+          );
+          const whaleMeta: Record<
+            string,
+            { alias: string; color: string; profileImage: string | null }
+          > = {};
+          for (const addr of topAddrs) {
+            whaleMeta[addr] = {
+              alias: whaleAlias(addr),
+              color: whaleColor(addr),
+              profileImage: whaleAliasInfo(addr)?.profileImage ?? null,
+            };
+          }
+          const whalesResponse = {
+            ...grid,
+            mode: "whales" as const,
+            range,
+            trackedWhales,
+            whaleMeta,
+            metric,
+            dataSpan,
+          };
+          heatmapCache.set(cacheKey, whalesResponse, ttlMs);
+          set.headers["x-cache"] = "miss";
+          set.headers["cache-control"] = ccHeader;
+          return whalesResponse;
+        }
+
         // live (default)
         const range: HeatmapRange = query.range ?? "1h";
         const cfg = RANGE_CONFIG[range];
@@ -957,7 +1006,7 @@ export function createApi(deps: ApiDeps) {
       },
       {
         query: t.Object({
-          mode: t.Optional(t.Union([t.Literal("live"), t.Literal("pattern"), t.Literal("macro")])),
+          mode: t.Optional(t.Union([t.Literal("live"), t.Literal("pattern"), t.Literal("macro"), t.Literal("whales")])),
           range: t.Optional(
             t.Union([t.Literal("1h"), t.Literal("24h"), t.Literal("12d"), t.Literal("12w")]),
           ),

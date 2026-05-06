@@ -36,7 +36,7 @@ export async function fetchHeatmap(args: {
 }): Promise<HeatmapResponse> {
   const params = new URLSearchParams();
   params.set("mode", args.mode);
-  if (args.mode === "live" && args.range) params.set("range", args.range);
+  if ((args.mode === "live" || args.mode === "whales") && args.range) params.set("range", args.range);
   if (args.mode === "pattern") {
     if (args.kind) params.set("kind", args.kind);
     if (args.lookbackDays) params.set("lookbackDays", String(args.lookbackDays));
