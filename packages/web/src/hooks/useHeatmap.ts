@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { fetchHeatmap } from "@/lib/api";
 import type { Category, HeatmapResponse, LiveRange, Mode, PatternKind } from "@/lib/types";
 
@@ -18,7 +18,6 @@ export type UseHeatmapResult = {
   data: HeatmapResponse | null;
   loading: boolean;
   error: string | null;
-  refetch(): Promise<void>;
 };
 
 export function useHeatmap(args: {
@@ -32,42 +31,54 @@ export function useHeatmap(args: {
   const [data, setData] = useState<HeatmapResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const cancelledRef = useRef(false);
 
   const refreshMs =
     args.mode === "live"
       ? REFRESH_MS_LIVE[args.range ?? "1h"]
       : REFRESH_MS_PATTERN;
 
-  const fetchOnce = async (): Promise<void> => {
-    try {
-      const r = await fetchHeatmap(args);
-      if (cancelledRef.current) return;
-      setData(r);
-      setError(null);
-    } catch (err) {
-      if (cancelledRef.current) return;
-      setError((err as Error).message);
-    } finally {
-      if (!cancelledRef.current) setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    cancelledRef.current = false;
+    // Per-effect cancellation flag — closed over by every fetch in this
+    // cycle. Cleanup flips it; the NEXT effect run gets a fresh `let
+    // cancelled = false` in its own scope so old in-flight fetches can't
+    // accidentally "uncancel" themselves.
+    //
+    // Earlier this was a useRef shared across the hook lifetime. The
+    // bug: switching 24h → 12d, the in-flight 24h fetch was still
+    // pending when the cleanup set cancelledRef = true; then the new
+    // effect reset it to false; when the 24h fetch finally resolved
+    // it saw cancelledRef = false and called setData(stale 24h data),
+    // overwriting the freshly-fetched 12d data. UI showed 12D button
+    // active but the heatmap stayed in 2h-bucket shape.
+    let cancelled = false;
+
+    const doFetch = async (): Promise<void> => {
+      try {
+        const r = await fetchHeatmap(args);
+        if (cancelled) return;
+        setData(r);
+        setError(null);
+      } catch (err) {
+        if (cancelled) return;
+        setError((err as Error).message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
     // Drop the previous mode's data so the Grid doesn't render a half-mixed
     // state (e.g. live cells with pattern bucket count) until the new
     // response arrives. UI shows the loading state for ~1 fetch tick.
     setData(null);
     setLoading(true);
-    void fetchOnce();
-    const id = setInterval(() => void fetchOnce(), refreshMs);
+    void doFetch();
+    const id = setInterval(() => void doFetch(), refreshMs);
     return () => {
-      cancelledRef.current = true;
+      cancelled = true;
       clearInterval(id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [args.mode, args.range, args.kind, args.lookbackDays, args.drillCategory, args.drillSubcategory]);
 
-  return { data, loading, error, refetch: fetchOnce };
+  return { data, loading, error };
 }
