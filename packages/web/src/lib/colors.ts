@@ -56,6 +56,16 @@ export function getCellFill(
   intensityFn: (c: HeatmapCell) => number,
 ): string {
   if (cell.count === 0) return "transparent";
+  // For directional / volume-style metrics, treat "active but exactly
+  // zero" the same as "no activity" — otherwise pnl-balanced cells
+  // (BUY without an exit, or wins exactly cancelling losses) draw a
+  // faint coloured tint with a meaningless "0" overlay, which the
+  // user can't tell apart from a meaningful low-value cell. Dropping
+  // to transparent here triggers Cell.tsx's empty-pattern path so
+  // the row reads "no signal here" consistently.
+  if (metric === "pnl" && cell.pnl === 0) return "transparent";
+  if (metric === "volume" && cell.volume === 0) return "transparent";
+  if (metric === "whales" && (cell.uniqueWhales ?? 0) === 0) return "transparent";
   if (metric === "pnl") return pnlColor(intensityFn(cell), cell.pnl >= 0);
   if (metric === "volume") return volumeColor(intensityFn(cell));
   if (metric === "signals") return signalsColor(intensityFn(cell));
