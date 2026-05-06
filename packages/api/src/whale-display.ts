@@ -14,6 +14,24 @@ export type WhaleAliasInfo = {
   verified: boolean;
   /** Polymarket-hosted avatar URL. NULL when the user never set one. */
   profileImage: string | null;
+  /** Sum of `pnl` across all category-leaderboard entries for this whale.
+   *  Used by /api/whales/search to rank matches by all-time performance. */
+  totalPnl: number;
+  /** Sum of BUY-side USD volume across all category entries. */
+  totalVol: number;
+};
+
+export type WhaleSearchHit = {
+  addr: string;
+  alias: string;
+  xHandle: string | null;
+  verified: boolean;
+  profileImage: string | null;
+  totalPnl: number;
+  totalVol: number;
+  /** Match category — exact lookups trump substring. UI uses it for
+   *  visual emphasis ("exact match" badge). */
+  matchKind: "addr" | "alias-exact" | "alias-prefix" | "alias-substring" | "xhandle";
 };
 
 let aliasMap: ReadonlyMap<string, WhaleAliasInfo> = new Map();
@@ -32,8 +50,22 @@ export async function loadWhaleAliases(path: string): Promise<Map<string, WhaleA
       xHandle?: unknown;
       verified?: unknown;
       profileImage?: unknown;
+      sources?: unknown;
     };
     if (typeof rec.alias !== "string" || rec.alias.length === 0) continue;
+    // Sum PnL/volume across category-leaderboard sources so search can
+    // rank biggest-PnL whales first. Tolerant of malformed sources.
+    let totalPnl = 0;
+    let totalVol = 0;
+    if (Array.isArray(rec.sources)) {
+      for (const s of rec.sources as Array<unknown>) {
+        if (s && typeof s === "object") {
+          const src = s as { pnl?: unknown; vol?: unknown };
+          if (typeof src.pnl === "number") totalPnl += src.pnl;
+          if (typeof src.vol === "number") totalVol += src.vol;
+        }
+      }
+    }
     out.set(addr.toLowerCase(), {
       alias: rec.alias,
       xHandle: typeof rec.xHandle === "string" && rec.xHandle.length > 0 ? rec.xHandle : null,
@@ -42,9 +74,68 @@ export async function loadWhaleAliases(path: string): Promise<Map<string, WhaleA
         typeof rec.profileImage === "string" && rec.profileImage.length > 0
           ? rec.profileImage
           : null,
+      totalPnl,
+      totalVol,
     });
   }
   return out;
+}
+
+/** Fuzzy search the corpus by alias / xHandle / address. Used by
+ *  /api/whales/search to power the StatsBar whale-finder. Ranks exact
+ *  matches first, then prefix, then substring; ties broken by all-time
+ *  PnL desc so biggest whales surface first. */
+export function searchWhales(query: string, limit = 10): WhaleSearchHit[] {
+  const q = query.trim().toLowerCase();
+  if (q.length < 2) return [];
+
+  const isAddrLike = q.startsWith("0x");
+  const hits: WhaleSearchHit[] = [];
+
+  for (const [addr, info] of aliasMap) {
+    let matchKind: WhaleSearchHit["matchKind"] | null = null;
+
+    if (isAddrLike) {
+      if (addr === q) matchKind = "addr";
+      else if (addr.startsWith(q)) matchKind = "addr";
+    } else {
+      const aliasLc = info.alias.toLowerCase();
+      const xLc = info.xHandle?.toLowerCase() ?? "";
+      if (aliasLc === q) matchKind = "alias-exact";
+      else if (aliasLc.startsWith(q)) matchKind = "alias-prefix";
+      else if (aliasLc.includes(q)) matchKind = "alias-substring";
+      else if (xLc.length > 0 && (xLc === q || xLc.includes(q))) matchKind = "xhandle";
+    }
+
+    if (matchKind) {
+      hits.push({
+        addr,
+        alias: info.alias,
+        xHandle: info.xHandle,
+        verified: info.verified,
+        profileImage: info.profileImage,
+        totalPnl: info.totalPnl,
+        totalVol: info.totalVol,
+        matchKind,
+      });
+    }
+  }
+
+  const kindRank: Record<WhaleSearchHit["matchKind"], number> = {
+    addr: 0,
+    "alias-exact": 1,
+    "alias-prefix": 2,
+    "alias-substring": 3,
+    xhandle: 4,
+  };
+  hits.sort((a, b) => {
+    if (kindRank[a.matchKind] !== kindRank[b.matchKind]) {
+      return kindRank[a.matchKind] - kindRank[b.matchKind];
+    }
+    return b.totalPnl - a.totalPnl;
+  });
+
+  return hits.slice(0, limit);
 }
 
 /** Replace the in-memory alias map. Called once at boot, optionally re-run

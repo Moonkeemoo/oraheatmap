@@ -26,7 +26,7 @@ import { readAuthFromHeaders } from "./auth-jwt";
 import { SUBCATEGORY_LABELS, subcategoriesOf } from "./subcategorize";
 import { TtlCache } from "./ttl-cache";
 import type { Signal } from "./types";
-import { whaleAlias, whaleAliasInfo, whaleColor } from "./whale-display";
+import { searchWhales, whaleAlias, whaleAliasInfo, whaleColor } from "./whale-display";
 import { fetchWhaleProfile } from "./whale-profile";
 
 import type { MarketHistoryFetcher } from "./market-history";
@@ -829,6 +829,23 @@ export function createApi(deps: ApiDeps) {
            *  individual market (condition_id) instead of subcategory.
            *  rowLabels in the response then map condition_id → marketQuestion. */
           subcategory: t.Optional(t.String()),
+        }),
+      },
+    )
+    .get(
+      "/api/whales/search",
+      ({ query }) => {
+        // Powered by the in-memory alias map (loaded at boot from
+        // whale_aliases.json). No DB hit, so cheap to call on every
+        // keystroke from the UI search popover.
+        const q = query.q ?? "";
+        const limit = Math.min(Math.max(query.limit ?? 10, 1), 20);
+        return { matches: searchWhales(q, limit) };
+      },
+      {
+        query: t.Object({
+          q: t.String(),
+          limit: t.Optional(t.Numeric({ minimum: 1, maximum: 20 })),
         }),
       },
     )

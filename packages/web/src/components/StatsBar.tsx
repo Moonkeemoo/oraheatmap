@@ -5,6 +5,7 @@ import { TOKENS } from "@/lib/tokens";
 import type { Category, HeatmapResponse } from "@/lib/types";
 import { MiniSpark } from "./MiniSpark";
 import { WhaleAvatar } from "./WhaleAvatar";
+import { WhaleSearch } from "./WhaleSearch";
 
 type StatItem = {
   label: string;
@@ -223,6 +224,23 @@ function KpiPopover({ width, children }: { width: number; children: ReactNode })
         color: TOKENS.text,
       }}
     >
+      {/* Invisible bridge fills the 10px gap between card and popover so
+          the mouse never leaves the parent card's subtree while traveling
+          up. Without this the parent's onMouseLeave fires the moment the
+          cursor crosses the gap, the popover unmounts, and you can't
+          reach the search input or click any row. Pointer-events on so
+          it counts for the hit-test, transparent so it's invisible. */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          top: "100%",
+          height: 12,
+          background: "transparent",
+        }}
+      />
       {children}
     </div>
   );
@@ -592,19 +610,27 @@ export function StatsBar({
   }
 
   const drillSuffix = isDrill ? ` · ${categoryMeta(data.drillCategory as Category).label}` : "";
-  const renderTopWhalesPopover = (): ReactNode =>
-    renderWhaleList({
-      title: `Top whales${drillSuffix}`,
-      hint: "by USD entered",
-      sortBy: "volume",
-    });
+  const renderTopWhalesPopover = (): ReactNode => (
+    <WhaleSearch
+      onPick={onWhaleClick}
+      defaultContent={renderWhaleList({
+        title: `Top whales${drillSuffix}`,
+        hint: "by USD entered",
+        sortBy: "volume",
+      })}
+    />
+  );
 
-  const renderActiveWhalesPopover = (): ReactNode =>
-    renderWhaleList({
-      title: `Most active whales${drillSuffix}`,
-      hint: "by signal count",
-      sortBy: "signals",
-    });
+  const renderActiveWhalesPopover = (): ReactNode => (
+    <WhaleSearch
+      onPick={onWhaleClick}
+      defaultContent={renderWhaleList({
+        title: `Most active whales${drillSuffix}`,
+        hint: "by signal count · search 10k+ corpus by name or 0x address",
+        sortBy: "signals",
+      })}
+    />
+  );
 
   const items: StatItem[] = [
     {
