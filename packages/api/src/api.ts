@@ -43,17 +43,20 @@ export type ApiDeps = {
 
 const SSE_HEARTBEAT_MS = 25_000;
 /** Server returns top-N markets per cell (sorted by signal count); UI re-sorts
- *  client-side by active metric and slices to top-5. Extras give the UI
- *  freedom to switch metrics without a refetch. */
-const TOP_MARKETS_PER_CELL = 10;
+ *  client-side by active metric and slices to top-5. A small buffer above
+ *  the display cap lets the UI switch metrics without refetching. Was 10;
+ *  trimmed to 6 because each market entry adds ~150 bytes per cell × 108
+ *  cells = the marginal extras dominated payload size and almost never
+ *  surfaced after re-sort. */
+const TOP_MARKETS_PER_CELL = 6;
 /** Top whales fetched per (category, bucket) cell — surfaced in tooltip's
  *  "Top whales" section, click to open the whale drawer. */
 // Server returns top-N by USD volume; UI re-sorts client-side by the
-// active metric and slices to top-5. 20 gives the UI room to surface
-// a different leader on PNL / WIN RATE / TRADES — small list of 5 was
-// always volume-leaders, so winrate/pnl tabs ended up with all-null
-// "—" because the volume top-5 happened to have no closed trades.
-const TOP_WHALES_PER_CELL = 20;
+// active metric and slices to top-5. Was 20; trimmed to 8 because the
+// per-cell whale array dominated /api/heatmap payload size (~260KB
+// raw, ~50KB compressed). 8 still gives metric-switch buffer while
+// keeping the cold-path JSON well under 1MB.
+const TOP_WHALES_PER_CELL = 8;
 /** Whales surfaced in the StatsBar "Top Whale" hover popover. */
 const TOP_WHALES_LIMIT = 10;
 /** Hard cap on rows in the L3 "markets in subcategory" heatmap — anything
