@@ -14,7 +14,7 @@ import { CellFeed } from "./tooltip/CellFeed";
 import { RowHighlights } from "./tooltip/RowHighlights";
 import { CycleHistogram, rowIndexToServerSlot } from "./tooltip/CycleHistogram";
 import { MacroContext } from "./tooltip/MacroContext";
-import { SlotCharacter } from "./tooltip/SlotCharacter";
+import { SlotCharacter, SlotCharacterSkeleton } from "./tooltip/SlotCharacter";
 import { MarketIcon } from "./tooltip/MarketIcon";
 import {
   fmtDeltaInline,
@@ -706,7 +706,12 @@ export function Tooltip({
           Same activation gate as recurring whales (PATTERN + locked +
           authed). Direction & concentration come from the recurring-
           whales endpoint's `character` block; shape is computed
-          client-side from the cycle histogram samples. */}
+          client-side from the cycle histogram samples. Loading state
+          matches the rendered layout so the drawer doesn't jump when
+          data lands. */}
+      {isPattern && locked && isAuthed && recurring.loading && !recurring.data && (
+        <SlotCharacterSkeleton />
+      )}
       {isPattern && locked && isAuthed && recurring.data?.character && (
         <SlotCharacter
           character={recurring.data.character}

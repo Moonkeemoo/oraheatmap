@@ -5,6 +5,58 @@ import { TOKENS } from "@/lib/tokens";
 import type { SlotCharacter as SlotCharacterData } from "@/hooks/useRecurringWhales";
 import type { HeatmapMetric } from "@/lib/types";
 
+/** Skeleton for the slot-character block — 3 shimmer rows matching
+ *  the Direction / Concentration / Shape layout below. Mirrors the
+ *  exact dimensions so the drawer doesn't jump when the recurring-
+ *  whales response lands and the real character rows take over. */
+export function SlotCharacterSkeleton() {
+  const shimmer: React.CSSProperties = {
+    backgroundImage: `linear-gradient(90deg, ${TOKENS.panel} 0%, ${TOKENS.panel2} 50%, ${TOKENS.panel} 100%)`,
+    backgroundSize: "200% 100%",
+    animation: "skeletonShimmer 1.6s ease-in-out infinite",
+    borderRadius: 3,
+  };
+  return (
+    <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
+      <div
+        style={{
+          fontSize: 9,
+          letterSpacing: 0.5,
+          color: TOKENS.textMuted,
+          textTransform: "uppercase",
+          marginBottom: 8,
+          fontWeight: 600,
+        }}
+      >
+        Slot character
+      </div>
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "82px 1fr auto",
+            alignItems: "center",
+            gap: 10,
+            marginBottom: 6,
+          }}
+        >
+          <div style={{ ...shimmer, height: 9, animationDelay: `${i * 80}ms` }} />
+          <div style={{ ...shimmer, height: 6, animationDelay: `${i * 80 + 30}ms` }} />
+          <div
+            style={{
+              ...shimmer,
+              width: 90,
+              height: 9,
+              animationDelay: `${i * 80 + 60}ms`,
+            }}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /**
  * Behavioural fingerprint for a PATTERN cell. Three analytical lenses
  * stacked as compact bar rows so the analyst reads "what kind of slot
