@@ -151,7 +151,7 @@ export default async function Image() {
             display: "flex",
             flexDirection: "column",
             height: "100%",
-            padding: 56,
+            padding: 44,
           }}
         >
           {/* ── Top row: brand mark + wordmark on the left, Live pill on the right ── */}
@@ -245,16 +245,20 @@ export default async function Image() {
             </div>
           </div>
 
-          {/* ── Headline + sub ── */}
-          <div style={{ marginTop: 36, maxWidth: 920, display: "flex", flexDirection: "column" }}>
+          {/* ── Headline + sub ──
+              Sized down vs. the source HTML mock — that mock was tall
+              (min-height: 100vh) so it never had to fit inside 630px.
+              Headline 56 / sub 17 with tighter gaps lands at ~240px
+              total leaving room for the 230px heatmap panel + stats. */}
+          <div style={{ marginTop: 28, maxWidth: 980, display: "flex", flexDirection: "column" }}>
             <div
               style={{
                 display: "flex",
                 flexWrap: "wrap",
-                fontSize: 68,
+                fontSize: 56,
                 fontWeight: 700,
-                lineHeight: 1.02,
-                letterSpacing: -2.6,
+                lineHeight: 1.0,
+                letterSpacing: -2.2,
                 color: "#e6edf3",
               }}
             >
@@ -264,11 +268,11 @@ export default async function Image() {
             </div>
             <div
               style={{
-                marginTop: 20,
-                fontSize: 21,
-                lineHeight: 1.45,
+                marginTop: 14,
+                fontSize: 17,
+                lineHeight: 1.4,
                 color: "#7d8590",
-                maxWidth: 820,
+                maxWidth: 880,
                 fontWeight: 400,
               }}
             >
