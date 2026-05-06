@@ -531,21 +531,13 @@ const WHALES_TOP_N = 50;
 const WHALES_REPUTATION_LOOKBACK_DAYS = 90;
 const WHALES_MIN_TRADES = 5;
 
-export async function queryWhalesAggRows(
+/** Top-N whales for any whales-subject heatmap. Single ranking
+ *  query so live / pattern / macro all share the same row set. */
+export async function queryTopWhalesByReputation(
   sql: Sql,
-  range: HeatmapRange,
-): Promise<{ rows: ReadonlyArray<AggRow>; topAddrs: ReadonlyArray<string> }> {
-  const cfg = RANGE_CONFIG[range];
-  const bucketInterval = `${cfg.bucketMinutes} minutes`;
-  const windowInterval = `${cfg.windowMinutes} minutes`;
-
-  // First pass — pick the top-N whales by 90d realized PnL with a
-  // minimum-trades floor. Mirrors the LVL-badge reputation logic so
-  // the rows surface "whales worth watching", not "whales who happened
-  // to push the most volume in the last hour". 0x[hex]{40} regex
-  // filters out the synthetic composite addresses (SIG-7).
+): Promise<ReadonlyArray<string>> {
   type AddrRow = { whale_addr: string };
-  const topRows = await sql<AddrRow[]>`
+  const rows = await sql<AddrRow[]>`
     SELECT whale_addr
     FROM signals
     WHERE ts >= NOW() - (${`${WHALES_REPUTATION_LOOKBACK_DAYS} days`}::interval)
@@ -556,8 +548,19 @@ export async function queryWhalesAggRows(
     ORDER BY COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) DESC
     LIMIT ${WHALES_TOP_N}
   `;
-  const topAddrs = topRows.map((r) => r.whale_addr);
-  if (topAddrs.length === 0) return { rows: [], topAddrs };
+  return rows.map((r) => r.whale_addr);
+}
+
+export async function queryWhalesAggRows(
+  sql: Sql,
+  range: HeatmapRange,
+  topAddrs?: ReadonlyArray<string>,
+): Promise<{ rows: ReadonlyArray<AggRow>; topAddrs: ReadonlyArray<string> }> {
+  const cfg = RANGE_CONFIG[range];
+  const bucketInterval = `${cfg.bucketMinutes} minutes`;
+  const windowInterval = `${cfg.windowMinutes} minutes`;
+  const addrs = topAddrs ?? (await queryTopWhalesByReputation(sql));
+  if (addrs.length === 0) return { rows: [], topAddrs: addrs };
 
   // Second pass — per (whale, bucket) aggregation, scoped to the
   // top-N set so the cardinality stays bounded.
@@ -574,11 +577,126 @@ export async function queryWhalesAggRows(
       1::bigint                                                      AS unique_whales
     FROM signals
     WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
-      AND whale_addr = ANY(${topAddrs}::text[])
+      AND whale_addr = ANY(${addrs as string[]}::text[])
     GROUP BY bucket, whale_addr
     ORDER BY bucket
   `;
-  return { rows, topAddrs };
+  return { rows, topAddrs: addrs };
+}
+
+/**
+ * Whales × MACRO aggregation. Same time grid as MACRO (168 hour buckets
+ * over 7d, or 84 day buckets over 12w), per (whale_addr, bucket).
+ * Reuses the top-50 candidate set from queryWhalesAggRows-style
+ * 90-day reputation ranking — passed in by the caller so the API
+ * branch can share one ranking query across pattern / live / macro.
+ */
+export async function queryWhalesMacroAggRows(
+  sql: Sql,
+  macroKind: MacroKind,
+  topAddrs: ReadonlyArray<string>,
+): Promise<ReadonlyArray<AggRow>> {
+  if (topAddrs.length === 0) return [];
+  const cfg = MACRO_CONFIG[macroKind];
+  const bucketInterval = `${cfg.bucketMinutes} minutes`;
+  const windowInterval = `${cfg.windowMinutes} minutes`;
+  return sql<AggRow[]>`
+    SELECT
+      to_char(time_bucket(${bucketInterval}::interval, ts) AT TIME ZONE 'UTC',
+              'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
+      whale_addr                                                    AS category,
+      COUNT(*)::bigint                                              AS signal_count,
+      COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS buy_volume_usd,
+      COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS realized_pnl_sum,
+      COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS win_count,
+      COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS loss_count,
+      1::bigint                                                      AS unique_whales
+    FROM signals
+    WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
+      AND whale_addr = ANY(${topAddrs as string[]}::text[])
+    GROUP BY bucket, whale_addr
+    ORDER BY bucket
+  `;
+}
+
+/**
+ * Whales × PATTERN aggregation. Per (whale_addr, slot) where slot is
+ *   - hour-of-day → UTC hour / 2 (12 slots, 0..11)
+ *   - day-of-week → ISO dow − 1 stored as JS getDay (0..6 with Sun=0)
+ * Average across cycles in the lookback (default 90d).
+ *
+ * Returns per-slot rows shaped like AggRow but with `bucket` holding
+ * the slot index encoded as a fake ISO-ish marker so assembleHeatmap
+ * can dedupe them against the synthetic pattern bucket array the
+ * caller supplies.
+ */
+export async function queryWhalesPatternAggRows(
+  sql: Sql,
+  kind: "hour-of-day" | "day-of-week",
+  topAddrs: ReadonlyArray<string>,
+  lookbackDays = 90,
+): Promise<ReadonlyArray<AggRow>> {
+  if (topAddrs.length === 0) return [];
+  const slotExpr =
+    kind === "hour-of-day"
+      ? sql`(EXTRACT(hour FROM ts AT TIME ZONE 'UTC')::int / 2)`
+      : sql`EXTRACT(dow FROM ts AT TIME ZONE 'UTC')::int`;
+  type SlotRow = {
+    slot: number | string;
+    whale_addr: string;
+    avg_count: number | string;
+    avg_volume: number | string;
+    avg_pnl: number | string;
+    total_wins: number | string;
+    total_losses: number | string;
+  };
+  const rows = await sql<SlotRow[]>`
+    WITH per_whale_cycle AS (
+      SELECT
+        whale_addr,
+        ${kind === "hour-of-day"
+          ? sql`DATE_TRUNC('day', ts AT TIME ZONE 'UTC')`
+          : sql`DATE_TRUNC('week', ts AT TIME ZONE 'UTC')`} AS cycle,
+        ${slotExpr} AS slot,
+        COUNT(*)::bigint                                              AS slot_count,
+        COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS slot_volume,
+        COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS slot_pnl,
+        COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS slot_wins,
+        COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS slot_losses
+      FROM signals
+      WHERE ts >= NOW() - (${`${lookbackDays} days`}::interval)
+        AND ts <= NOW()
+        AND whale_addr = ANY(${topAddrs as string[]}::text[])
+      GROUP BY whale_addr, cycle, slot
+    )
+    SELECT
+      whale_addr,
+      slot::int               AS slot,
+      AVG(slot_count)::numeric  AS avg_count,
+      AVG(slot_volume)::numeric AS avg_volume,
+      AVG(slot_pnl)::numeric    AS avg_pnl,
+      SUM(slot_wins)::bigint    AS total_wins,
+      SUM(slot_losses)::bigint  AS total_losses
+    FROM per_whale_cycle
+    GROUP BY whale_addr, slot
+  `;
+  // Translate slot rows → AggRow shape with synthetic bucket strings
+  // matching the slot-index buckets the API caller will build.
+  return rows.map((r) => {
+    const slot = Number(r.slot);
+    const wins = Number(r.total_wins);
+    const losses = Number(r.total_losses);
+    return {
+      bucket: `slot:${slot}`,
+      category: r.whale_addr,
+      signal_count: Number(r.avg_count),
+      buy_volume_usd: Number(r.avg_volume),
+      realized_pnl_sum: Number(r.avg_pnl),
+      win_count: wins,
+      loss_count: losses,
+      unique_whales: 1,
+    };
+  });
 }
 
 /**

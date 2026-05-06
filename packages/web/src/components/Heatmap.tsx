@@ -321,15 +321,17 @@ export function Heatmap() {
   const { data: fetchedData, loading, error } = useHeatmap({
     mode,
     subject,
-    range: mode === "live" ? range : undefined,
+    // Whales subject reuses the same range / kind / macroKind config
+    // as trades — backend now branches on (subject × mode) and feeds
+    // the appropriate aggregation per combination.
+    range: mode === "live" || subject === "whales" ? range : undefined,
     kind: mode === "pattern" ? patternKind : undefined,
     macroKind: mode === "macro" ? macroKind : undefined,
     lookbackDays: mode === "pattern" ? 30 : undefined,
-    drillCategory,
-    // L3 (per-market) drill: LIVE + MACRO. PATTERN doesn't carry
-    // condition-id-level aggregates and the cycle-overlay chart shape
-    // doesn't make sense per-market.
-    drillSubcategory: mode === "pattern" ? null : drillSubcategory,
+    // Drill state doesn't apply to whales subject (no L2/L3 yet).
+    drillCategory: subject === "whales" ? null : drillCategory,
+    drillSubcategory:
+      subject === "whales" || mode === "pattern" ? null : drillSubcategory,
   });
 
   // Whenever a fresh fetch arrives, drop the optimistic queue.

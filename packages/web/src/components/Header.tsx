@@ -483,7 +483,12 @@ export function Header({
             border: `1px solid ${TOKENS.border}`,
           }}
         >
-          {METRICS.map((m) => {
+          {METRICS.filter(
+            // WHALES metric collapses to 1 per cell when each row IS a
+            // whale. Drop it from the desktop tab strip in the same
+            // way mobile filter sheet does.
+            (mt) => !(subject === "whales" && mt.id === "whales"),
+          ).map((m) => {
             const isActive = metric === m.id;
             const locked = !isAuthed && !isActive;
             return (

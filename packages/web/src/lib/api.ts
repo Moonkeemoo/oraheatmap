@@ -38,7 +38,10 @@ export async function fetchHeatmap(args: {
   const params = new URLSearchParams();
   params.set("mode", args.mode);
   if (args.subject === "whales") params.set("subject", "whales");
-  if (args.mode === "live" && args.range) params.set("range", args.range);
+  // Whales subject still uses range for live, kind for pattern, macroKind for macro
+  if ((args.mode === "live" || args.subject === "whales") && args.range) {
+    params.set("range", args.range);
+  }
   if (args.mode === "pattern") {
     if (args.kind) params.set("kind", args.kind);
     if (args.lookbackDays) params.set("lookbackDays", String(args.lookbackDays));

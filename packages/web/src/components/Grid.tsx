@@ -98,16 +98,21 @@ function makeRowMeta(
   data: HeatmapResponse,
 ): RowMeta {
   // Whales mode — row keys are whale addresses, not category slugs.
-  // Use the per-row meta the API ships inline (alias / colour /
-  // avatar). Truncate long aliases to keep the row chip narrow,
-  // analogous to the L1 category pill width.
+  // Render a neutral grey pill (colour-as-identity is meaningless when
+  // every row is a whale) and append the LVL reputation score to the
+  // alias so the row reads "Theo4 · L82". Drops the deterministic
+  // per-address tint that came in with whaleMeta.color.
   if (data.subject === "whales") {
     const meta = data.whaleMeta?.[cat];
     const alias = meta?.alias ?? shortenAddress(cat);
+    const lvl = meta?.score;
+    const label = lvl !== undefined && lvl !== null
+      ? `${alias} · L${lvl}`
+      : alias;
     return {
       cat,
-      rowColor: meta?.color ?? "#7d8590",
-      rowLabel: alias,
+      rowColor: "#252b33", // neutral panel-grey, no per-whale tint
+      rowLabel: label,
       rawLabel: alias,
       isResolved: false,
       isL3: false,
@@ -842,12 +847,19 @@ export function Grid({
   // on mobile — values don't fit legibly below ~28px wide cells.
   // Time row (header) gets MORE height on mobile so labels can rotate
   // 90° and read top-to-bottom — horizontally they'd collide.
+  // Whales subject squeezes ~50 rows into the same viewport as 9
+  // categories — drop the row floor by ~30% so more whales fit
+  // before the grid starts scrolling internally. Same shrink applies
+  // on mobile where vertical real estate is tightest.
+  const isWhales = data.subject === "whales";
   const labelColW = isMobile
     ? isL3Grid ? 120 : 108
     : isL3Grid ? LABEL_W_L3 : LABEL_W;
-  const minRowH = isMobile
-    ? isL3Grid ? 36 : 28
-    : isL3Grid ? MIN_ROW_H_L3 : MIN_ROW_H;
+  const minRowH = isWhales
+    ? isMobile ? 22 : 26
+    : isMobile
+      ? isL3Grid ? 36 : 28
+      : isL3Grid ? MIN_ROW_H_L3 : MIN_ROW_H;
   const cellMinW = isMobile ? 14 : 0;
   const timeRowH = isMobile ? 44 : TIME_ROW_H;
 

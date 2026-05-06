@@ -172,14 +172,16 @@ export type HeatmapResponse = {
   dataSpan: { earliestTs: string | null; daysOfData: number };
   /** Whales-mode only — display metadata for each whale-keyed row.
    *  Categories array holds whale addresses; this map fills in the
-   *  alias / colour / avatar so the row label can render the whale
-   *  identity instead of running the addresses through categoryMeta. */
+   *  alias / avatar / reputation level so the row label can render
+   *  the whale identity inline as "Theo4 · L82". `score` is the same
+   *  0-100 reputation the WhaleDrawer LVL badge shows. */
   whaleMeta?: Record<
     string,
     {
       alias: string;
       color: string;
       profileImage: string | null;
+      score?: number;
     }
   >;
 };

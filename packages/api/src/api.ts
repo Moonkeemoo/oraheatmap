@@ -15,7 +15,10 @@ import {
   MACRO_CONFIG,
   queryHeatmapAggRows,
   queryMacroAggRows,
+  queryTopWhalesByReputation,
   queryWhalesAggRows,
+  queryWhalesMacroAggRows,
+  queryWhalesPatternAggRows,
   queryTopMarketsPerCell,
   queryTopWhales,
   queryTopWhalesPerCell,
@@ -30,7 +33,7 @@ import { SUBCATEGORY_LABELS, subcategoriesOf } from "./subcategorize";
 import { TtlCache } from "./ttl-cache";
 import type { Signal } from "./types";
 import { searchWhales, whaleAlias, whaleAliasInfo, whaleColor } from "./whale-display";
-import { fetchWhaleProfile } from "./whale-profile";
+import { computeReputation, fetchWhaleProfile } from "./whale-profile";
 
 import type { MarketHistoryFetcher } from "./market-history";
 
@@ -574,8 +577,12 @@ export function createApi(deps: ApiDeps) {
             ? query.subcategory
             : null;
         const isDrillL3 = drillSubcategory !== null;
+        // Hoisted up so the trades-only mode branches below can guard
+        // on it. The whales-subject branch runs after these for any
+        // mode (live / pattern / macro).
+        const subject = query.subject ?? "trades";
 
-        if (mode === "pattern") {
+        if (subject === "trades" && mode === "pattern") {
           const kind: PatternKind = query.kind ?? "hour-of-day";
           // HOUR cycle = 1 day → 30 cycles by default (~30 days).
           // DOW  cycle = 1 week → 12 cycles by default (~12 weeks = 84 days).
@@ -625,7 +632,7 @@ export function createApi(deps: ApiDeps) {
         // Drill behaves the same as LIVE: L1 → L2 (subcategories) → L3
         // (per-market). Skips per-cell top-markets / top-whales — at this
         // density they'd dominate the payload and never render anyway.
-        if (mode === "macro") {
+        if (subject === "trades" && mode === "macro") {
           const macroKind = (query.macroKind ?? "hour-week") as
             | "hour-week"
             | "day-12w";
@@ -771,44 +778,141 @@ export function createApi(deps: ApiDeps) {
         }
 
         // subject === "whales" — pivot rows from categories to top-N
-        // whale addresses. For now reuses LIVE bucketing regardless of
-        // requested mode (PATTERN / MACRO whales bucketing is a
-        // follow-up). Visual idiom matches LIVE; UI renders whale
-        // labels via response.whaleMeta.
-        const subject = query.subject ?? "trades";
+        // whale addresses. Supports all three view modes:
+        //   live   → 4 ranges × 12 buckets, whale × time grid
+        //   macro  → 168 hour buckets / 84 day buckets per whale
+        //   pattern→ 12 hour-of-day or 7 day-of-week slots, averaged
+        //            over 90d cycles per whale
+        // Top-50 whales ranked by 90d realized PnL across all modes
+        // — single ranking query so trades / pattern / macro stay
+        // consistent.
         if (subject === "whales") {
+          const topAddrs = await queryTopWhalesByReputation(deps.sql);
           const range: HeatmapRange = query.range ?? "1h";
-          const cfg = RANGE_CONFIG[range];
-          const buckets = buildBuckets(now, cfg.bucketMinutes, cfg.slots);
-          const { rows: whalesAggRows, topAddrs } = await queryWhalesAggRows(
-            deps.sql,
-            range,
-          );
+
+          // Build buckets + agg rows by mode. assembleHeatmap is the
+          // same path for all three; only the bucket array shape and
+          // aggregation source differ.
+          let buckets: ReadonlyArray<{ ts: string; index: number }>;
+          let whalesAggRows: ReadonlyArray<{
+            bucket: string;
+            category: string;
+            signal_count: number | string;
+            buy_volume_usd: number | string;
+            realized_pnl_sum: number | string | null;
+            win_count: number | string;
+            loss_count: number | string;
+            unique_whales: number | string;
+          }>;
+          let assembleRange: HeatmapRange = range;
+          if (mode === "macro") {
+            const macroKind = (query.macroKind ?? "hour-week") as
+              | "hour-week"
+              | "day-12w";
+            const macroCfg = MACRO_CONFIG[macroKind];
+            buckets = buildBuckets(now, macroCfg.bucketMinutes, macroCfg.slots);
+            whalesAggRows = await queryWhalesMacroAggRows(
+              deps.sql,
+              macroKind,
+              topAddrs,
+            );
+            assembleRange = "1h"; // assembleHeatmap range arg unused for macro shape
+          } else if (mode === "pattern") {
+            const kind = (query.kind ?? "hour-of-day") as
+              | "hour-of-day"
+              | "day-of-week";
+            // 12 hour-of-day slots OR 7 day-of-week slots — synthetic
+            // "slot:N" bucket strings match what queryWhalesPatternAggRows
+            // emits, so assembleHeatmap can dedupe rows against them.
+            const slotCount = kind === "hour-of-day" ? 12 : 7;
+            buckets = Array.from({ length: slotCount }, (_, i) => ({
+              ts: `slot:${i}`,
+              index: i,
+            }));
+            whalesAggRows = await queryWhalesPatternAggRows(
+              deps.sql,
+              kind,
+              topAddrs,
+            );
+          } else {
+            const cfg = RANGE_CONFIG[range];
+            buckets = buildBuckets(now, cfg.bucketMinutes, cfg.slots);
+            const live = await queryWhalesAggRows(deps.sql, range, topAddrs);
+            whalesAggRows = live.rows;
+          }
           const grid = assembleHeatmap(
             whalesAggRows,
             [],
             buckets,
-            range,
+            assembleRange,
             now,
             { rowKeys: topAddrs as string[] },
             [],
           );
+          // 90-day reputation inputs for the top addrs — same window
+          // and formula as the LVL badge in WhaleDrawer. Single batch
+          // query keyed on the top-N set, computed per-whale in JS so
+          // we can reuse the canonical computeReputation helper.
+          type ReputationRow = {
+            whale_addr: string;
+            trades: number | string;
+            wins: number | string;
+            losses: number | string;
+            pnl: number | string | null;
+          };
+          const repRows = topAddrs.length === 0
+            ? []
+            : await deps.sql<ReputationRow[]>`
+                SELECT
+                  whale_addr,
+                  COUNT(*)::bigint                                              AS trades,
+                  COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS wins,
+                  COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS losses,
+                  COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl
+                FROM signals
+                WHERE ts >= NOW() - INTERVAL '90 days'
+                  AND whale_addr = ANY(${topAddrs as string[]}::text[])
+                GROUP BY whale_addr
+              `;
+          const repByAddr = new Map<string, number>();
+          for (const r of repRows) {
+            const trades = Number(r.trades);
+            const wins = Number(r.wins);
+            const losses = Number(r.losses);
+            const decided = wins + losses;
+            const winRate = decided > 0 ? wins / decided : null;
+            const pnl = r.pnl === null ? 0 : Number(r.pnl);
+            repByAddr.set(
+              r.whale_addr,
+              computeReputation({ pnl, trades, winRate }),
+            );
+          }
+
           const whaleMeta: Record<
             string,
-            { alias: string; color: string; profileImage: string | null }
+            { alias: string; color: string; profileImage: string | null; score?: number }
           > = {};
           for (const addr of topAddrs) {
             whaleMeta[addr] = {
               alias: whaleAlias(addr),
               color: whaleColor(addr),
               profileImage: whaleAliasInfo(addr)?.profileImage ?? null,
+              score: repByAddr.get(addr),
             };
           }
           const whalesResponse = {
             ...grid,
-            mode: "live" as const,
+            mode,
             subject: "whales" as const,
             range,
+            // Surface kind / macroKind so the client knows which
+            // pattern / macro variant the response represents.
+            ...(mode === "pattern"
+              ? { patternKind: query.kind ?? "hour-of-day", lookbackDays: 90 }
+              : {}),
+            ...(mode === "macro"
+              ? { macroKind: query.macroKind ?? "hour-week" }
+              : {}),
             trackedWhales,
             whaleMeta,
             metric,

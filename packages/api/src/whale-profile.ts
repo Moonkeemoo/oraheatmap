@@ -116,7 +116,7 @@ export type WhaleProfile = {
  *     5 trades, -$10k,  30% wins  → ≈ 40
  *     0 trades                    → 50 (neutral)
  */
-function computeReputation(input: {
+export function computeReputation(input: {
   pnl: number;
   trades: number;
   winRate: number | null;
