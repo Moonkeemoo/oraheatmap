@@ -590,9 +590,14 @@ function MobileHeader({
     <>
       <div
         style={{
-          paddingTop: "max(env(safe-area-inset-top, 8px), 8px)",
-          paddingLeft: "max(env(safe-area-inset-left, 12px), 12px)",
-          paddingRight: "max(env(safe-area-inset-right, 12px), 12px)",
+          // --tg-safe-* are written by the /tg Mini App client (system
+          // + TG chrome inset summed) so the brand row clears the
+          // Close / down-arrow / ⋯ controls TG renders on top in
+          // fullscreen mode. Fallback covers regular mobile Safari /
+          // Chrome via env() safe-area-inset-*.
+          paddingTop: "max(var(--tg-safe-top, env(safe-area-inset-top, 8px)), 8px)",
+          paddingLeft: "max(var(--tg-safe-left, env(safe-area-inset-left, 12px)), 12px)",
+          paddingRight: "max(var(--tg-safe-right, env(safe-area-inset-right, 12px)), 12px)",
           paddingBottom: 8,
           borderBottom: `1px solid ${TOKENS.border}`,
           display: "flex",

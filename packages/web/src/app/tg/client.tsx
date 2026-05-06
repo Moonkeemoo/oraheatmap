@@ -39,6 +39,14 @@ type TelegramWebApp = {
    *  user dragging across our scrollable middle pane doesn't close
    *  the Mini App by accident. */
   disableVerticalSwipes?: () => void;
+  /** Bot API 8.0+ — system UI inset (status bar / home indicator).
+   *  Exists in fullscreen mode where TG also reports content insets
+   *  to give Mini Apps room for TG's own chrome (Close button etc.). */
+  safeAreaInset?: { top: number; right: number; bottom: number; left: number };
+  /** Bot API 8.0+ — area where TG draws its own controls (Close, ✕,
+   *  ⋯). Sum these with safeAreaInset to compute total padding the
+   *  Mini App content needs at each edge. */
+  contentSafeAreaInset?: { top: number; right: number; bottom: number; left: number };
 };
 
 declare global {
@@ -118,8 +126,24 @@ export function TgMiniApp() {
             `${wa.viewportStableHeight || wa.viewportHeight}px`,
           );
         };
+        // System UI + TG chrome insets — sum because TG renders its
+        // own controls (Close button, three-dot menu, swipe arrow) in
+        // contentSafeAreaInset, which is INSIDE the system safe area.
+        // Both need clearance for our brand row not to be obscured.
+        const syncInsets = (): void => {
+          const s = wa.safeAreaInset ?? { top: 0, right: 0, bottom: 0, left: 0 };
+          const c = wa.contentSafeAreaInset ?? { top: 0, right: 0, bottom: 0, left: 0 };
+          const root = document.documentElement;
+          root.style.setProperty("--tg-safe-top", `${s.top + c.top}px`);
+          root.style.setProperty("--tg-safe-bottom", `${s.bottom + c.bottom}px`);
+          root.style.setProperty("--tg-safe-left", `${s.left + c.left}px`);
+          root.style.setProperty("--tg-safe-right", `${s.right + c.right}px`);
+        };
         syncViewport();
+        syncInsets();
         wa.onEvent?.("viewportChanged", syncViewport);
+        wa.onEvent?.("safeAreaChanged", syncInsets);
+        wa.onEvent?.("contentSafeAreaChanged", syncInsets);
 
         // No initData ⇒ page opened outside Telegram (someone shared
         // the URL to a regular browser). Show a hint, don't try to
