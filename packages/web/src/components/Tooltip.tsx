@@ -953,7 +953,7 @@ export function Tooltip({
             textAlign: "center",
           }}
         >
-          {locked ? "клікни ще раз щоб закрити" : "клікни щоб відкрити панель"}
+          {locked ? "click again to close" : "click to open the panel"}
         </div>
       )}
     </>

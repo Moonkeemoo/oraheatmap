@@ -1,0 +1,73 @@
+<svg viewBox="0 0 1200 675" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="1200" height="675" fill="#0d1117"/>
+
+  <text x="150" y="68" style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;fill:#7d8590;letter-spacing:1.6px">LIVE · LAST 24H · 10,423 WHALES</text>
+  <circle cx="1040" cy="64" r="4" fill="#f85149"/>
+  <text x="1052" y="68" style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;fill:#e6edf3;letter-spacing:1.6px">LIVE</text>
+
+  <text x="135" y="138" style="font-family:ui-monospace,monospace;font-size:13px;fill:#7d8590;letter-spacing:1.2px" text-anchor="end">CRYPTO</text>
+  <text x="135" y="222" style="font-family:ui-monospace,monospace;font-size:13px;fill:#7d8590;letter-spacing:1.2px" text-anchor="end">POLITICS</text>
+  <text x="135" y="306" style="font-family:ui-monospace,monospace;font-size:13px;fill:#7d8590;letter-spacing:1.2px" text-anchor="end">SPORTS</text>
+  <text x="135" y="390" style="font-family:ui-monospace,monospace;font-size:13px;fill:#7d8590;letter-spacing:1.2px" text-anchor="end">FINANCE</text>
+
+  <g transform="translate(150,100)">
+    <rect x="0" y="0" width="115" height="70" rx="3" fill="#1c2128"/>
+    <rect x="120" y="0" width="115" height="70" rx="3" fill="#238636"/>
+    <rect x="240" y="0" width="115" height="70" rx="3" fill="#2ea043"/>
+    <rect x="360" y="0" width="115" height="70" rx="3" fill="#3fb950"/>
+    <rect x="480" y="0" width="115" height="70" rx="3" fill="#238636"/>
+    <rect x="600" y="0" width="115" height="70" rx="3" fill="#3fb950"/>
+    <rect x="720" y="0" width="115" height="70" rx="3" fill="#2ea043"/>
+    <rect x="840" y="0" width="115" height="70" rx="3" fill="#1c2128"/>
+
+    <rect x="0" y="84" width="115" height="70" rx="3" fill="#238636"/>
+    <rect x="120" y="84" width="115" height="70" rx="3" fill="#2ea043"/>
+    <rect x="240" y="84" width="115" height="70" rx="3" fill="#3fb950"/>
+    <rect x="360" y="84" width="115" height="70" rx="3" fill="#f0b429"/>
+    <rect x="480" y="84" width="115" height="70" rx="3" fill="#f85149"/>
+    <rect x="600" y="84" width="115" height="70" rx="3" fill="#da3633"/>
+    <rect x="720" y="84" width="115" height="70" rx="3" fill="#f85149"/>
+    <rect x="840" y="84" width="115" height="70" rx="3" fill="#f0b429"/>
+
+    <rect x="0" y="168" width="115" height="70" rx="3" fill="#161b22"/>
+    <rect x="120" y="168" width="115" height="70" rx="3" fill="#1c2128"/>
+    <rect x="240" y="168" width="115" height="70" rx="3" fill="#238636"/>
+    <rect x="360" y="168" width="115" height="70" rx="3" fill="#2ea043"/>
+    <rect x="480" y="168" width="115" height="70" rx="3" fill="#3fb950"/>
+    <rect x="600" y="168" width="115" height="70" rx="3" fill="#2ea043"/>
+    <rect x="720" y="168" width="115" height="70" rx="3" fill="#1c2128"/>
+    <rect x="840" y="168" width="115" height="70" rx="3" fill="#161b22"/>
+
+    <rect x="0" y="252" width="115" height="70" rx="3" fill="#1c2128"/>
+    <rect x="120" y="252" width="115" height="70" rx="3" fill="#238636"/>
+    <rect x="240" y="252" width="115" height="70" rx="3" fill="#2ea043"/>
+    <rect x="360" y="252" width="115" height="70" rx="3" fill="#f0b429"/>
+    <rect x="480" y="252" width="115" height="70" rx="3" fill="#3fb950"/>
+    <rect x="600" y="252" width="115" height="70" rx="3" fill="#238636"/>
+    <rect x="720" y="252" width="115" height="70" rx="3" fill="#1c2128"/>
+    <rect x="840" y="252" width="115" height="70" rx="3" fill="#161b22"/>
+  </g>
+
+  <rect x="628" y="180" width="121" height="76" rx="3" fill="none" stroke="#f0b429" stroke-width="2.5"/>
+  <g transform="translate(688,168)">
+    <rect x="-22" y="-20" width="44" height="22" rx="11" fill="#f0b429"/>
+    <text y="-5" text-anchor="middle" style="font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:700;fill:#0d1117">×9</text>
+  </g>
+
+  <g transform="translate(390,460)">
+    <g transform="scale(0.85)">
+      <rect x="0" y="0" width="30" height="30" rx="2" fill="#3fb950"/>
+      <rect x="35" y="0" width="30" height="30" rx="2" fill="#238636"/>
+      <rect x="0" y="35" width="30" height="30" rx="2" fill="#f0b429"/>
+      <rect x="35" y="35" width="30" height="30" rx="2" fill="#3fb950"/>
+      <rect x="70" y="35" width="30" height="30" rx="2" fill="#238636"/>
+      <rect x="35" y="70" width="30" height="30" rx="2" fill="#f85149"/>
+      <rect x="70" y="70" width="30" height="30" rx="2" fill="#f0b429"/>
+    </g>
+    <text x="115" y="60" style="font-family:'Space Grotesk','Helvetica Neue',Arial,sans-serif;font-size:74px;font-weight:700;letter-spacing:-3.5px;fill:#e6edf3">oralab</text>
+    <text x="115" y="92" style="font-family:'Space Grotesk','Helvetica Neue',Arial,sans-serif;font-size:18px;font-weight:700;letter-spacing:-0.5px;fill:#7d8590">POLYMARKET HEATMAP</text>
+  </g>
+
+  <text x="600" y="624" style="font-family:'Space Grotesk','Helvetica Neue',Arial,sans-serif;font-size:22px;font-weight:500;fill:#7d8590" text-anchor="middle">free, no signup ·</text>
+  <text x="755" y="624" style="font-family:'Space Grotesk','Helvetica Neue',Arial,sans-serif;font-size:22px;font-weight:700;fill:#f0b429" text-anchor="start">oralab.xyz</text>
+</svg>
