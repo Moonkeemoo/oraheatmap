@@ -440,6 +440,7 @@ export function Grid({
 }) {
   const num = data.buckets.length;
   const isPattern = data.mode === "pattern";
+  const isMacro = data.mode === "macro";
 
   const localShiftIdx = useMemo<number>(() => {
     if (data.mode !== "pattern") return 0;
@@ -588,6 +589,7 @@ export function Grid({
               flashSeq={flashSeq}
               heat={heat}
               showDelta={isPattern}
+              compact={isMacro}
               isLocked={lockedCellId === cellId}
               onHover={
                 options.isDragOverlay
@@ -628,8 +630,13 @@ export function Grid({
         style={{
           display: "grid",
           gridTemplateColumns: `${labelColW}px repeat(${num}, minmax(0, 1fr))`,
-          gridTemplateRows: `${TIME_ROW_H}px repeat(${displayCategories.length}, minmax(${minRowH}px, 1fr))`,
-          gap: 4,
+          // Macro: no time-row + tighter rows + 1px gaps. The matrix
+          // becomes a barcode-like density field where image carries
+          // the signal — labels would be impossible at this scale anyway.
+          gridTemplateRows: isMacro
+            ? `repeat(${displayCategories.length}, minmax(36px, 1fr))`
+            : `${TIME_ROW_H}px repeat(${displayCategories.length}, minmax(${minRowH}px, 1fr))`,
+          gap: isMacro ? 1 : 4,
           width: "100%",
           height: "100%",
           position: "relative",
@@ -637,53 +644,55 @@ export function Grid({
           boxSizing: "border-box",
         }}
       >
-        {/* Header row — time labels */}
-        <div
-          style={{
-            gridColumn: "1 / -1",
-            display: "grid",
-            gridTemplateColumns: "subgrid",
-            gap: 4,
-          }}
-        >
-          <div />
-          {buckets.map((b, i) => {
-            const lbl = formatSlotLabel(b, data.mode, data.patternKind, i, data.range);
-            const isNow = i === nowSlotIndex;
-            return (
-              <div
-                key={i}
-                style={{
-                  fontSize: 10,
-                  fontFamily: TOKENS.mono,
-                  color: isNow ? TOKENS.pos : TOKENS.textSec,
-                  fontWeight: isNow ? 700 : 500,
-                  letterSpacing: 0.5,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                {isNow ? (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                    <span
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: 6,
-                        background: TOKENS.pos,
-                        boxShadow: `0 0 6px ${TOKENS.pos}`,
-                      }}
-                    />
-                    {lbl}
-                  </span>
-                ) : (
-                  lbl
-                )}
-              </div>
-            );
-          })}
-        </div>
+        {/* Header row — time labels (skipped entirely in macro mode) */}
+        {!isMacro && (
+          <div
+            style={{
+              gridColumn: "1 / -1",
+              display: "grid",
+              gridTemplateColumns: "subgrid",
+              gap: 4,
+            }}
+          >
+            <div />
+            {buckets.map((b, i) => {
+              const lbl = formatSlotLabel(b, data.mode, data.patternKind, i, data.range);
+              const isNow = i === nowSlotIndex;
+              return (
+                <div
+                  key={i}
+                  style={{
+                    fontSize: 10,
+                    fontFamily: TOKENS.mono,
+                    color: isNow ? TOKENS.pos : TOKENS.textSec,
+                    fontWeight: isNow ? 700 : 500,
+                    letterSpacing: 0.5,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {isNow ? (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                      <span
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: 6,
+                          background: TOKENS.pos,
+                          boxShadow: `0 0 6px ${TOKENS.pos}`,
+                        }}
+                      />
+                      {lbl}
+                    </span>
+                  ) : (
+                    lbl
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <SortableContext items={displayCategories} strategy={verticalListSortingStrategy}>
           {displayCategories.map((cat) => (

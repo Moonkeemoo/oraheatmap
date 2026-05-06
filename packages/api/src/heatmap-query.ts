@@ -35,6 +35,19 @@ export const RANGE_CONFIG: Readonly<Record<HeatmapRange, RangeConfig>> = Object.
   "12w": { bucketMinutes: 1 * WEEK, windowMinutes: 12 * WEEK,   slots: 12, source: "hourly_agg" },
 });
 
+// ─── Macro view ──────────────────────────────────────────────────────────────
+// Macro mode keeps the same fine bucket size as a LIVE range but expands
+// the visible window ~24×, producing a dense matrix where image-density
+// is the signal. Phase 1 ships only the 5-min × 24-hour configuration
+// (288 buckets); other configurations land in subsequent phases.
+//
+// Reads directly from signals_5min CAGG — bucket size matches one-to-one
+// so no re-bucketing math is needed.
+export type MacroRange = "1h"; // proxy name for "1h-equivalent zoom out"
+export const MACRO_CONFIG: Readonly<Record<MacroRange, RangeConfig>> = Object.freeze({
+  "1h": { bucketMinutes: 5 * MIN, windowMinutes: 24 * HOUR, slots: 288, source: "raw" },
+});
+
 // ─── Wire types ──────────────────────────────────────────────────────────────
 
 export type MarketSummary = {
@@ -472,6 +485,84 @@ export async function queryHeatmapAggRows(
     WHERE bucket >= NOW() - (${windowInterval}::interval) AND bucket <= NOW()
     GROUP BY 1, category
     ORDER BY 1
+  `;
+  return rows;
+}
+
+/**
+ * Macro-mode aggregation. 5-minute × 24-hour window (288 buckets per row).
+ * Reads signals_5min CAGG directly — bucket size matches 1:1 so no
+ * re-bucketing. Drill modes fall back to raw signals because the CAGG
+ * doesn't carry subcategory / condition_id.
+ */
+export async function queryMacroAggRows(
+  sql: Sql,
+  drillCategory: Category | null = null,
+  drillSubcategory: string | null = null,
+): Promise<ReadonlyArray<AggRow>> {
+  const cfg = MACRO_CONFIG["1h"];
+  const windowInterval = `${cfg.windowMinutes} minutes`;
+  const bucketInterval = `${cfg.bucketMinutes} minutes`;
+
+  // L3 drill: per-market.
+  if (drillCategory !== null && drillSubcategory !== null) {
+    const rows = await sql<AggRow[]>`
+      SELECT
+        to_char(time_bucket(${bucketInterval}::interval, ts) AT TIME ZONE 'UTC',
+                'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
+        condition_id                                                  AS category,
+        COUNT(*)::bigint                                              AS signal_count,
+        COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS buy_volume_usd,
+        COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS realized_pnl_sum,
+        COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS win_count,
+        COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS loss_count,
+        COUNT(DISTINCT whale_addr)::bigint                            AS unique_whales
+      FROM signals
+      WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
+        AND category = ${drillCategory}
+        AND subcategory = ${drillSubcategory}
+        AND condition_id IS NOT NULL
+      GROUP BY bucket, condition_id
+      ORDER BY bucket
+    `;
+    return rows;
+  }
+  // L2 drill: per-subcategory.
+  if (drillCategory !== null) {
+    const rows = await sql<AggRow[]>`
+      SELECT
+        to_char(time_bucket(${bucketInterval}::interval, ts) AT TIME ZONE 'UTC',
+                'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
+        subcategory                                                   AS category,
+        COUNT(*)::bigint                                              AS signal_count,
+        COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS buy_volume_usd,
+        COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS realized_pnl_sum,
+        COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS win_count,
+        COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS loss_count,
+        COUNT(DISTINCT whale_addr)::bigint                            AS unique_whales
+      FROM signals
+      WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
+        AND category = ${drillCategory}
+        AND subcategory IS NOT NULL
+      GROUP BY bucket, subcategory
+      ORDER BY bucket
+    `;
+    return rows;
+  }
+  // L1: top-level. Read signals_5min CAGG directly — exact bucket match.
+  const rows = await sql<AggRow[]>`
+    SELECT
+      to_char(bucket AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
+      category,
+      signal_count,
+      buy_volume_usd,
+      realized_pnl_sum,
+      win_count,
+      loss_count,
+      unique_whales
+    FROM signals_5min
+    WHERE bucket >= NOW() - (${windowInterval}::interval) AND bucket <= NOW()
+    ORDER BY bucket
   `;
   return rows;
 }

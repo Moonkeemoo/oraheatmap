@@ -12,7 +12,9 @@ import {
   fetchTopWhale,
   fetchUniqueWhalesInWindow,
   type HeatmapRange,
+  MACRO_CONFIG,
   queryHeatmapAggRows,
+  queryMacroAggRows,
   queryTopMarketsPerCell,
   queryTopWhales,
   queryTopWhalesPerCell,
@@ -141,6 +143,7 @@ const landingStatsCache = new TtlCache<unknown>(2);
  *  payload feels live to the user. */
 function heatmapTtlMs(mode: string, range: string | undefined): number {
   if (mode === "pattern") return 300_000; // 5 min — averages move slowly
+  if (mode === "macro") return 30_000; // 5min CAGG refresh ~1min, 30s feels live without thrashing
   switch (range) {
     case "1h":
       return 30_000; // client polls 10s; one poll out of 3 will be a fresh fetch
@@ -612,6 +615,52 @@ export function createApi(deps: ApiDeps) {
           return patternResponse;
         }
 
+        // macro mode — dense matrix, single hardcoded config (5min × 24h ×
+        // 288 buckets). Skips per-cell top-markets / top-whales: at this
+        // density they'd dominate the payload and never render anyway.
+        if (mode === "macro") {
+          const macroCfg = MACRO_CONFIG["1h"];
+          const macroBuckets = buildBuckets(now, macroCfg.bucketMinutes, macroCfg.slots);
+          const aggRows = await queryMacroAggRows(
+            deps.sql,
+            isDrill ? drillCategory : null,
+            drillSubcategory,
+          );
+          const grid = assembleHeatmap(
+            aggRows,
+            [], // no markets
+            macroBuckets,
+            "1h", // range arg unused for macro shape; reuse 1h slot
+            now,
+            { drillCategory: isDrill ? drillCategory : null },
+            [], // no whale rows
+          );
+          // Empty out per-cell markets/topWhales arrays (they got
+          // initialised to [] by assembleHeatmap, fine).
+          const macroResponse = {
+            ...grid,
+            mode: "macro" as const,
+            range: "1h" as const, // included so client knows the bucket size convention
+            trackedWhales,
+            drillSubcategory,
+            drillSubcategoryLabel: drillSubcategory
+              ? SUBCATEGORY_LABELS[drillSubcategory] ?? drillSubcategory
+              : null,
+            subcategoryLabels: null,
+            marketSlugs: null,
+            marketIcons: null,
+            marketQuestions: null,
+            resolvedRows: [],
+            topWhales: null,
+            metric,
+            dataSpan,
+          };
+          heatmapCache.set(cacheKey, macroResponse, ttlMs);
+          set.headers["x-cache"] = "miss";
+          set.headers["cache-control"] = ccHeader;
+          return macroResponse;
+        }
+
         // live (default)
         const range: HeatmapRange = query.range ?? "1h";
         const cfg = RANGE_CONFIG[range];
@@ -803,7 +852,7 @@ export function createApi(deps: ApiDeps) {
       },
       {
         query: t.Object({
-          mode: t.Optional(t.Union([t.Literal("live"), t.Literal("pattern")])),
+          mode: t.Optional(t.Union([t.Literal("live"), t.Literal("pattern"), t.Literal("macro")])),
           range: t.Optional(
             t.Union([t.Literal("1h"), t.Literal("24h"), t.Literal("12d"), t.Literal("12w")]),
           ),

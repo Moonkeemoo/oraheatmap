@@ -66,6 +66,7 @@ export function Cell({
   flashSeq,
   heat,
   showDelta,
+  compact,
   isLocked,
   onHover,
   onClick,
@@ -82,6 +83,9 @@ export function Cell({
   heat: number;
   /** Render the parenthetical delta next to the main value (PATTERN mode only). */
   showDelta: boolean;
+  /** Macro mode: skip value text + ring animations + heat aura. The cell
+   *  becomes a pure colour swatch — image carries the signal. */
+  compact?: boolean;
   /** This cell currently has the locked tooltip — render a persistent ring. */
   isLocked: boolean;
   onHover: (h: { cell: HeatmapCell; anchor: TooltipAnchor } | null) => void;
@@ -199,6 +203,15 @@ export function Cell({
         ? `0 8px 22px rgba(0,0,0,0.55), 0 0 0 1px ${TOKENS.borderHi}`
         : "none";
 
+  // Macro variant — sharper / more saturated colour, dim ground for
+  // empty cells (so the matrix reads as a continuous surface, not a
+  // pixel field with random gaps), no per-cell animations.
+  const macroBg = compact && visualEmpty
+    ? TOKENS.panel2
+    : compact && !visualEmpty
+      ? bg
+      : bg;
+
   return (
     <div
       ref={ref}
@@ -206,28 +219,36 @@ export function Cell({
       onMouseLeave={onLeave}
       onClick={onClickHandler}
       style={{
-        background: bg,
-        backgroundImage: visualEmpty
+        background: compact ? macroBg : bg,
+        backgroundImage: !compact && visualEmpty
           ? `radial-gradient(circle at 50% 50%, ${TOKENS.border} 0.5px, transparent 1px)`
           : "none",
-        backgroundSize: visualEmpty ? "6px 6px" : "auto",
-        border: visualEmpty ? `1px solid ${TOKENS.border}` : "none",
-        borderRadius: 7,
+        backgroundSize: !compact && visualEmpty ? "6px 6px" : "auto",
+        border: !compact && visualEmpty ? `1px solid ${TOKENS.border}` : "none",
+        borderRadius: compact ? 1 : 7,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         cursor: isEmpty ? "default" : "pointer",
-        transform: hovered && !isEmpty ? "scale(1.1)" : "scale(1)",
-        transition: "transform .14s cubic-bezier(.2,.7,.3,1), box-shadow .14s, background .3s",
-        boxShadow: finalShadow,
+        transform: !compact && hovered && !isEmpty ? "scale(1.1)" : "scale(1)",
+        transition: compact
+          ? "background .15s ease-out"
+          : "transform .14s cubic-bezier(.2,.7,.3,1), box-shadow .14s, background .3s",
+        // Compact: brighter on hover instead of scaling (scale at 1px
+        // gap distances would clip neighbours). Plus a subtle outline.
+        boxShadow:
+          compact && hovered && !isEmpty
+            ? `0 0 0 1px ${TOKENS.text}66, 0 0 6px rgba(0,0,0,0.6)`
+            : finalShadow,
+        filter: compact && hovered && !isEmpty ? "brightness(1.4)" : undefined,
         position: "relative",
         zIndex: isLocked ? 6 : hovered ? 5 : 1,
-        animation: "cellLand .35s cubic-bezier(.2,.7,.3,1) both",
-        outline: isNowCol && !isEmpty ? `1px solid rgba(63,185,80,0.28)` : "none",
+        animation: compact ? undefined : "cellLand .35s cubic-bezier(.2,.7,.3,1) both",
+        outline: !compact && isNowCol && !isEmpty ? `1px solid rgba(63,185,80,0.28)` : "none",
         outlineOffset: -1,
       }}
     >
-      {flashSeq > 0 && (
+      {!compact && flashSeq > 0 && (
         <span
           key={`flash-${flashSeq}`}
           style={{
@@ -245,7 +266,7 @@ export function Cell({
           }}
         />
       )}
-      {!isEmpty && (
+      {!compact && !isEmpty && (
         <span
           style={{
             display: "inline-flex",

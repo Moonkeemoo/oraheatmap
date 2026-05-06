@@ -7,7 +7,7 @@
  * 1h/24h/7d/30d within a (mode, level, parents) tuple.
  */
 
-export type Mode = "live" | "pattern";
+export type Mode = "live" | "pattern" | "macro";
 export type PatternKind = "hour-of-day" | "day-of-week";
 
 /** Build the scope key sent to the backend. parents is the chain from root
@@ -24,7 +24,9 @@ export function buildScopeKey(
       ? patternKind === "day-of-week"
         ? "PATTERN-DOW"
         : "PATTERN-HOUR"
-      : "LIVE";
+      : mode === "macro"
+        ? "MACRO"
+        : "LIVE";
   return `L${level}:${modeKey}${parents.length > 0 ? ":" + parents.join(":") : ""}`;
 }
 

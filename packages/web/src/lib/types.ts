@@ -11,7 +11,7 @@ export type Category =
   | "Climate"
   | "Other";
 
-export type Mode = "live" | "pattern";
+export type Mode = "live" | "pattern" | "macro";
 
 export type LiveRange = "1h" | "24h" | "12d" | "12w";
 export type PatternKind = "hour-of-day" | "day-of-week";
