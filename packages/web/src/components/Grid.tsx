@@ -21,6 +21,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useMemo, useState } from "react";
 import { categoryMeta } from "@/lib/categories";
 import { makeIntensityFn } from "@/lib/colors";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { applyOrder } from "@/lib/row-order";
 import { marketUrl } from "@/lib/polymarket-url";
 import { TOKENS } from "@/lib/tokens";
@@ -585,6 +586,7 @@ export function Grid({
   const num = data.buckets.length;
   const isPattern = data.mode === "pattern";
   const isMacro = data.mode === "macro";
+  const isMobile = useIsMobile();
 
   const localShiftIdx = useMemo<number>(() => {
     if (data.mode !== "pattern") return 0;
@@ -733,7 +735,7 @@ export function Grid({
               flashSeq={flashSeq}
               heat={heat}
               showDelta={isPattern}
-              compact={isMacro}
+              compact={isMacro || isMobile}
               isLocked={lockedCellId === cellId}
               onHover={
                 options.isDragOverlay
@@ -758,8 +760,19 @@ export function Grid({
     );
   };
 
-  const labelColW = isL3Grid ? LABEL_W_L3 : LABEL_W;
-  const minRowH = isL3Grid ? MIN_ROW_H_L3 : MIN_ROW_H;
+  // Mobile shrinks label column + row height ~30% so cells get more pixels.
+  // Cells also pick up a min-width floor (CELL_MIN_W) so the grid grows
+  // wider than the viewport on macro / drill, and the heatmap container's
+  // overflow-x: auto kicks in to scroll. Compact mode (heat-only, no value
+  // text) is forced for every mode, not just macro — values don't fit
+  // legibly below ~28px wide cells.
+  const labelColW = isMobile
+    ? isL3Grid ? 110 : 90
+    : isL3Grid ? LABEL_W_L3 : LABEL_W;
+  const minRowH = isMobile
+    ? isL3Grid ? 36 : 30
+    : isL3Grid ? MIN_ROW_H_L3 : MIN_ROW_H;
+  const cellMinW = isMobile ? 22 : 0;
 
   return (
     <DndContext
@@ -774,7 +787,7 @@ export function Grid({
         data-hm-grid-wrap
         style={{
           display: "grid",
-          gridTemplateColumns: `${labelColW}px repeat(${num}, minmax(0, 1fr))`,
+          gridTemplateColumns: `${labelColW}px repeat(${num}, minmax(${cellMinW}px, 1fr))`,
           // Macro keeps a top row too, but uses it for day-range labels
           // grouped across each day's 24 hourly cells (instead of the
           // per-bucket time labels in LIVE / PATTERN). Slightly shorter
@@ -871,7 +884,7 @@ export function Grid({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: `${labelColW}px repeat(${num}, minmax(0, 1fr))`,
+              gridTemplateColumns: `${labelColW}px repeat(${num}, minmax(${cellMinW}px, 1fr))`,
               gap: 4,
               width: "100%",
               fontSize: 12,

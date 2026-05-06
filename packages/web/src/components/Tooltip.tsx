@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { categoryMeta } from "@/lib/categories";
 import { fmtMoney, fmtMoneyShort } from "@/lib/format";
 import { useCellCycles } from "@/hooks/useCellCycles";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useMarketHistory } from "@/hooks/useMarketHistory";
 import { marketUrl } from "@/lib/polymarket-url";
 import { TOKENS } from "@/lib/tokens";
@@ -194,6 +195,7 @@ export function Tooltip({
   onClose?: () => void;
 }) {
   const isDrawer = renderAs === "drawer";
+  const isMobile = useIsMobile();
   // At L2/L3 the `category` prop is actually a subcategory slug ("nba")
   // or a condition_id (0x...) — those don't exist in the Category enum
   // so categoryMeta() falls back to "Other". The parent category passed
@@ -1041,23 +1043,50 @@ export function Tooltip({
         />
         <aside
           onClick={(e) => e.stopPropagation()}
-          style={{
-            position: "fixed",
-            top: 0,
-            right: 0,
-            width: "min(440px, 92vw)",
-            height: "100vh",
-            background: TOKENS.panel,
-            borderLeft: `1px solid ${TOKENS.borderHi}`,
-            boxShadow: "-20px 0 60px rgba(0,0,0,0.6)",
-            zIndex: 51,
-            display: "flex",
-            flexDirection: "column",
-            fontFamily: TOKENS.font,
-            color: TOKENS.text,
-            animation: "drawerIn .18s ease-out",
-            overflowY: "auto",
-          }}
+          style={
+            isMobile
+              ? {
+                  // Mobile: bottom-sheet shtorka — pinned to the bottom of
+                  // the viewport, scrolls internally. Top-rounded to read as
+                  // a sheet, not a panel. Slide-up animation (drawerInBottom)
+                  // mirrors the bottom-sheet UX from native iOS / Android.
+                  position: "fixed",
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  width: "100vw",
+                  maxHeight: "85vh",
+                  background: TOKENS.panel,
+                  borderTop: `1px solid ${TOKENS.borderHi}`,
+                  borderTopLeftRadius: 14,
+                  borderTopRightRadius: 14,
+                  boxShadow: "0 -20px 60px rgba(0,0,0,0.6)",
+                  zIndex: 51,
+                  display: "flex",
+                  flexDirection: "column",
+                  fontFamily: TOKENS.font,
+                  color: TOKENS.text,
+                  animation: "drawerInBottom .22s ease-out",
+                  overflowY: "auto",
+                }
+              : {
+                  position: "fixed",
+                  top: 0,
+                  right: 0,
+                  width: "min(440px, 92vw)",
+                  height: "100vh",
+                  background: TOKENS.panel,
+                  borderLeft: `1px solid ${TOKENS.borderHi}`,
+                  boxShadow: "-20px 0 60px rgba(0,0,0,0.6)",
+                  zIndex: 51,
+                  display: "flex",
+                  flexDirection: "column",
+                  fontFamily: TOKENS.font,
+                  color: TOKENS.text,
+                  animation: "drawerIn .18s ease-out",
+                  overflowY: "auto",
+                }
+          }
         >
           {/* Top bar — close button + slot label so the user knows which
               cell is loaded. Stays sticky so it's reachable while scrolling
@@ -1127,6 +1156,10 @@ export function Tooltip({
             @keyframes drawerIn {
               0% { transform: translateX(20px); opacity: 0; }
               100% { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes drawerInBottom {
+              0% { transform: translateY(40px); opacity: 0; }
+              100% { transform: translateY(0); opacity: 1; }
             }
           `}</style>
         </aside>

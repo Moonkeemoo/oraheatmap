@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useWhaleProfile } from "@/hooks/useWhaleProfile";
 import { categoryMeta } from "@/lib/categories";
 import { fmtMoney, fmtMoneyShort } from "@/lib/format";
@@ -52,6 +53,7 @@ export function WhaleDrawer({
 }) {
   const { data, loading, error } = useWhaleProfile({ addr, range });
   const open = addr !== null;
+  const isMobile = useIsMobile();
 
   // ESC key closes the drawer.
   useEffect(() => {
@@ -81,22 +83,45 @@ export function WhaleDrawer({
       <aside
         // Stop click propagation so clicks INSIDE the drawer don't close it.
         onClick={(e) => e.stopPropagation()}
-        style={{
-          position: "fixed",
-          top: 0,
-          right: 0,
-          width: "min(440px, 92vw)",
-          height: "100vh",
-          background: TOKENS.panel,
-          borderLeft: `1px solid ${TOKENS.borderHi}`,
-          boxShadow: "-20px 0 60px rgba(0,0,0,0.6)",
-          zIndex: 51,
-          display: "flex",
-          flexDirection: "column",
-          fontFamily: TOKENS.font,
-          color: TOKENS.text,
-          animation: "drawerIn .18s ease-out",
-        }}
+        style={
+          isMobile
+            ? {
+                position: "fixed",
+                left: 0,
+                right: 0,
+                bottom: 0,
+                width: "100vw",
+                maxHeight: "85vh",
+                background: TOKENS.panel,
+                borderTop: `1px solid ${TOKENS.borderHi}`,
+                borderTopLeftRadius: 14,
+                borderTopRightRadius: 14,
+                boxShadow: "0 -20px 60px rgba(0,0,0,0.6)",
+                zIndex: 51,
+                display: "flex",
+                flexDirection: "column",
+                fontFamily: TOKENS.font,
+                color: TOKENS.text,
+                animation: "drawerInBottom .22s ease-out",
+                overflowY: "auto",
+              }
+            : {
+                position: "fixed",
+                top: 0,
+                right: 0,
+                width: "min(440px, 92vw)",
+                height: "100vh",
+                background: TOKENS.panel,
+                borderLeft: `1px solid ${TOKENS.borderHi}`,
+                boxShadow: "-20px 0 60px rgba(0,0,0,0.6)",
+                zIndex: 51,
+                display: "flex",
+                flexDirection: "column",
+                fontFamily: TOKENS.font,
+                color: TOKENS.text,
+                animation: "drawerIn .18s ease-out",
+              }
+        }
       >
         {data && <DrawerBody data={data} range={range} onClose={onClose} onBack={onBack} />}
         {!data && loading && (
@@ -111,6 +136,10 @@ export function WhaleDrawer({
         @keyframes drawerIn {
           0% { transform: translateX(20px); opacity: 0; }
           100% { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes drawerInBottom {
+          0% { transform: translateY(40px); opacity: 0; }
+          100% { transform: translateY(0); opacity: 1; }
         }
       `}</style>
     </>

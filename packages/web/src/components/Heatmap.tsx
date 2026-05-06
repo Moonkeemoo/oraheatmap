@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useHeatmap } from "@/hooks/useHeatmap";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useRowOrder } from "@/hooks/useRowOrder";
 import { useSse } from "@/hooks/useSse";
 import { initAnalytics, track } from "@/lib/analytics";
@@ -121,6 +122,7 @@ export function Heatmap() {
   const [loginOpen, setLoginOpen] = useState(false);
   const { status: authStatus } = useSession();
   const isAuthed = authStatus === "authenticated";
+  const isMobile = useIsMobile();
 
   // Initialise the analytics SDK once — fires session_start + the
   // initial pageview. Subsequent events fire as the user interacts.
@@ -442,12 +444,14 @@ export function Heatmap() {
         style={{
           flex: 1,
           minHeight: 0,
-          padding: "14px 24px 10px",
+          // Mobile gets tighter chrome so cells get more pixels. Also
+          // allow horizontal scroll for the grid — macro 168 cells can't
+          // fit in 360px and even LIVE 12 cells get unreadable below
+          // ~22px each. Vertical scroll still applies for tall drill rows.
+          padding: isMobile ? "8px 6px 6px" : "14px 24px 10px",
           position: "relative",
-          // Drill-mode (15-30 rows) might not fit a short viewport at the
-          // 38px row min — let this wrapper scroll internally so the chrome
-          // around it (header / stats bar / sign-in chip) stays visible.
           overflowY: "auto",
+          overflowX: isMobile ? "auto" : "visible",
           boxSizing: "border-box",
         }}
       >
@@ -637,7 +641,7 @@ export function Heatmap() {
                 onClose={() => setPanelCell(null)}
               />
             )}
-            {hover && hover.cellId !== panelCell?.cellId && (
+            {!isMobile && hover && hover.cellId !== panelCell?.cellId && (
               <Tooltip
                 key={`hover-${hover.cellId}`}
                 cell={hover.cell}

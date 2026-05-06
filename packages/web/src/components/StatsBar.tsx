@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { categoryMeta } from "@/lib/categories";
 import { fmtMoney, fmtMoneyShort } from "@/lib/format";
 import { TOKENS } from "@/lib/tokens";
@@ -400,6 +401,7 @@ export function StatsBar({
 
   // Hover state — only one popover open at a time; index into the items array.
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const isMobile = useIsMobile();
 
   // ─── Generic per-row ranking popover ──────────────────────────────────
   // One renderer drives the breakdown for Signals, Volume, PnL, Win Rate.
@@ -712,6 +714,45 @@ export function StatsBar({
           popoverWidth: 380,
         },
   ];
+
+  if (isMobile) {
+    // Mobile: horizontal-scroll strip of compact cards. Each card has a
+    // minimum width so values don't compress to a single line — user pans
+    // with thumb instead of trying to fit 6 cells across a 360px viewport.
+    // Tap-to-popover keeps the same hover→popover machinery working with
+    // the touch onClick path (StatCell already uses onMouseEnter which
+    // touch devices fire on tap).
+    return (
+      <div
+        style={{
+          borderTop: `1px solid ${TOKENS.border}`,
+          background: TOKENS.panel,
+          padding: "10px 12px",
+          display: "flex",
+          gap: 14,
+          overflowX: "auto",
+          overflowY: "visible",
+          WebkitOverflowScrolling: "touch",
+          scrollbarWidth: "none",
+          flexShrink: 0,
+        }}
+      >
+        {items.map((it, i) => (
+          <div key={it.label} style={{ flex: "0 0 auto", minWidth: 130 }}>
+            <StatCell
+              item={it}
+              divider={false}
+              hovered={hoveredIdx === i}
+              onHoverChange={(h) => {
+                if (h) setHoveredIdx(i);
+                else setHoveredIdx((prev) => (prev === i ? null : prev));
+              }}
+            />
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div
