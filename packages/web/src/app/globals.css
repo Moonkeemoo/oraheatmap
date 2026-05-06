@@ -50,3 +50,10 @@ body {
   0%   { background-position: -200% 0; }
   100% { background-position:  200% 0; }
 }
+/* Hide horizontal-scroll bars in WebKit. Used by Header's mobile pill
+   strips where overflow-x: auto + scrollbar-width: none already hides
+   the bar in Firefox / standards browsers but not in iOS Safari. */
+[style*="overflow-x: auto"]::-webkit-scrollbar,
+[style*="overflow-x:auto"]::-webkit-scrollbar {
+  display: none;
+}

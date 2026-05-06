@@ -1,5 +1,6 @@
 import { useSession } from "next-auth/react";
 import { TOKENS } from "@/lib/tokens";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import type { HeatmapMetric, LiveRange, MacroKind, Mode, PatternKind } from "@/lib/types";
 import { BrandLogo } from "./BrandLogo";
 import { BurgerMenu } from "./BurgerMenu";
@@ -7,6 +8,21 @@ import { LiveStatus } from "./LiveStatus";
 import { ScaleLegend } from "./ScaleLegend";
 
 const LIVE_RANGES: ReadonlyArray<LiveRange> = ["1h", "24h", "12d", "12w"];
+/** Horizontal-scroll row used for control-pill strips on mobile.
+ *  Hides the native scrollbar but still scrolls — mobile users pan with
+ *  touch and don't expect a visible bar. Inline styles can't reach
+ *  ::-webkit-scrollbar so we add a className suppressed in globals.css. */
+const mobileScrollRowStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  overflowX: "auto",
+  overflowY: "visible",
+  WebkitOverflowScrolling: "touch",
+  scrollbarWidth: "none",
+  paddingBottom: 2,
+};
+
 const MACRO_KINDS: ReadonlyArray<{ kind: MacroKind; label: string; title: string }> = [
   { kind: "hour-week", label: "1H × WEEK", title: "Hourly granularity over the last 7 days (168 cells)" },
   { kind: "day-12w", label: "1D × 12W", title: "Daily granularity over the last 12 weeks (84 cells)" },
@@ -215,6 +231,7 @@ export function Header({
 }) {
   const { status } = useSession();
   const isAuthed = status === "authenticated";
+  const isMobile = useIsMobile();
   // Wrap a control's onClick — when not authed, intercept and open login instead.
   const gate = <T extends unknown[]>(fn: (...args: T) => void): ((...args: T) => void) => {
     return (...args: T) => {
@@ -223,6 +240,134 @@ export function Header({
     };
   };
 
+  // ── Mobile layout ─────────────────────────────────────────────────────
+  // Three stacked rows: brand row (burger + logo), mode + sub-toggle pills,
+  // metric pills with horizontal-scroll overflow. ScaleLegend hidden —
+  // it doesn't fit and is the lowest-utility piece of chrome on mobile.
+  if (isMobile) {
+    return (
+      <div
+        style={{
+          padding: "10px 12px 8px",
+          borderBottom: `1px solid ${TOKENS.border}`,
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          flexShrink: 0,
+          minWidth: 0,
+          boxSizing: "border-box",
+          background: TOKENS.bg,
+        }}
+      >
+        {/* Row 1 — burger + LiveStatus + brand mark on the right. */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+          }}
+        >
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <BurgerMenu onRequestLogin={onRequestLogin} />
+            <LiveStatus />
+          </div>
+          <BrandLogo size="compact" />
+        </div>
+
+        {/* Row 2 — mode toggle + sub-pills (range / pattern-kind / macro-kind).
+            Single horizontal-scroll strip so narrow phones can pan if the
+            current mode's sub-pills push the row past the viewport edge. */}
+        <div style={mobileScrollRowStyle}>
+          <ModeToggle
+            mode={mode}
+            setMode={gate(setMode)}
+            daysOfData={daysOfData}
+            locked={!isAuthed}
+          />
+          {mode === "live" && (
+            <div style={{ display: "flex", gap: 5 }}>
+              {LIVE_RANGES.map((r) => (
+                <Pill
+                  key={r}
+                  active={range === r}
+                  onClick={() => (isAuthed ? setRange(r) : onRequestLogin())}
+                >
+                  {r}
+                  {!isAuthed && range !== r && (
+                    <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>
+                  )}
+                </Pill>
+              ))}
+            </div>
+          )}
+          {mode === "pattern" && (
+            <div style={{ display: "flex", gap: 5 }}>
+              {PATTERN_KINDS.map((p) => (
+                <Pill
+                  key={p.kind}
+                  active={patternKind === p.kind}
+                  onClick={() => (isAuthed ? setPatternKind(p.kind) : onRequestLogin())}
+                >
+                  {p.label}
+                  {!isAuthed && patternKind !== p.kind && (
+                    <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>
+                  )}
+                </Pill>
+              ))}
+            </div>
+          )}
+          {mode === "macro" && (
+            <div style={{ display: "flex", gap: 5 }}>
+              {MACRO_KINDS.map((m) => (
+                <Pill
+                  key={m.kind}
+                  active={macroKind === m.kind}
+                  onClick={() => (isAuthed ? setMacroKind(m.kind) : onRequestLogin())}
+                >
+                  {m.label}
+                  {!isAuthed && macroKind !== m.kind && (
+                    <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>
+                  )}
+                </Pill>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Row 3 — metric pills, also horizontal-scroll. */}
+        <div style={mobileScrollRowStyle}>
+          <div
+            style={{
+              display: "flex",
+              gap: 0,
+              background: TOKENS.panel,
+              padding: 3,
+              borderRadius: 8,
+              border: `1px solid ${TOKENS.border}`,
+            }}
+          >
+            {METRICS.map((m) => {
+              const isActive = metric === m.id;
+              const locked = !isAuthed && !isActive;
+              return (
+                <MetricTab
+                  key={m.id}
+                  active={isActive}
+                  onClick={() => (isAuthed ? setMetric(m.id) : onRequestLogin())}
+                >
+                  {m.label}
+                  {locked && <span style={{ marginLeft: 3, opacity: 0.6 }}>🔒</span>}
+                </MetricTab>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Desktop layout (unchanged) ─────────────────────────────────────────
   return (
     <div
       style={{
