@@ -1,0 +1,43 @@
+<svg viewBox="0 0 1500 500" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="1500" height="500" fill="#0d1117"/>
+
+  <g opacity="0.18">
+    <rect x="60" y="60" width="40" height="40" rx="3" fill="#3fb950"/>
+    <rect x="108" y="60" width="40" height="40" rx="3" fill="#238636"/>
+    <rect x="60" y="108" width="40" height="40" rx="3" fill="#f0b429"/>
+    <rect x="108" y="108" width="40" height="40" rx="3" fill="#3fb950"/>
+    <rect x="156" y="108" width="40" height="40" rx="3" fill="#238636"/>
+    <rect x="108" y="156" width="40" height="40" rx="3" fill="#f85149"/>
+    <rect x="156" y="156" width="40" height="40" rx="3" fill="#f0b429"/>
+
+    <rect x="1340" y="340" width="40" height="40" rx="3" fill="#238636"/>
+    <rect x="1388" y="340" width="40" height="40" rx="3" fill="#3fb950"/>
+    <rect x="1436" y="340" width="40" height="40" rx="3" fill="#f0b429"/>
+    <rect x="1388" y="388" width="40" height="40" rx="3" fill="#f85149"/>
+    <rect x="1436" y="388" width="40" height="40" rx="3" fill="#f0b429"/>
+  </g>
+
+  <g transform="translate(440,150)">
+    <rect x="0" y="0" width="60" height="60" rx="4" fill="#3fb950"/>
+    <rect x="70" y="0" width="60" height="60" rx="4" fill="#238636"/>
+    <rect x="0" y="70" width="60" height="60" rx="4" fill="#f0b429"/>
+    <rect x="70" y="70" width="60" height="60" rx="4" fill="#3fb950"/>
+    <rect x="140" y="70" width="60" height="60" rx="4" fill="#238636"/>
+    <rect x="70" y="140" width="60" height="60" rx="4" fill="#f85149"/>
+    <rect x="140" y="140" width="60" height="60" rx="4" fill="#f0b429"/>
+  </g>
+
+  <text
+    x="690"
+    y="320"
+    style="font-family:'Space Grotesk','Helvetica Neue',Arial,sans-serif;font-size:200px;font-weight:700;letter-spacing:-9px"
+    fill="#e6edf3"
+  >oralab</text>
+
+  <text
+    x="690"
+    y="395"
+    style="font-family:'Space Grotesk','Helvetica Neue',Arial,sans-serif;font-size:46px;font-weight:700;letter-spacing:-1px"
+    fill="#7d8590"
+  >POLYMARKET HEATMAP</text>
+</svg>

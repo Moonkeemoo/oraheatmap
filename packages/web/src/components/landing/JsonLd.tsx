@@ -33,7 +33,8 @@ export function JsonLd() {
         // logo / sameAs picked up by the brand SERP card.
         logo: { "@type": "ImageObject", url: `${SITE_URL}/favicon.svg` },
         sameAs: [
-          // Add X/GitHub/Discord URLs here once they're live.
+          "https://x.com/oralabxyz",
+          // Add GitHub / Discord URLs here once they're live.
         ],
       },
       {
