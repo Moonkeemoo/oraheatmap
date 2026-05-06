@@ -93,11 +93,16 @@ export function Cell({
   // backend hasn't aggregated uniqueWhales. Without this, those cells
   // collapsed into pure-black gaps and read as "the layout is broken".
   const visualEmpty = isEmpty || bg === "transparent";
-  const value = isEmpty ? "" : getCellValue(metric, cell);
+  // Treat "metric value is exactly 0 even though cell.count > 0" the same
+  // as empty for display purposes — e.g. VOLUME on a Thu cell that only
+  // saw SELLs (no BUYs this slot) reads as "0 (0)" otherwise, which
+  // looks like a system error. visualEmpty already gets true when the
+  // colour ramp goes transparent, so reuse it as the no-value gate.
+  const value = visualEmpty ? "" : getCellValue(metric, cell);
   // PATTERN parens now show full-lookback AVG (not Δ vs older half) — gives
   // the user a baseline to compare the current cell against. Color stays
   // muted because it's a reference value, not a positive/negative trend.
-  const avg = showDelta && !isEmpty ? avgForMetric(metric, cell) : null;
+  const avg = showDelta && !visualEmpty ? avgForMetric(metric, cell) : null;
   // PATTERN cell: paint the value green when current > lookback avg,
   // red when below, and prepend ▲/▼. Applied to every non-empty cell
   // in PATTERN — each column already shows current-vs-avg natively.
@@ -108,16 +113,25 @@ export function Cell({
   // there's a trend would be misleading. Use a relative tolerance so
   // floating-point rounding noise (e.g. cur=100.0001, avg=100.0002)
   // doesn't fake a direction either.
-  const cur = !isEmpty ? recentForMetric(metric, cell) : null;
-  const trend: "up" | "down" | null = (() => {
-    if (!showDelta || isEmpty || cur === null || avg === null) return null;
-    const diff = cur - avg;
+  const cur = !visualEmpty ? recentForMetric(metric, cell) : null;
+  // Tolerance check: treat near-equal cur/avg as "no real trend" so
+  // floating-point rounding noise (cur=100.0001, avg=100.0002) doesn't
+  // fake a direction. Used by both the trend arrow AND the parens
+  // gate below — when cur ≈ avg the parens are pure visual noise
+  // (they just repeat the headline number).
+  const isNearEqual = cur !== null && avg !== null && (() => {
     const ref = Math.max(Math.abs(cur), Math.abs(avg));
-    // <0.5% relative diff OR <1 absolute on integer-y metrics → treat as equal.
     const tolerance = Math.max(ref * 0.005, metric === "winrate" ? 0.001 : 1);
-    if (Math.abs(diff) < tolerance) return null;
-    return diff > 0 ? "up" : "down";
+    return Math.abs(cur - avg) < tolerance;
   })();
+  const trend: "up" | "down" | null = (() => {
+    if (!showDelta || visualEmpty || cur === null || avg === null) return null;
+    if (isNearEqual) return null;
+    return cur > avg ? "up" : "down";
+  })();
+  // Show the avg in parens only when it carries information — i.e.
+  // cur ≠ avg. Otherwise we just stuff "$25M ($25M)" on screen.
+  const showAvgParens = avg !== null && !isNearEqual;
   const valColor = isEmpty
     ? TOKENS.text
     : trend === "up"
@@ -270,13 +284,13 @@ export function Cell({
             </span>
           )}
           <span style={{ fontSize: 12, fontWeight: 700, color: valColor }}>{value}</span>
-          {showDelta && !isEmpty && (
+          {showAvgParens && (
             // Parens text reads against coloured cell backgrounds (yellow,
             // dim green, dim red), so TOKENS.textMuted (a flat gray) gets
             // crushed. A translucent white holds contrast across every
             // background tint while still feeling secondary to the primary
             // value — matched 0.72 opacity by eye on the worst-case yellow
-            // PATTERN cell.
+            // PATTERN cell. Hidden when avg ≈ cur (pure visual noise).
             <span style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>
               ({fmtAvg(metric, avg)})
             </span>
