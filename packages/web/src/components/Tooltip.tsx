@@ -13,6 +13,7 @@ import { ProbabilityChart } from "./ProbabilityChart";
 import { CellFeed } from "./tooltip/CellFeed";
 import { RowHighlights } from "./tooltip/RowHighlights";
 import { CycleHistogram, rowIndexToServerSlot } from "./tooltip/CycleHistogram";
+import { MacroContext } from "./tooltip/MacroContext";
 import { SlotCharacter } from "./tooltip/SlotCharacter";
 import { MarketIcon } from "./tooltip/MarketIcon";
 import {
@@ -75,6 +76,7 @@ function rangeUnit(r: LiveRange | undefined, mode: Mode, kind: PatternKind | und
 export function Tooltip({
   cell,
   rowCells,
+  fullData,
   anchor,
   category,
   slotLabel,
@@ -109,6 +111,11 @@ export function Tooltip({
    *  the row sparkline showing how this category evolved across the chosen
    *  timeframe. Pass an empty array to skip the sparkline. */
   rowCells: ReadonlyArray<HeatmapCell>;
+  /** Full heatmap response — needed for MACRO drawer's window-rank
+   *  computation (compares this cell against every cell in the grid,
+   *  not just its row). Optional because LIVE / PATTERN drawers don't
+   *  use it; MACRO context block silently no-ops when absent. */
+  fullData?: import("@/lib/types").HeatmapResponse;
   anchor: TooltipAnchor;
   category: Category;
   slotLabel: string;
@@ -848,6 +855,21 @@ export function Tooltip({
             Top markets & whales hidden on {range} — drill into a category to see them.
           </div>
         )}
+
+      {/* MACRO cell context — window rank + same-slot anchor + cascade
+          for the clicked cell. All derived from fullData already in
+          scope (no extra request), so it lands instantly even while
+          /api/cell-stats is still fetching the per-cell whales/markets
+          below. Renders only when locked + on a non-empty cell — see
+          the early-return inside MacroContext. */}
+      {isMacro && locked && fullData && slotIndex !== null && slotIndex !== undefined && (
+        <MacroContext
+          data={fullData}
+          category={category}
+          slotIdx={slotIndex}
+          metric={metric}
+        />
+      )}
 
       {/* MACRO loading state — render once, replaces both Top whales
           and Top markets sections while /api/cell-stats is in flight.

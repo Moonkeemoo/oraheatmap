@@ -594,6 +594,7 @@ export function Heatmap() {
                 key={`panel-${panelCell.cellId}`}
                 cell={panelCell.cell}
                 rowCells={displayData.cells[panelCell.category] ?? []}
+                fullData={displayData}
                 anchor={panelCell.anchor}
                 category={panelCell.category as Category}
                 slotLabel={panelCell.slotLabel}
@@ -667,6 +668,7 @@ export function Heatmap() {
                 key={`hover-${hover.cellId}`}
                 cell={hover.cell}
                 rowCells={displayData.cells[hover.category] ?? []}
+                fullData={displayData}
                 anchor={hover.anchor}
                 category={hover.category as Category}
                 slotLabel={hover.slotLabel}
