@@ -206,23 +206,40 @@ function DrawerBody({
             <div
               style={{
                 display: "flex",
-                alignItems: "baseline",
+                alignItems: "center",
                 gap: 6,
-                fontSize: 18,
-                fontWeight: 700,
-                color: TOKENS.text,
-                fontFamily: data.alias.startsWith("0x") ? TOKENS.mono : TOKENS.font,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
+                minWidth: 0,
               }}
             >
-              {data.alias}
-              {data.verified && (
-                <span title="Verified on Polymarket" style={{ fontSize: 13, color: TOKENS.accent }}>
-                  ✓
-                </span>
-              )}
+              {/* Alias span owns the truncation — flex:1 + min-width:0
+                  lets the text ellipsis while the LVL badge keeps its
+                  natural width (flex-shrink: 0 inside the badge). On
+                  narrow mobile drawer widths long aliases were
+                  clipping the badge entirely; this layout keeps the
+                  badge visible regardless. */}
+              <span
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  fontSize: 18,
+                  fontWeight: 700,
+                  color: TOKENS.text,
+                  fontFamily: data.alias.startsWith("0x") ? TOKENS.mono : TOKENS.font,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {data.alias}
+                {data.verified && (
+                  <span
+                    title="Verified on Polymarket"
+                    style={{ fontSize: 13, color: TOKENS.accent, marginLeft: 4 }}
+                  >
+                    ✓
+                  </span>
+                )}
+              </span>
               <ReputationBadge reputation={data.reputation} />
             </div>
             <CopyableAddress addr={data.addr} />
@@ -597,7 +614,6 @@ function ReputationBadge({
         alignItems: "center",
         gap: 4,
         padding: "2px 8px",
-        marginLeft: 4,
         borderRadius: 999,
         background: palette.bg,
         border: `1px solid ${palette.border}`,
@@ -608,6 +624,9 @@ function ReputationBadge({
         letterSpacing: 0.3,
         lineHeight: 1.3,
         verticalAlign: "middle",
+        // Always visible regardless of how long the alias is — the
+        // alias sibling holds the ellipsis, badge stays put.
+        flexShrink: 0,
       }}
     >
       <span style={{ fontSize: 9, opacity: 0.7, letterSpacing: 0.6 }}>LVL</span>
