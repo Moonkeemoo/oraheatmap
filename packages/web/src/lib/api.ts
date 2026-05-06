@@ -29,6 +29,7 @@ export async function fetchHeatmap(args: {
   mode: Mode;
   range?: LiveRange;
   kind?: PatternKind;
+  macroKind?: import("./types").MacroKind;
   lookbackDays?: number;
   drillCategory?: Category | null;
   drillSubcategory?: string | null;
@@ -39,6 +40,9 @@ export async function fetchHeatmap(args: {
   if (args.mode === "pattern") {
     if (args.kind) params.set("kind", args.kind);
     if (args.lookbackDays) params.set("lookbackDays", String(args.lookbackDays));
+  }
+  if (args.mode === "macro" && args.macroKind) {
+    params.set("macroKind", args.macroKind);
   }
   if (args.drillCategory) params.set("category", args.drillCategory);
   if (args.drillCategory && args.drillSubcategory) {

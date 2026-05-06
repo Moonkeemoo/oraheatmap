@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { fetchHeatmap } from "@/lib/api";
-import type { Category, HeatmapResponse, LiveRange, Mode, PatternKind } from "@/lib/types";
+import type {
+  Category,
+  HeatmapResponse,
+  LiveRange,
+  MacroKind,
+  Mode,
+  PatternKind,
+} from "@/lib/types";
 
 const REFRESH_MS_LIVE: Record<LiveRange, number> = {
   "1h": 10_000,
@@ -24,6 +31,7 @@ export function useHeatmap(args: {
   mode: Mode;
   range?: LiveRange;
   kind?: PatternKind;
+  macroKind?: MacroKind;
   lookbackDays?: number;
   drillCategory?: Category | null;
   drillSubcategory?: string | null;
@@ -78,7 +86,7 @@ export function useHeatmap(args: {
       clearInterval(id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [args.mode, args.range, args.kind, args.lookbackDays, args.drillCategory, args.drillSubcategory]);
+  }, [args.mode, args.range, args.kind, args.macroKind, args.lookbackDays, args.drillCategory, args.drillSubcategory]);
 
   return { data, loading, error };
 }

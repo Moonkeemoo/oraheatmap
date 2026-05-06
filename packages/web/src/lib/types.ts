@@ -12,6 +12,7 @@ export type Category =
   | "Other";
 
 export type Mode = "live" | "pattern" | "macro";
+export type MacroKind = "hour-week" | "day-12w";
 
 export type LiveRange = "1h" | "24h" | "12d" | "12w";
 export type PatternKind = "hour-of-day" | "day-of-week";
@@ -110,6 +111,8 @@ export type HeatmapResponse = {
   // Pattern-only:
   patternKind?: PatternKind;
   lookbackDays?: number;
+  // Macro-only: which macro frame is currently rendered.
+  macroKind?: MacroKind;
   // Drill-down (LIVE only): non-null when the response is a per-subcategory
   // grid for the named Category. `categories` holds subcategory slugs;
   // `subcategoryLabels` maps slug → display label. Both `null` at top level.

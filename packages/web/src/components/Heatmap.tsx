@@ -17,6 +17,7 @@ import type {
   HeatmapCell,
   HeatmapMetric,
   LiveRange,
+  MacroKind,
   Mode,
   PatternKind,
   SignalEvent,
@@ -108,6 +109,7 @@ export function Heatmap() {
   // value-prop pitch and easier on the cold cache (smaller payload).
   const [range, setRange] = useState<LiveRange>("1h");
   const [patternKind, setPatternKind] = useState<PatternKind>("hour-of-day");
+  const [macroKind, setMacroKind] = useState<MacroKind>("hour-week");
   const [metric, setMetric] = useState<HeatmapMetric>("volume");
   const [drillCategory, setDrillCategory] = useState<Category | null>(null);
   const [drillSubcategory, setDrillSubcategory] = useState<string | null>(null);
@@ -217,6 +219,7 @@ export function Heatmap() {
     mode,
     range: mode === "live" ? range : undefined,
     kind: mode === "pattern" ? patternKind : undefined,
+    macroKind: mode === "macro" ? macroKind : undefined,
     lookbackDays: mode === "pattern" ? 30 : undefined,
     drillCategory,
     // L3 (per-market) only meaningful in LIVE mode for now.
@@ -339,6 +342,9 @@ export function Heatmap() {
     if (next !== patternKind) track.patternKindChanged(patternKind, next);
     setPatternKind(next);
   };
+  const trackedSetMacroKind = (next: MacroKind): void => {
+    setMacroKind(next);
+  };
 
   /** Single chokepoint for opening the login modal — emits the
    *  `signin_modal_opened` event with the trigger source so the funnel
@@ -393,6 +399,8 @@ export function Heatmap() {
         setRange={trackedSetRange}
         patternKind={patternKind}
         setPatternKind={trackedSetPatternKind}
+        macroKind={macroKind}
+        setMacroKind={trackedSetMacroKind}
         isLive={isLive}
         trackedCount={displayData?.trackedWhales ?? 0}
         lookbackDays={displayData?.lookbackDays ?? 30}

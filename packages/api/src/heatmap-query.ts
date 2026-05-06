@@ -36,16 +36,33 @@ export const RANGE_CONFIG: Readonly<Record<HeatmapRange, RangeConfig>> = Object.
 });
 
 // ─── Macro view ──────────────────────────────────────────────────────────────
-// Macro mode trades fine-grained "now" focus for a wider span — keep
-// LIVE-24h's bucket size (close to 1h) but expand the window ~7× to a
-// full week. The matrix becomes a 168-cell hour × day map where image
-// density carries the signal — no per-cell numbers, no time axis.
+// Macro mode trades fine-grained "now" focus for a wider span. Two
+// configurations:
 //
-// Reads directly from signals_hourly CAGG; bucket size matches 1:1 so
-// no re-bucketing math is needed.
-export type MacroRange = "1h"; // legacy key — represents "the 1-hour-bucket × 7-day-window macro"
-export const MACRO_CONFIG: Readonly<Record<MacroRange, RangeConfig>> = Object.freeze({
-  "1h": { bucketMinutes: 1 * HOUR, windowMinutes: 7 * DAY, slots: 168, source: "hourly_agg" },
+//   hour-week → 1h bucket × 7d window = 168 cells
+//                Best for "what hours of which days were hot in the past
+//                week". Day-of-week + time-of-day patterns pop visually.
+//
+//   day-12w   → 1d bucket × 12w window = 84 cells
+//                Best for "macro trend over a quarter" — month-level
+//                seasonality, multi-week PnL waves, single hot weeks.
+//
+// Both stream from signals_hourly. day-12w re-buckets to 1-day; the cost
+// of re-bucketing 84 days × 9 cats = 756 rows is negligible.
+export type MacroKind = "hour-week" | "day-12w";
+export const MACRO_CONFIG: Readonly<Record<MacroKind, RangeConfig>> = Object.freeze({
+  "hour-week": {
+    bucketMinutes: 1 * HOUR,
+    windowMinutes: 7 * DAY,
+    slots: 168,
+    source: "hourly_agg",
+  },
+  "day-12w": {
+    bucketMinutes: 1 * DAY,
+    windowMinutes: 12 * WEEK,
+    slots: 84,
+    source: "hourly_agg",
+  },
 });
 
 // ─── Wire types ──────────────────────────────────────────────────────────────
@@ -490,17 +507,20 @@ export async function queryHeatmapAggRows(
 }
 
 /**
- * Macro-mode aggregation. 1-hour × 7-day window (168 buckets per row).
- * Reads signals_hourly CAGG directly — bucket size matches 1:1 so no
- * re-bucketing. Drill modes fall back to raw signals because the CAGG
- * doesn't carry subcategory / condition_id.
+ * Macro-mode aggregation. Two configurations:
+ *   hour-week → 1h × 7d (168 buckets)
+ *   day-12w   → 1d × 12w (84 buckets)
+ * Both stream from signals_hourly. hour-week reads it 1:1 (no
+ * re-bucketing); day-12w re-buckets to 1-day. Drill modes fall back to
+ * raw signals because the CAGG doesn't carry subcategory / condition_id.
  */
 export async function queryMacroAggRows(
   sql: Sql,
+  macroKind: MacroKind,
   drillCategory: Category | null = null,
   drillSubcategory: string | null = null,
 ): Promise<ReadonlyArray<AggRow>> {
-  const cfg = MACRO_CONFIG["1h"];
+  const cfg = MACRO_CONFIG[macroKind];
   const windowInterval = `${cfg.windowMinutes} minutes`;
   const bucketInterval = `${cfg.bucketMinutes} minutes`;
 
@@ -549,20 +569,44 @@ export async function queryMacroAggRows(
     `;
     return rows;
   }
-  // L1: top-level. Read signals_hourly CAGG directly — exact bucket match.
+  // L1: top-level. signals_hourly used as the source for both kinds —
+  // hour-week reads it 1:1, day-12w re-buckets to 1-day. SUM() is safe
+  // for count/volume/pnl; unique_whales summed across hour-buckets is
+  // approximate (may double-count cross-hour activity), acceptable for
+  // a density-mode visualisation.
+  if (macroKind === "hour-week") {
+    const rows = await sql<AggRow[]>`
+      SELECT
+        to_char(bucket AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
+        category,
+        signal_count,
+        buy_volume_usd,
+        realized_pnl_sum,
+        win_count,
+        loss_count,
+        unique_whales
+      FROM signals_hourly
+      WHERE bucket >= NOW() - (${windowInterval}::interval) AND bucket <= NOW()
+      ORDER BY bucket
+    `;
+    return rows;
+  }
+  // day-12w: re-bucket to 1-day chunks.
   const rows = await sql<AggRow[]>`
     SELECT
-      to_char(bucket AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
+      to_char(time_bucket(${bucketInterval}::interval, bucket) AT TIME ZONE 'UTC',
+              'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
       category,
-      signal_count,
-      buy_volume_usd,
-      realized_pnl_sum,
-      win_count,
-      loss_count,
-      unique_whales
+      COALESCE(SUM(signal_count), 0)::bigint           AS signal_count,
+      COALESCE(SUM(buy_volume_usd), 0)                 AS buy_volume_usd,
+      COALESCE(SUM(realized_pnl_sum), 0)               AS realized_pnl_sum,
+      COALESCE(SUM(win_count), 0)::bigint              AS win_count,
+      COALESCE(SUM(loss_count), 0)::bigint             AS loss_count,
+      COALESCE(SUM(unique_whales), 0)::bigint          AS unique_whales
     FROM signals_hourly
     WHERE bucket >= NOW() - (${windowInterval}::interval) AND bucket <= NOW()
-    ORDER BY bucket
+    GROUP BY 1, category
+    ORDER BY 1
   `;
   return rows;
 }

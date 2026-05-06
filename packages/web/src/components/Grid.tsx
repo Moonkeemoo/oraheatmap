@@ -401,35 +401,43 @@ function SortableRow({
   );
 }
 
-/** Macro-mode top row: one label per calendar day, spanning that day's
- *  24 hourly cells (or fewer at the window edges). Each label shows
- *  weekday + DD/MM in the viewer's local timezone so the user can
- *  recognise "today / yesterday / Mon" without parsing UTC offsets. */
+/** Macro-mode top row: groups buckets into chips that line up with the
+ *  cells below. For hour-week (1h × 7d) groups by day → 7 chips. For
+ *  day-12w (1d × 12w) groups by month → 3-4 chips with month names. */
 function MacroDayHeader({
   buckets,
   gap,
+  macroKind,
 }: {
   buckets: ReadonlyArray<HeatmapBucket>;
   gap: number;
+  macroKind: "hour-week" | "day-12w";
 }) {
-  // Walk the buckets and group adjacent ones with the same local
-  // calendar day. Returns the index span each label should cover so
-  // grid-column-span lines up with the heatmap cells below.
+  // Walk the buckets and group adjacent ones with the same calendar
+  // bucket — day for hour-week, month for day-12w. The matching unit
+  // is the "natural" boundary at that timescale.
   const groups: Array<{ start: number; count: number; date: Date }> = [];
+  const groupKey = (d: Date): string =>
+    macroKind === "hour-week"
+      ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+      : `${d.getFullYear()}-${d.getMonth()}`;
   for (let i = 0; i < buckets.length; i++) {
     const ts = buckets[i]?.ts;
     if (!ts) continue;
     const d = new Date(ts);
-    const dayKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
     const last = groups[groups.length - 1];
-    if (last && lastDayKey(last.date) === dayKey) {
+    if (last && groupKey(last.date) === groupKey(d)) {
       last.count++;
     } else {
       groups.push({ start: i, count: 1, date: d });
     }
   }
   const today = new Date();
-  const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+  const todayKey =
+    macroKind === "hour-week"
+      ? `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`
+      : `${today.getFullYear()}-${today.getMonth()}`;
+  const isCurrent = (d: Date): boolean => groupKey(d) === todayKey;
   return (
     <div
       style={{
@@ -441,7 +449,7 @@ function MacroDayHeader({
     >
       <div />
       {groups.map((g, gi) => {
-        const isToday = lastDayKey(g.date) === todayKey;
+        const isToday = isCurrent(g.date);
         const isFirst = gi === 0;
         return (
           <div
@@ -473,12 +481,19 @@ function MacroDayHeader({
               overflow: "hidden",
               whiteSpace: "nowrap",
             }}
-            title={g.date.toLocaleDateString(undefined, {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-              year: "numeric",
-            })}
+            title={
+              macroKind === "hour-week"
+                ? g.date.toLocaleDateString(undefined, {
+                    weekday: "long",
+                    month: "long",
+                    day: "numeric",
+                    year: "numeric",
+                  })
+                : `${g.date.toLocaleDateString(undefined, {
+                    month: "long",
+                    year: "numeric",
+                  })} · ${g.count} day${g.count === 1 ? "" : "s"}`
+            }
           >
             {isToday && (
               <span
@@ -493,7 +508,9 @@ function MacroDayHeader({
                 }}
               />
             )}
-            {fmtMacroDay(g.date, isToday)}
+            {macroKind === "hour-week"
+              ? fmtMacroDay(g.date, isToday)
+              : fmtMacroMonth(g.date, g.count, isToday)}
           </div>
         );
       })}
@@ -515,6 +532,17 @@ function fmtMacroDay(d: Date, isToday: boolean): string {
   // user's eye locks onto the now-edge instantly.
   if (isToday) return `TODAY · ${dd}/${mm}`;
   return `${wd} · ${dd}/${mm}`;
+}
+
+const MONTH_SHORT: ReadonlyArray<string> = [
+  "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+  "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+];
+
+function fmtMacroMonth(d: Date, count: number, isCurrent: boolean): string {
+  const mo = MONTH_SHORT[d.getMonth()];
+  if (isCurrent) return `THIS MONTH · ${count}d`;
+  return `${mo} · ${count}d`;
 }
 
 export function Grid({
@@ -810,7 +838,13 @@ export function Grid({
           </div>
         )}
 
-        {isMacro && <MacroDayHeader buckets={buckets} gap={2} />}
+        {isMacro && (
+          <MacroDayHeader
+            buckets={buckets}
+            gap={2}
+            macroKind={data.macroKind ?? "hour-week"}
+          />
+        )}
 
         <SortableContext items={displayCategories} strategy={verticalListSortingStrategy}>
           {displayCategories.map((cat) => (

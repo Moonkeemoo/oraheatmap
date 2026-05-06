@@ -1,12 +1,16 @@
 import { useSession } from "next-auth/react";
 import { TOKENS } from "@/lib/tokens";
-import type { HeatmapMetric, LiveRange, Mode, PatternKind } from "@/lib/types";
+import type { HeatmapMetric, LiveRange, MacroKind, Mode, PatternKind } from "@/lib/types";
 import { BrandLogo } from "./BrandLogo";
 import { BurgerMenu } from "./BurgerMenu";
 import { LiveStatus } from "./LiveStatus";
 import { ScaleLegend } from "./ScaleLegend";
 
 const LIVE_RANGES: ReadonlyArray<LiveRange> = ["1h", "24h", "12d", "12w"];
+const MACRO_KINDS: ReadonlyArray<{ kind: MacroKind; label: string; title: string }> = [
+  { kind: "hour-week", label: "1H × WEEK", title: "Hourly granularity over the last 7 days (168 cells)" },
+  { kind: "day-12w", label: "1D × 12W", title: "Daily granularity over the last 12 weeks (84 cells)" },
+];
 const PATTERN_KINDS: ReadonlyArray<{ kind: PatternKind; label: string }> = [
   { kind: "hour-of-day", label: "HOUR" },
   { kind: "day-of-week", label: "DOW" },
@@ -180,6 +184,8 @@ export function Header({
   setRange,
   patternKind,
   setPatternKind,
+  macroKind,
+  setMacroKind,
   isLive,
   daysOfData,
   onRequestLogin,
@@ -192,6 +198,8 @@ export function Header({
   setRange: (r: LiveRange) => void;
   patternKind: PatternKind;
   setPatternKind: (k: PatternKind) => void;
+  macroKind: MacroKind;
+  setMacroKind: (k: MacroKind) => void;
   isLive: boolean;
   // The following props are accepted for backwards compat with the
   // existing call site but no longer rendered — meta strip
@@ -282,39 +290,51 @@ export function Header({
           daysOfData={daysOfData}
           locked={!isAuthed}
         />
-        {mode !== "macro" && (
-          <>
-            <div style={{ width: 1, height: 26, background: TOKENS.border }} />
-            {isLive ? (
-              <div style={{ display: "flex", gap: 5 }}>
-                {LIVE_RANGES.map((r) => (
-                  <Pill
-                    key={r}
-                    active={range === r}
-                    onClick={() => (isAuthed ? setRange(r) : onRequestLogin())}
-                    title={isAuthed ? undefined : "Sign in to switch ranges"}
-                  >
-                    {r}
-                    {!isAuthed && range !== r && <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>}
-                  </Pill>
-                ))}
-              </div>
-            ) : (
-              <div style={{ display: "flex", gap: 5 }}>
-                {PATTERN_KINDS.map((p) => (
-                  <Pill
-                    key={p.kind}
-                    active={patternKind === p.kind}
-                    onClick={() => (isAuthed ? setPatternKind(p.kind) : onRequestLogin())}
-                    title={isAuthed ? undefined : "Sign in to switch pattern"}
-                  >
-                    {p.label}
-                    {!isAuthed && patternKind !== p.kind && <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>}
-                  </Pill>
-                ))}
-              </div>
-            )}
-          </>
+        <div style={{ width: 1, height: 26, background: TOKENS.border }} />
+        {mode === "live" && (
+          <div style={{ display: "flex", gap: 5 }}>
+            {LIVE_RANGES.map((r) => (
+              <Pill
+                key={r}
+                active={range === r}
+                onClick={() => (isAuthed ? setRange(r) : onRequestLogin())}
+                title={isAuthed ? undefined : "Sign in to switch ranges"}
+              >
+                {r}
+                {!isAuthed && range !== r && <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>}
+              </Pill>
+            ))}
+          </div>
+        )}
+        {mode === "pattern" && (
+          <div style={{ display: "flex", gap: 5 }}>
+            {PATTERN_KINDS.map((p) => (
+              <Pill
+                key={p.kind}
+                active={patternKind === p.kind}
+                onClick={() => (isAuthed ? setPatternKind(p.kind) : onRequestLogin())}
+                title={isAuthed ? undefined : "Sign in to switch pattern"}
+              >
+                {p.label}
+                {!isAuthed && patternKind !== p.kind && <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>}
+              </Pill>
+            ))}
+          </div>
+        )}
+        {mode === "macro" && (
+          <div style={{ display: "flex", gap: 5 }}>
+            {MACRO_KINDS.map((m) => (
+              <Pill
+                key={m.kind}
+                active={macroKind === m.kind}
+                onClick={() => (isAuthed ? setMacroKind(m.kind) : onRequestLogin())}
+                title={isAuthed ? m.title : "Sign in to switch macro frame"}
+              >
+                {m.label}
+                {!isAuthed && macroKind !== m.kind && <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>}
+              </Pill>
+            ))}
+          </div>
         )}
         <div style={{ width: 1, height: 26, background: TOKENS.border }} />
 

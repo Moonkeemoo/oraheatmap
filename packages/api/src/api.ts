@@ -537,6 +537,7 @@ export function createApi(deps: ApiDeps) {
           mode,
           query.range ?? "",
           query.kind ?? "",
+          query.macroKind ?? "",
           query.lookbackDays ?? "",
           query.category ?? "",
           query.subcategory ?? "",
@@ -615,14 +616,20 @@ export function createApi(deps: ApiDeps) {
           return patternResponse;
         }
 
-        // macro mode — dense matrix, single hardcoded config (5min × 24h ×
-        // 288 buckets). Skips per-cell top-markets / top-whales: at this
-        // density they'd dominate the payload and never render anyway.
+        // macro mode — dense matrix. Two configs by macroKind:
+        //   hour-week (default) → 1h × 7d × 168 cells
+        //   day-12w             → 1d × 12w × 84 cells
+        // Skips per-cell top-markets / top-whales — at this density they'd
+        // dominate the payload and never render anyway.
         if (mode === "macro") {
-          const macroCfg = MACRO_CONFIG["1h"];
+          const macroKind = (query.macroKind ?? "hour-week") as
+            | "hour-week"
+            | "day-12w";
+          const macroCfg = MACRO_CONFIG[macroKind];
           const macroBuckets = buildBuckets(now, macroCfg.bucketMinutes, macroCfg.slots);
           const aggRows = await queryMacroAggRows(
             deps.sql,
+            macroKind,
             isDrill ? drillCategory : null,
             drillSubcategory,
           );
@@ -630,17 +637,16 @@ export function createApi(deps: ApiDeps) {
             aggRows,
             [], // no markets
             macroBuckets,
-            "1h", // range arg unused for macro shape; reuse 1h slot
+            "1h", // range arg unused for macro shape
             now,
             { drillCategory: isDrill ? drillCategory : null },
             [], // no whale rows
           );
-          // Empty out per-cell markets/topWhales arrays (they got
-          // initialised to [] by assembleHeatmap, fine).
           const macroResponse = {
             ...grid,
             mode: "macro" as const,
-            range: "1h" as const, // included so client knows the bucket size convention
+            range: "1h" as const,
+            macroKind,
             trackedWhales,
             drillSubcategory,
             drillSubcategoryLabel: drillSubcategory
@@ -860,6 +866,9 @@ export function createApi(deps: ApiDeps) {
             t.Union([t.Literal("hour-of-day"), t.Literal("day-of-week")]),
           ),
           lookbackDays: t.Optional(t.Numeric({ minimum: 1, maximum: 365 })),
+          macroKind: t.Optional(
+            t.Union([t.Literal("hour-week"), t.Literal("day-12w")]),
+          ),
           metric: t.Optional(
             t.Union([
               t.Literal("signals"),
