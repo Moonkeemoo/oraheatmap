@@ -16,10 +16,27 @@ export type RecurringWhale = {
   totalVolume: number;
 };
 
+export type SlotCharacter = {
+  /** USD volume from BUY-side trades over the slot+lookback. */
+  buyVolume: number;
+  /** USD volume from SELL-side trades. */
+  sellVolume: number;
+  /** buyVolume / (buyVolume + sellVolume), clamped 0..1. */
+  buyShare: number;
+  /** Top-1 whale's share of total volume. 0..1. */
+  top1Share: number;
+  /** Top-3 whales' combined share. */
+  top3Share: number;
+  uniqueWhales: number;
+  totalTrades: number;
+  totalVolume: number;
+};
+
 export type RecurringWhalesResult = {
   whales: ReadonlyArray<RecurringWhale>;
   expectedCycles: number;
   lookbackDays: number;
+  character: SlotCharacter;
 };
 
 export type RecurringWhalesScope = {

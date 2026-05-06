@@ -13,6 +13,7 @@ import { ProbabilityChart } from "./ProbabilityChart";
 import { CellFeed } from "./tooltip/CellFeed";
 import { RowHighlights } from "./tooltip/RowHighlights";
 import { CycleHistogram, rowIndexToServerSlot } from "./tooltip/CycleHistogram";
+import { SlotCharacter } from "./tooltip/SlotCharacter";
 import { MarketIcon } from "./tooltip/MarketIcon";
 import {
   fmtDeltaInline,
@@ -692,6 +693,19 @@ export function Tooltip({
             </div>
           )}
         </div>
+      )}
+
+      {/* Slot character — direction / concentration / shape fingerprint.
+          Same activation gate as recurring whales (PATTERN + locked +
+          authed). Direction & concentration come from the recurring-
+          whales endpoint's `character` block; shape is computed
+          client-side from the cycle histogram samples. */}
+      {isPattern && locked && isAuthed && recurring.data?.character && (
+        <SlotCharacter
+          character={recurring.data.character}
+          cycleSamples={cycles.samples ?? []}
+          metric={metric}
+        />
       )}
 
       {/* Recurring whales — wallets that hit this slot multiple times

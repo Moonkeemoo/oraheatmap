@@ -1223,6 +1223,70 @@ export function createApi(deps: ApiDeps) {
           LIMIT 5
         `;
 
+        // Slot character — directional bias + whale concentration over the
+        // same scope+slot window the recurring-whales query runs on. Three
+        // analytical lenses surfaced together so the drawer tells a
+        // behaviour story alongside the per-whale leaderboard:
+        //   - Direction: BUY vs SELL volume split. 80%+ BUY = hard
+        //     consensus; 50/50 = balanced flow.
+        //   - Concentration: top-1 / top-3 whale share of total volume.
+        //     A single whale at 80% means "this is HIS pattern", not
+        //     a market-wide one — totally different read.
+        //   - Total trades + unique whales let the UI render the
+        //     denominator for sizing/concentration meters.
+        type CharRow = {
+          total_buy: number | string;
+          total_sell: number | string;
+          total_volume: number | string;
+          top1_volume: number | string;
+          top3_volume: number | string;
+          unique_whales: number | string;
+          total_trades: number | string;
+        };
+        const charRows = await deps.sql<CharRow[]>`
+          WITH per_whale AS (
+            SELECT
+              whale_addr,
+              COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)::numeric  AS buy_vol,
+              COALESCE(SUM(size * price) FILTER (WHERE side = 'SELL'), 0)::numeric AS sell_vol,
+              COUNT(*)::bigint                                                       AS trades
+            FROM signals
+            WHERE ts >= NOW() - (${`${lookbackDays} days`}::interval)
+              AND ts <= NOW()
+              AND ${scopeFilter}
+              AND ${slotFilter}
+              AND whale_addr ~ '^0x[0-9a-f]{40}$'
+            GROUP BY whale_addr
+          ),
+          ranked AS (
+            SELECT
+              whale_addr,
+              buy_vol + sell_vol AS total_vol,
+              buy_vol,
+              sell_vol,
+              trades,
+              ROW_NUMBER() OVER (ORDER BY buy_vol + sell_vol DESC) AS rn
+            FROM per_whale
+          )
+          SELECT
+            COALESCE(SUM(buy_vol), 0)::numeric                                  AS total_buy,
+            COALESCE(SUM(sell_vol), 0)::numeric                                 AS total_sell,
+            COALESCE(SUM(total_vol), 0)::numeric                                AS total_volume,
+            COALESCE(SUM(total_vol) FILTER (WHERE rn = 1), 0)::numeric          AS top1_volume,
+            COALESCE(SUM(total_vol) FILTER (WHERE rn <= 3), 0)::numeric         AS top3_volume,
+            COUNT(*)::bigint                                                     AS unique_whales,
+            COALESCE(SUM(trades), 0)::bigint                                     AS total_trades
+          FROM ranked
+        `;
+        const c = charRows[0];
+        const totalVolume = Number(c?.total_volume ?? 0);
+        const top1Share = totalVolume > 0 ? Number(c!.top1_volume) / totalVolume : 0;
+        const top3Share = totalVolume > 0 ? Number(c!.top3_volume) / totalVolume : 0;
+        const buyVolume = Number(c?.total_buy ?? 0);
+        const sellVolume = Number(c?.total_sell ?? 0);
+        const directionalVol = buyVolume + sellVolume;
+        const buyShare = directionalVol > 0 ? buyVolume / directionalVol : 0;
+
         // Expected cycle count gives the UI a denominator for the
         // "12 / 30 cycles" hit-rate display. Computed server-side so
         // the client doesn't have to reproduce the kind→cycle math.
@@ -1246,6 +1310,16 @@ export function createApi(deps: ApiDeps) {
           })),
           expectedCycles,
           lookbackDays,
+          character: {
+            buyVolume,
+            sellVolume,
+            buyShare,
+            top1Share,
+            top3Share,
+            uniqueWhales: Number(c?.unique_whales ?? 0),
+            totalTrades: Number(c?.total_trades ?? 0),
+            totalVolume,
+          },
         };
         highlightsCache.set(cacheKey, result, ttlMs);
         set.headers["x-cache"] = "miss";
