@@ -952,3 +952,76 @@ export function StatsBar({
     </div>
   );
 }
+
+// ── Skeleton ───────────────────────────────────────────────────────────
+// Drop-in placeholder rendered while displayData is null on first load.
+// Uses the same outer chrome as the real StatsBar (border, padding,
+// safe-area inset) so the bottom of the viewport doesn't jump when the
+// real data finishes streaming. Six dummy cards mirror the live
+// strip's count on both mobile (h-scroll) and desktop (6-col grid).
+export function StatsBarSkeleton() {
+  const isMobile = useIsMobile();
+  const cards = [0, 1, 2, 3, 4, 5];
+  if (isMobile) {
+    return (
+      <div
+        style={{
+          borderTop: `1px solid ${TOKENS.border}`,
+          background: TOKENS.panel,
+          padding: "6px 10px",
+          paddingBottom:
+            "max(var(--tg-safe-bottom, env(safe-area-inset-bottom, 6px)), 6px)",
+          paddingLeft: "max(var(--tg-safe-left, 10px), 10px)",
+          paddingRight: "max(var(--tg-safe-right, 10px), 10px)",
+          display: "flex",
+          gap: 10,
+          overflowX: "auto",
+          overflowY: "visible",
+          WebkitOverflowScrolling: "touch",
+          scrollbarWidth: "none",
+          flexShrink: 0,
+        }}
+      >
+        {cards.map((i) => (
+          <div key={i} style={{ flex: "0 0 auto", minWidth: 100 }}>
+            <SkeletonCard delayMs={i * 80} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div
+      style={{
+        borderTop: `1px solid ${TOKENS.border}`,
+        padding: "14px 32px",
+        background: TOKENS.panel,
+        display: "grid",
+        gridTemplateColumns:
+          "minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,0.7fr) minmax(0,1.3fr) minmax(0,1fr)",
+        gap: 22,
+        flexShrink: 0,
+      }}
+    >
+      {cards.map((i) => (
+        <SkeletonCard key={i} delayMs={i * 80} />
+      ))}
+    </div>
+  );
+}
+
+function SkeletonCard({ delayMs }: { delayMs: number }) {
+  const shimmer: React.CSSProperties = {
+    backgroundImage: `linear-gradient(90deg, ${TOKENS.panel} 0%, ${TOKENS.panel2} 50%, ${TOKENS.panel} 100%)`,
+    backgroundSize: "200% 100%",
+    animation: `skeletonShimmer 1.6s ease-in-out infinite`,
+    animationDelay: `${delayMs}ms`,
+    borderRadius: 4,
+  };
+  return (
+    <div>
+      <div style={{ ...shimmer, height: 9, width: 60, marginBottom: 8 }} />
+      <div style={{ ...shimmer, height: 18, width: 80 }} />
+    </div>
+  );
+}

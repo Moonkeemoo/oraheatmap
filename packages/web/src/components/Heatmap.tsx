@@ -30,7 +30,7 @@ import { Grid } from "./Grid";
 import { Header } from "./Header";
 import { HeatmapSkeleton } from "./HeatmapSkeleton";
 import { LoginModal } from "./LoginModal";
-import { StatsBar } from "./StatsBar";
+import { StatsBar, StatsBarSkeleton } from "./StatsBar";
 import { Tooltip, type TooltipAnchor } from "./Tooltip";
 import { WhaleDrawer } from "./WhaleDrawer";
 
@@ -714,7 +714,7 @@ export function Heatmap() {
         )}
       </div>
 
-      {displayData && (
+      {displayData ? (
         <StatsBar
           data={displayData}
           trackedCount={displayData.trackedWhales}
@@ -725,6 +725,13 @@ export function Heatmap() {
             setWhaleProfileAddr(addr);
           }}
         />
+      ) : (
+        // Render the skeleton during the initial load instead of
+        // collapsing the bottom row entirely — keeps the viewport
+        // layout stable (no jump when data lands) and gives users a
+        // visual "almost ready" cue at the bottom of the screen,
+        // matching the heatmap skeleton above.
+        <StatsBarSkeleton />
       )}
       <Footer compact />
       <WhaleDrawer
