@@ -29,6 +29,7 @@ export type UseHeatmapResult = {
 
 export function useHeatmap(args: {
   mode: Mode;
+  subject: import("@/lib/types").Subject;
   range?: LiveRange;
   kind?: PatternKind;
   macroKind?: MacroKind;
@@ -86,7 +87,7 @@ export function useHeatmap(args: {
       clearInterval(id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [args.mode, args.range, args.kind, args.macroKind, args.lookbackDays, args.drillCategory, args.drillSubcategory]);
+  }, [args.mode, args.subject, args.range, args.kind, args.macroKind, args.lookbackDays, args.drillCategory, args.drillSubcategory]);
 
   return { data, loading, error };
 }

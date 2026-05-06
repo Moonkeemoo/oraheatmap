@@ -519,14 +519,17 @@ export async function queryHeatmapAggRows(
 }
 
 /**
- * Whales-mode aggregation. Same time grid as LIVE (4 ranges × 12
- * buckets), but rows are the top-N whale addresses ranked by BUY
- * volume in the window. Used by the "Whales × Time" view to surface
- * each whale's "schedule" — which hour of which day they're active
- * in — directly on the heatmap. Aggregates from raw signals (CAGG
- * doesn't carry whale_addr).
+ * Whales-subject aggregation. Same time grid as LIVE (4 ranges × 12
+ * buckets), but rows are the top-N whale addresses ranked by 90-day
+ * realized PnL — closest SQL approximation of the JS `computeReputation`
+ * formula in whale-profile.ts (which combines PnL + winRate +
+ * sample-confidence trust factor). Min 5 trades over 90d filters out
+ * the noisy long-tail. Aggregates from raw signals (CAGG doesn't
+ * carry whale_addr).
  */
-const WHALES_TOP_N = 15;
+const WHALES_TOP_N = 50;
+const WHALES_REPUTATION_LOOKBACK_DAYS = 90;
+const WHALES_MIN_TRADES = 5;
 
 export async function queryWhalesAggRows(
   sql: Sql,
@@ -536,19 +539,21 @@ export async function queryWhalesAggRows(
   const bucketInterval = `${cfg.bucketMinutes} minutes`;
   const windowInterval = `${cfg.windowMinutes} minutes`;
 
-  // First pass — pick the top-N whales by BUY volume in the window.
-  // Filter to the 0x[hex]{40} shape so we don't pull in the synthetic
-  // composite addresses (CLAUDE.md SIG-7) that occasionally leak into
-  // raw signals.
+  // First pass — pick the top-N whales by 90d realized PnL with a
+  // minimum-trades floor. Mirrors the LVL-badge reputation logic so
+  // the rows surface "whales worth watching", not "whales who happened
+  // to push the most volume in the last hour". 0x[hex]{40} regex
+  // filters out the synthetic composite addresses (SIG-7).
   type AddrRow = { whale_addr: string };
   const topRows = await sql<AddrRow[]>`
     SELECT whale_addr
     FROM signals
-    WHERE ts >= NOW() - (${windowInterval}::interval)
+    WHERE ts >= NOW() - (${`${WHALES_REPUTATION_LOOKBACK_DAYS} days`}::interval)
       AND ts <= NOW()
       AND whale_addr ~ '^0x[0-9a-f]{40}$'
     GROUP BY whale_addr
-    ORDER BY COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0) DESC
+    HAVING COUNT(*) >= ${WHALES_MIN_TRADES}
+    ORDER BY COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) DESC
     LIMIT ${WHALES_TOP_N}
   `;
   const topAddrs = topRows.map((r) => r.whale_addr);

@@ -101,7 +101,7 @@ function makeRowMeta(
   // Use the per-row meta the API ships inline (alias / colour /
   // avatar). Truncate long aliases to keep the row chip narrow,
   // analogous to the L1 category pill width.
-  if (data.mode === "whales") {
+  if (data.subject === "whales") {
     const meta = data.whaleMeta?.[cat];
     const alias = meta?.alias ?? shortenAddress(cat);
     return {

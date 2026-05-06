@@ -32,7 +32,13 @@ import type {
   MacroKind,
   Mode,
   PatternKind,
+  Subject,
 } from "@/lib/types";
+
+const SUBJECTS: ReadonlyArray<{ id: Subject; label: string; color: string }> = [
+  { id: "trades", label: "TRADES", color: TOKENS.text },
+  { id: "whales", label: "WHALES", color: TOKENS.neg },
+];
 
 type ModeMeta = { id: Mode; label: string; color: string };
 
@@ -40,7 +46,6 @@ const MODES: ReadonlyArray<ModeMeta> = [
   { id: "live", label: "LIVE", color: TOKENS.pos },
   { id: "pattern", label: "PATTERN", color: TOKENS.accent },
   { id: "macro", label: "MACRO", color: TOKENS.link },
-  { id: "whales", label: "WHALES", color: TOKENS.neg },
 ];
 
 const LIVE_RANGES: ReadonlyArray<LiveRange> = ["1h", "24h", "12d", "12w"];
@@ -73,8 +78,7 @@ function rangeText(
   patternKind: PatternKind,
   macroKind: MacroKind,
 ): string {
-  // WHALES uses the LIVE range set since it's the same time grid.
-  if (mode === "live" || mode === "whales") return range.toUpperCase();
+  if (mode === "live") return range.toUpperCase();
   if (mode === "pattern") {
     return PATTERN_KINDS.find((p) => p.id === patternKind)?.label ?? "HOUR";
   }
@@ -88,6 +92,7 @@ function metricText(metric: HeatmapMetric): string {
 // ── Chip header ────────────────────────────────────────────────────────
 
 export function MobileFiltersChip({
+  subject,
   mode,
   range,
   patternKind,
@@ -95,6 +100,7 @@ export function MobileFiltersChip({
   metric,
   onOpen,
 }: {
+  subject: Subject;
   mode: Mode;
   range: LiveRange;
   patternKind: PatternKind;
@@ -103,6 +109,7 @@ export function MobileFiltersChip({
   onOpen: () => void;
 }) {
   const m = modeMeta(mode);
+  const subjectMeta = SUBJECTS.find((s) => s.id === subject) ?? SUBJECTS[0]!;
   return (
     <button
       onClick={onOpen}
@@ -135,6 +142,8 @@ export function MobileFiltersChip({
           whiteSpace: "nowrap",
         }}
       >
+        <span style={{ color: subjectMeta.color }}>{subjectMeta.label}</span>
+        <Dot />
         <span style={{ color: m.color }}>{m.label}</span>
         <Dot />
         <span>{rangeText(mode, range, patternKind, macroKind)}</span>
@@ -178,11 +187,13 @@ function Dot() {
 
 // ── Sheet ──────────────────────────────────────────────────────────────
 
-type ExpandedRow = "mode" | "range" | "metric" | null;
+type ExpandedRow = "subject" | "mode" | "range" | "metric" | null;
 
 export function MobileFiltersSheet({
   open,
   onClose,
+  subject,
+  setSubject,
   mode,
   setMode,
   range,
@@ -198,6 +209,8 @@ export function MobileFiltersSheet({
 }: {
   open: boolean;
   onClose: () => void;
+  subject: Subject;
+  setSubject: (s: Subject) => void;
   mode: Mode;
   setMode: (m: Mode) => void;
   range: LiveRange;
@@ -211,10 +224,11 @@ export function MobileFiltersSheet({
   isAuthed: boolean;
   onRequestLogin: () => void;
 }) {
-  // Default to MODE expanded — the picker is most actionable to the
-  // user when they first open the sheet, and the row can quickly
-  // collapse if they want to see all three at once.
-  const [expanded, setExpanded] = useState<ExpandedRow>("mode");
+  // Default to SUBJECT expanded — the picker is the new top-of-
+  // hierarchy decision (TRADES vs WHALES) and frames the rest of
+  // the choices below it. The row can quickly collapse if they
+  // want to see all four at once.
+  const [expanded, setExpanded] = useState<ExpandedRow>("subject");
 
   useEffect(() => {
     if (!open) return;
@@ -241,9 +255,7 @@ export function MobileFiltersSheet({
       ? TOKENS.pos
       : mode === "pattern"
         ? TOKENS.accent
-        : mode === "whales"
-          ? TOKENS.neg
-          : TOKENS.link;
+        : TOKENS.link;
 
   // Unauth users get LIVE/1h/volume free; everything else opens login.
   // Same gating logic as the desktop Header — keep it explicit so the
@@ -332,6 +344,33 @@ export function MobileFiltersSheet({
           </button>
         </div>
 
+        {/* Subject row — top of the new hierarchy "what am I tracking".
+            TRADES (default) keeps the heatmap as categories × time;
+            WHALES pivots rows to per-whale activity. */}
+        <Row
+          label="Tracking"
+          valueText={SUBJECTS.find((s) => s.id === subject)!.label}
+          valueColor={SUBJECTS.find((s) => s.id === subject)!.color}
+          isExpanded={expanded === "subject"}
+          onToggle={() => setExpanded(expanded === "subject" ? null : "subject")}
+        >
+          <PillRow>
+            {SUBJECTS.map((s) => (
+              <Pill
+                key={s.id}
+                active={subject === s.id}
+                color={s.color}
+                locked={!isAuthed && s.id !== "trades"}
+                onClick={() =>
+                  !isAuthed && s.id !== "trades" ? onRequestLogin() : setSubject(s.id)
+                }
+              >
+                {s.label}
+              </Pill>
+            ))}
+          </PillRow>
+        </Row>
+
         {/* Mode row. */}
         <Row
           label="Mode"
@@ -366,7 +405,7 @@ export function MobileFiltersSheet({
           onToggle={() => setExpanded(expanded === "range" ? null : "range")}
         >
           <PillRow>
-            {(mode === "live" || mode === "whales") &&
+            {mode === "live" &&
               LIVE_RANGES.map((r) => (
                 <Pill
                   key={r}
@@ -423,9 +462,9 @@ export function MobileFiltersSheet({
             {METRICS.filter(
               // WHALES metric is the convergence count of distinct
               // whales per cell — meaningless when each row IS one
-              // whale (every cell would tautologically read 1). Drop
-              // it from the picker in whales mode.
-              (mt) => !(mode === "whales" && mt.id === "whales"),
+              // whale (every cell tautologically reads 1). Drop it
+              // from the picker when subject === "whales".
+              (mt) => !(subject === "whales" && mt.id === "whales"),
             ).map((mt) => (
               <Pill
                 key={mt.id}

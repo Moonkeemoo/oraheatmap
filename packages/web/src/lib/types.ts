@@ -11,7 +11,18 @@ export type Category =
   | "Climate"
   | "Other";
 
-export type Mode = "live" | "pattern" | "macro" | "whales";
+export type Mode = "live" | "pattern" | "macro";
+
+/**
+ * Top-level "what am I tracking" toggle. The grid's row axis is
+ * decided by this — TRADES (default) keeps rows as categories /
+ * subcategories / markets, WHALES pivots to per-whale rows.
+ * Independent of mode (live/pattern/macro), so any combination is
+ * valid: WHALES + LIVE = each whale's hourly/daily activity, WHALES
+ * + PATTERN = each whale's hour-of-day or weekly schedule, WHALES
+ * + MACRO = each whale's density over the long window.
+ */
+export type Subject = "trades" | "whales";
 export type MacroKind = "hour-week" | "day-12w";
 
 export type LiveRange = "1h" | "24h" | "12d" | "12w";
@@ -101,6 +112,7 @@ export type HeatmapBucket = {
 
 export type HeatmapResponse = {
   mode: Mode;
+  subject: Subject;
   generatedAt: string;
   // Live-only:
   range?: LiveRange;

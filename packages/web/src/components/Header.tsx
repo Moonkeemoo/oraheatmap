@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { TOKENS } from "@/lib/tokens";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import type { HeatmapMetric, LiveRange, MacroKind, Mode, PatternKind } from "@/lib/types";
+import type { HeatmapMetric, LiveRange, MacroKind, Mode, PatternKind, Subject } from "@/lib/types";
 import { BrandLogo } from "./BrandLogo";
 import { BurgerMenu } from "./BurgerMenu";
 import { LiveStatus } from "./LiveStatus";
@@ -136,6 +136,66 @@ function MetricTab({
   );
 }
 
+function SubjectToggle({
+  subject,
+  setSubject,
+  locked,
+}: {
+  subject: Subject;
+  setSubject: (s: Subject) => void;
+  locked?: boolean;
+}) {
+  const renderBtn = (s: Subject, label: string, activeColor: string): React.ReactNode => {
+    const active = subject === s;
+    return (
+      <button
+        onClick={() => setSubject(s)}
+        title={
+          s === "whales" && locked
+            ? "Sign in to track whales as rows"
+            : s === "trades"
+              ? "Categories × time (default)"
+              : "Top whales × time — surface each whale's schedule directly"
+        }
+        style={{
+          background: active ? activeColor : "transparent",
+          border: "none",
+          color: active ? "#0d1117" : TOKENS.textSec,
+          fontFamily: TOKENS.font,
+          fontSize: 11,
+          fontWeight: 800,
+          letterSpacing: 0.5,
+          textTransform: "uppercase",
+          padding: "7px 14px",
+          borderRadius: 6,
+          cursor: "pointer",
+          transition: "all .12s",
+        }}
+      >
+        {label}
+        {s === "whales" && locked && !active && (
+          <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>
+        )}
+      </button>
+    );
+  };
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 0,
+        background: TOKENS.panel,
+        padding: 3,
+        borderRadius: 8,
+        border: `1px solid ${TOKENS.border}`,
+      }}
+    >
+      {renderBtn("trades", "TRADES", TOKENS.text)}
+      {renderBtn("whales", "WHALES", TOKENS.neg)}
+    </div>
+  );
+}
+
 function ModeToggle({
   mode,
   setMode,
@@ -202,19 +262,13 @@ function ModeToggle({
           ? "Sign in to switch modes"
           : "Density view — last 7 days at hourly granularity, no labels, image carries the signal",
       )}
-      {renderBtn(
-        "whales",
-        "WHALES",
-        TOKENS.neg,
-        locked
-          ? "Sign in to switch modes"
-          : "Top whales × time grid — see each whale's schedule of activity in the heatmap idiom",
-      )}
     </div>
   );
 }
 
 export function Header({
+  subject,
+  setSubject,
   mode,
   setMode,
   metric,
@@ -229,6 +283,8 @@ export function Header({
   daysOfData,
   onRequestLogin,
 }: {
+  subject: Subject;
+  setSubject: (s: Subject) => void;
   mode: Mode;
   setMode: (m: Mode) => void;
   metric: HeatmapMetric;
@@ -277,6 +333,8 @@ export function Header({
     // login on every set including the free defaults.
     return (
       <MobileHeader
+        subject={subject}
+        setSubject={setSubject}
         mode={mode}
         setMode={setMode}
         range={range}
@@ -355,6 +413,12 @@ export function Header({
             minWidth: 0,
           }}
         >
+        <SubjectToggle
+          subject={subject}
+          setSubject={(s) => (isAuthed || s === "trades" ? setSubject(s) : onRequestLogin())}
+          locked={!isAuthed}
+        />
+        <div style={{ width: 1, height: 26, background: TOKENS.border }} />
         <ModeToggle
           mode={mode}
           setMode={gate(setMode)}
@@ -567,6 +631,8 @@ export function UserChip({
 // sheet open/closed state so the surrounding Header stays a thin
 // dispatcher between desktop and mobile layouts.
 function MobileHeader({
+  subject,
+  setSubject,
   mode,
   setMode,
   range,
@@ -580,6 +646,8 @@ function MobileHeader({
   isAuthed,
   onRequestLogin,
 }: {
+  subject: Subject;
+  setSubject: (s: Subject) => void;
   mode: Mode;
   setMode: (m: Mode) => void;
   range: LiveRange;
@@ -635,6 +703,7 @@ function MobileHeader({
 
         {/* Row 2 — filter chip. Tap → opens MobileFiltersSheet. */}
         <MobileFiltersChip
+          subject={subject}
           mode={mode}
           range={range}
           patternKind={patternKind}
@@ -647,6 +716,8 @@ function MobileHeader({
       <MobileFiltersSheet
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
+        subject={subject}
+        setSubject={setSubject}
         mode={mode}
         setMode={setMode}
         range={range}

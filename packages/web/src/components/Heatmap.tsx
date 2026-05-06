@@ -24,6 +24,7 @@ import type {
   Mode,
   PatternKind,
   SignalEvent,
+  Subject,
 } from "@/lib/types";
 import { Breadcrumb } from "./Breadcrumb";
 import { Footer } from "./Footer";
@@ -118,6 +119,9 @@ export function Heatmap() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [subject, setSubject] = useState<Subject>(
+    () => parseSubject(searchParams?.get("subject")) ?? "trades",
+  );
   const [mode, setMode] = useState<Mode>(
     () => parseMode(searchParams?.get("mode")) ?? "live",
   );
@@ -155,15 +159,15 @@ export function Heatmap() {
     initAnalytics();
   }, []);
 
-  // Whales mode rows ARE whales, so the WHALES metric (per-cell
+  // Subject "whales" rows ARE whales, so the WHALES metric (per-cell
   // distinct whale count) collapses to 1 everywhere — meaningless.
-  // Snap metric to volume when entering whales mode if the user was
-  // viewing the whales metric.
+  // Snap metric to volume when subject flips to whales while metric
+  // is whales.
   useEffect(() => {
-    if (mode === "whales" && metric === "whales") {
+    if (subject === "whales" && metric === "whales") {
       setMetric("volume");
     }
-  }, [mode, metric]);
+  }, [subject, metric]);
 
   // Sync filter state → URL. Defaults are omitted so the URL stays
   // tidy ("/app" alone) while user is on the canonical view; any
@@ -174,6 +178,7 @@ export function Heatmap() {
   // every URL update.
   useEffect(() => {
     const params = new URLSearchParams();
+    if (subject !== "trades") params.set("subject", subject);
     if (mode !== "live") params.set("mode", mode);
     if (mode === "live" && range !== "1h") params.set("range", range);
     if (mode === "pattern" && patternKind !== "hour-of-day")
@@ -187,6 +192,7 @@ export function Heatmap() {
     const url = qs ? `${pathname}?${qs}` : pathname;
     router.replace(url, { scroll: false });
   }, [
+    subject,
     mode,
     range,
     patternKind,
@@ -314,7 +320,8 @@ export function Heatmap() {
 
   const { data: fetchedData, loading, error } = useHeatmap({
     mode,
-    range: mode === "live" || mode === "whales" ? range : undefined,
+    subject,
+    range: mode === "live" ? range : undefined,
     kind: mode === "pattern" ? patternKind : undefined,
     macroKind: mode === "macro" ? macroKind : undefined,
     lookbackDays: mode === "pattern" ? 30 : undefined,
@@ -516,6 +523,8 @@ export function Heatmap() {
       }}
     >
       <Header
+        subject={subject}
+        setSubject={setSubject}
         mode={mode}
         setMode={trackedSetMode}
         metric={metric}
@@ -606,7 +615,7 @@ export function Heatmap() {
                     // tooltip" worth showing — open that whale's full
                     // profile drawer instead (same as clicking the
                     // whale's row label). Skip the panelCell flow.
-                    if (mode === "whales") {
+                    if (subject === "whales") {
                       track.whaleDrawerOpen("cell", h.category);
                       setPanelCell(null);
                       setWhaleProfileAddr(h.category);
@@ -868,6 +877,9 @@ function metricAffectedBy(metric: HeatmapMetric, s: SignalEvent): boolean {
 // in one place — every state field has the same shape: `parse(input) ??
 // "default"`.
 
+function parseSubject(v: string | null | undefined): Subject | undefined {
+  return v === "trades" || v === "whales" ? v : undefined;
+}
 function parseMode(v: string | null | undefined): Mode | undefined {
   return v === "live" || v === "pattern" || v === "macro" ? v : undefined;
 }

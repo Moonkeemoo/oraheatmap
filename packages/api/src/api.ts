@@ -535,6 +535,7 @@ export function createApi(deps: ApiDeps) {
         // different users hit the same entry.
         const cacheKey = [
           "heatmap",
+          query.subject ?? "trades",
           mode,
           query.range ?? "",
           query.kind ?? "",
@@ -589,6 +590,7 @@ export function createApi(deps: ApiDeps) {
             : null;
           const patternResponse = {
             mode: "pattern" as const,
+            subject: "trades" as const,
             patternKind: kind,
             lookbackDays,
             generatedAt: now.toISOString(),
@@ -739,6 +741,7 @@ export function createApi(deps: ApiDeps) {
           const macroResponse = {
             ...grid,
             mode: "macro" as const,
+            subject: "trades" as const,
             range: "1h" as const,
             macroKind,
             trackedWhales,
@@ -767,12 +770,13 @@ export function createApi(deps: ApiDeps) {
           return macroResponse;
         }
 
-        // whales mode — top-N whales × time. Same time grid as LIVE
-        // (4 ranges × 12 buckets) but rows are whale addresses ranked
-        // by BUY volume in the window. Visual idiom is identical to
-        // LIVE; the UI swaps category-pill labels for whale-row
-        // labels (avatar + alias + LVL badge) when it sees mode === "whales".
-        if (mode === "whales") {
+        // subject === "whales" — pivot rows from categories to top-N
+        // whale addresses. For now reuses LIVE bucketing regardless of
+        // requested mode (PATTERN / MACRO whales bucketing is a
+        // follow-up). Visual idiom matches LIVE; UI renders whale
+        // labels via response.whaleMeta.
+        const subject = query.subject ?? "trades";
+        if (subject === "whales") {
           const range: HeatmapRange = query.range ?? "1h";
           const cfg = RANGE_CONFIG[range];
           const buckets = buildBuckets(now, cfg.bucketMinutes, cfg.slots);
@@ -802,7 +806,8 @@ export function createApi(deps: ApiDeps) {
           }
           const whalesResponse = {
             ...grid,
-            mode: "whales" as const,
+            mode: "live" as const,
+            subject: "whales" as const,
             range,
             trackedWhales,
             whaleMeta,
@@ -974,6 +979,7 @@ export function createApi(deps: ApiDeps) {
         const liveResponse = {
           ...grid,
           mode: "live" as const,
+          subject: "trades" as const,
           trackedWhales,
           drillSubcategory,
           // Display name of the drilled subcategory — surfaced separately so the
@@ -1006,7 +1012,8 @@ export function createApi(deps: ApiDeps) {
       },
       {
         query: t.Object({
-          mode: t.Optional(t.Union([t.Literal("live"), t.Literal("pattern"), t.Literal("macro"), t.Literal("whales")])),
+          mode: t.Optional(t.Union([t.Literal("live"), t.Literal("pattern"), t.Literal("macro")])),
+          subject: t.Optional(t.Union([t.Literal("trades"), t.Literal("whales")])),
           range: t.Optional(
             t.Union([t.Literal("1h"), t.Literal("24h"), t.Literal("12d"), t.Literal("12w")]),
           ),
