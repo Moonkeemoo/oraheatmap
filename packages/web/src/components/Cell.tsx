@@ -94,11 +94,31 @@ export function Cell({
   // collapsed into pure-black gaps and read as "the layout is broken".
   const visualEmpty = isEmpty || bg === "transparent";
   const value = isEmpty ? "" : getCellValue(metric, cell);
-  const valColor = isEmpty ? TOKENS.text : getValueColor(metric, cell);
   // PATTERN parens now show full-lookback AVG (not Δ vs older half) — gives
   // the user a baseline to compare the current cell against. Color stays
   // muted because it's a reference value, not a positive/negative trend.
   const avg = showDelta && !isEmpty ? avgForMetric(metric, cell) : null;
+  // PATTERN "now" cell: paint the value green when current > avg, red
+  // when current < avg, and prepend an ↑ / ↓ arrow. Only the "now"
+  // column gets this treatment — every other column already represents
+  // historical averages, the comparison would be circular. We keep the
+  // default colour for empty / equal / missing-avg cases.
+  const cur = !isEmpty ? recentForMetric(metric, cell) : null;
+  const isPatternNow = showDelta && isNowCol && !isEmpty && cur !== null && avg !== null;
+  const trend: "up" | "down" | null = isPatternNow
+    ? cur > avg
+      ? "up"
+      : cur < avg
+        ? "down"
+        : null
+    : null;
+  const valColor = isEmpty
+    ? TOKENS.text
+    : trend === "up"
+      ? TOKENS.pos
+      : trend === "down"
+        ? TOKENS.neg
+        : getValueColor(metric, cell);
 
   function captureAnchor(): TooltipAnchor | null {
     if (!ref.current) return null;
@@ -213,6 +233,21 @@ export function Cell({
             zIndex: 1,
           }}
         >
+          {trend && (
+            <span
+              aria-hidden
+              style={{
+                fontSize: 11,
+                fontWeight: 800,
+                color: valColor,
+                lineHeight: 1,
+                marginRight: 1,
+              }}
+              title={trend === "up" ? "above the lookback average" : "below the lookback average"}
+            >
+              {trend === "up" ? "▲" : "▼"}
+            </span>
+          )}
           <span style={{ fontSize: 12, fontWeight: 700, color: valColor }}>{value}</span>
           {showDelta && !isEmpty && (
             // Parens text reads against coloured cell backgrounds (yellow,
