@@ -72,3 +72,65 @@ export async function verifyTelegram(input: { payload: string; botToken: string 
     return { ok: false, reason: (err as Error).message };
   }
 }
+
+/**
+ * Verifies a Telegram Mini App `initData` payload.
+ *
+ * Different from the Login Widget hash check (verifyTelegram above) in two
+ * ways: the wire format is a URL-encoded query string (not pre-parsed
+ * JSON), and the secret-key derivation is keyed differently —
+ * `HMAC-SHA256("WebAppData", bot_token)` rather than `SHA256(bot_token)`.
+ * Spec: https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
+ *
+ * The `user` field is itself JSON-encoded inside the query string;
+ * we decode it and surface id / username / first_name / photo_url to
+ * match the existing TelegramOk shape so downstream user creation in
+ * auth.ts can reuse the same `tg:${telegramId}` identity.
+ */
+export async function verifyTelegramWebApp(input: {
+  initData: string;
+  botToken: string;
+}): Promise<TelegramOk | VerifyFail> {
+  if (!input.initData) return { ok: false, reason: "missing initData" };
+  if (!input.botToken) return { ok: false, reason: "bot token not configured" };
+  try {
+    const params = new URLSearchParams(input.initData);
+    const hash = params.get("hash");
+    if (!hash) return { ok: false, reason: "initData has no hash" };
+    params.delete("hash");
+    const dataCheckString = Array.from(params.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join("\n");
+    const { createHmac } = await import("node:crypto");
+    const secretKey = createHmac("sha256", "WebAppData")
+      .update(input.botToken)
+      .digest();
+    const computed = createHmac("sha256", secretKey)
+      .update(dataCheckString)
+      .digest("hex");
+    if (computed !== hash) return { ok: false, reason: "hash mismatch" };
+    const authDate = Number(params.get("auth_date"));
+    if (!authDate || Date.now() / 1000 - authDate > TELEGRAM_MAX_AGE_SEC) {
+      return { ok: false, reason: "initData expired" };
+    }
+    const userJson = params.get("user");
+    if (!userJson) return { ok: false, reason: "initData has no user" };
+    const user = JSON.parse(userJson) as {
+      id?: number | string;
+      username?: string;
+      first_name?: string;
+      photo_url?: string;
+    };
+    if (!user.id) return { ok: false, reason: "user payload missing id" };
+    return {
+      ok: true,
+      telegramId: String(user.id),
+      username: user.username ?? null,
+      firstName: user.first_name ?? null,
+      photoUrl: user.photo_url ?? null,
+    };
+  } catch (err) {
+    return { ok: false, reason: (err as Error).message };
+  }
+}

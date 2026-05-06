@@ -5,7 +5,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { getDb } from "@/db";
 import { accounts, authenticators, sessions, users, verificationTokens } from "@/db/auth-schema";
-import { verifySiwe, verifyTelegram } from "@/lib/credentials";
+import { verifySiwe, verifyTelegram, verifyTelegramWebApp } from "@/lib/credentials";
 
 /**
  * Auth.js (NextAuth v5) configuration for the heatmap web app.
@@ -334,6 +334,39 @@ if (process.env["TG_LOGIN_BOT_TOKEN"]) {
         });
         if (!result.ok) {
           console.warn("[auth/telegram] verify failed:", result.reason);
+          return null;
+        }
+        const standaloneId = `tg:${result.telegramId}`;
+        const linkedUserId = await findLinkedUserId("telegram", result.telegramId);
+        return {
+          id: linkedUserId ?? standaloneId,
+          name: result.username || result.firstName || `tg-${result.telegramId}`,
+          image: result.photoUrl,
+        };
+      },
+    }),
+  );
+
+  // Telegram Mini App — `initData` query string handed off by Telegram
+  // Web App SDK. Same bot token, same `tg:${id}` identity space as the
+  // Login Widget above (so a user who linked Telegram via the widget
+  // gets the same account when they open the Mini App), but different
+  // verification because Mini App uses HMAC("WebAppData", bot_token)
+  // as the secret key rather than SHA256(bot_token).
+  providers.push(
+    Credentials({
+      id: "telegram-webapp",
+      name: "Telegram Mini App",
+      credentials: {
+        initData: { label: "Telegram WebApp initData", type: "text" },
+      },
+      async authorize(credentials) {
+        const result = await verifyTelegramWebApp({
+          initData: credentials?.initData as string,
+          botToken: process.env["TG_LOGIN_BOT_TOKEN"]!,
+        });
+        if (!result.ok) {
+          console.warn("[auth/telegram-webapp] verify failed:", result.reason);
           return null;
         }
         const standaloneId = `tg:${result.telegramId}`;
