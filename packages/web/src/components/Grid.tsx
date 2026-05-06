@@ -442,25 +442,34 @@ function MacroDayHeader({
       <div />
       {groups.map((g, gi) => {
         const isToday = lastDayKey(g.date) === todayKey;
+        const isFirst = gi === 0;
         return (
           <div
             key={gi}
             style={{
               gridColumn: `span ${g.count}`,
               minWidth: 0,
-              fontSize: 9,
+              fontSize: 10,
               fontFamily: TOKENS.mono,
-              color: isToday ? TOKENS.pos : TOKENS.textMuted,
-              fontWeight: isToday ? 700 : 500,
-              letterSpacing: 0.4,
+              color: isToday ? TOKENS.pos : TOKENS.textSec,
+              fontWeight: 700,
+              letterSpacing: 0.5,
               textTransform: "uppercase",
-              // Borderless small chip — sits visually above its
-              // group of cells without competing for attention.
-              padding: "2px 6px",
+              padding: "3px 8px",
               display: "flex",
               alignItems: "center",
               justifyContent: "flex-start",
-              borderLeft: gi === 0 ? "none" : `1px solid ${TOKENS.border}`,
+              // Crisp left edge to mark the day boundary — accent for
+              // TODAY, borderHi for prior days. No edge on the very
+              // first chip (start of window, not a between-days line).
+              borderLeft: isFirst
+                ? "none"
+                : isToday
+                  ? `2px solid ${TOKENS.pos}`
+                  : `2px solid ${TOKENS.borderHi}`,
+              // Faint zebra striping so adjacent days are read as
+              // discrete chunks at a glance, not one long strip.
+              background: gi % 2 === 0 ? "transparent" : "rgba(255,255,255,0.025)",
               overflow: "hidden",
               whiteSpace: "nowrap",
             }}
@@ -474,12 +483,12 @@ function MacroDayHeader({
             {isToday && (
               <span
                 style={{
-                  width: 5,
-                  height: 5,
-                  borderRadius: 5,
+                  width: 6,
+                  height: 6,
+                  borderRadius: 6,
                   background: TOKENS.pos,
-                  boxShadow: `0 0 5px ${TOKENS.pos}`,
-                  marginRight: 5,
+                  boxShadow: `0 0 6px ${TOKENS.pos}`,
+                  marginRight: 6,
                   flexShrink: 0,
                 }}
               />
