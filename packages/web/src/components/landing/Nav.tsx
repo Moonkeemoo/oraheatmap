@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { BrandLogo } from "@/components/BrandLogo";
+import { initAnalytics } from "@/lib/analytics";
 import { TOKENS } from "@/lib/tokens";
 
 /**
@@ -9,8 +11,18 @@ import { TOKENS } from "@/lib/tokens";
  * and the burger menu live inside the dashboard chrome, so duplicating
  * them here only added visual noise without giving the user a different
  * destination.
+ *
+ * Doubles as the landing's analytics entrypoint: initAnalytics fires
+ * here on mount so /  pageviews + sessions register the same way the
+ * /app + /tg routes do (those init via Heatmap's own useEffect).
+ * Without this every visitor that lands on oralab.xyz but doesn't
+ * click "Open App" is invisible to our funnel.
  */
 export function Nav() {
+  useEffect(() => {
+    initAnalytics();
+  }, []);
+
   return (
     <nav
       style={{
