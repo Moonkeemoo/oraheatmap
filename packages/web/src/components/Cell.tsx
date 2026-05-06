@@ -98,14 +98,14 @@ export function Cell({
   // the user a baseline to compare the current cell against. Color stays
   // muted because it's a reference value, not a positive/negative trend.
   const avg = showDelta && !isEmpty ? avgForMetric(metric, cell) : null;
-  // PATTERN "now" cell: paint the value green when current > avg, red
-  // when current < avg, and prepend an ↑ / ↓ arrow. Only the "now"
-  // column gets this treatment — every other column already represents
-  // historical averages, the comparison would be circular. We keep the
-  // default colour for empty / equal / missing-avg cases.
+  // PATTERN cell: paint the value green when current > lookback avg,
+  // red when below, and prepend ▲/▼. Applied to every non-empty cell
+  // in PATTERN — each column already shows current-vs-avg natively
+  // (current is the recent-half mean, parens is the full lookback),
+  // so the same comparison is meaningful everywhere, not just NOW.
   const cur = !isEmpty ? recentForMetric(metric, cell) : null;
-  const isPatternNow = showDelta && isNowCol && !isEmpty && cur !== null && avg !== null;
-  const trend: "up" | "down" | null = isPatternNow
+  const isPatternTrend = showDelta && !isEmpty && cur !== null && avg !== null;
+  const trend: "up" | "down" | null = isPatternTrend
     ? cur > avg
       ? "up"
       : cur < avg
