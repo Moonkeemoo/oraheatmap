@@ -2,6 +2,11 @@ import type { Metadata } from "next";
 
 import { Heatmap } from "@/components/Heatmap";
 
+// Heatmap reads filter state from URL via useSearchParams — Next.js
+// needs the page either wrapped in Suspense or marked dynamic so the
+// build doesn't try to prerender it statically.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Heatmap",
   description:
