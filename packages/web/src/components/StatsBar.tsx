@@ -41,15 +41,33 @@ function StatCell({
   onHoverChange: (h: boolean) => void;
 }) {
   const interactive = item.tooltip || item.popover;
+  // Tap-toggle the popover on touch. iOS Safari fires a synthetic
+  // mouseenter on first tap and mouseleave when the user taps
+  // elsewhere — that left popovers technically reachable but
+  // dismissing them required tapping the same card again to "leave",
+  // and the popover anyway closed before the user could interact with
+  // its contents. Native click handles touch reliably and toggles
+  // the visible state instead. Whale-card onClick (Top Whale → drawer)
+  // takes precedence: it lives on a child element and stops
+  // propagation when invoked.
+  const onCardClick = (e: React.MouseEvent): void => {
+    if (!item.popover) return;
+    // The whale card has its own onClick that bubbles up. Don't
+    // toggle the popover when the click came from THAT element.
+    const target = e.target as HTMLElement;
+    if (target.closest("[data-stats-whale-click]")) return;
+    onHoverChange(!hovered);
+  };
   return (
     <div
       title={item.popover ? undefined : item.tooltip}
       onMouseEnter={() => onHoverChange(true)}
       onMouseLeave={() => onHoverChange(false)}
+      onClick={onCardClick}
       style={{
         position: "relative",
         paddingRight: divider ? 20 : 0,
-        cursor: interactive ? "help" : "default",
+        cursor: interactive ? "pointer" : "default",
       }}
     >
       {hovered && item.popover && (
@@ -79,7 +97,12 @@ function StatCell({
             <div
               role={item.onClick ? "button" : undefined}
               tabIndex={item.onClick ? 0 : undefined}
-              onClick={item.onClick}
+              data-stats-whale-click
+              onClick={(e) => {
+                if (!item.onClick) return;
+                e.stopPropagation();
+                item.onClick();
+              }}
               onKeyDown={(e) => { if (item.onClick && (e.key === "Enter" || e.key === " ")) item.onClick(); }}
               style={{
                 display: "flex",

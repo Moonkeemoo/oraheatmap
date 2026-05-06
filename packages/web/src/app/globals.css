@@ -57,3 +57,13 @@ body {
 [style*="overflow-x:auto"]::-webkit-scrollbar {
   display: none;
 }
+
+/* App shell — full-viewport flex column. Modern browsers use 100dvh
+   (second declaration tracks iOS Safari's collapsing address bar);
+   pre-Safari 15.4 / pre-Chrome 108 fall through to the 100vh fallback
+   declared first. CSS-in-JS object keys can't express the duplicate
+   property, hence the class. */
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
+}

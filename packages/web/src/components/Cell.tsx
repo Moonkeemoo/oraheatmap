@@ -248,21 +248,25 @@ export function Cell({
         outlineOffset: -1,
       }}
     >
-      {!compact && flashSeq > 0 && (
+      {flashSeq > 0 && (
         <span
           key={`flash-${flashSeq}`}
           style={{
             position: "absolute",
             inset: 0,
-            borderRadius: 7,
+            // Match the cell's own border-radius so the ring traces the
+            // cell shape — compact cells are 2px, regular cells 7px.
+            borderRadius: compact ? 2 : 7,
             pointerEvents: "none",
             animation: `flashRing ${ringDuration}s ease-out forwards`,
             // Per-flash spread + alpha — keyframe in globals.css reads
             // these custom properties so a hot cell expands a bigger,
             // brighter ring per event while a quiet cell just pings
             // softly. Colour stays white across all heat levels.
+            // Compact cells use a tighter spread so the ring doesn't
+            // dwarf a 14×30px cell on mobile.
             ["--ring-color" as string]: `rgba(255,255,255,${ringAlpha.toFixed(2)})`,
-            ["--ring-spread" as string]: `${ringSpread}px`,
+            ["--ring-spread" as string]: `${compact ? Math.min(ringSpread, 6) : ringSpread}px`,
           }}
         />
       )}

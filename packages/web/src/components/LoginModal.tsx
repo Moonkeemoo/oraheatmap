@@ -44,6 +44,18 @@ export function LoginModal({ open, onClose }: { open: boolean; onClose: () => vo
   const { status: sessionStatus } = useSession();
   const linkMode = sessionStatus === "authenticated";
 
+  // Reset transient state every time the modal opens. Without this,
+  // if a previous attempt got stuck (e.g. Telegram popup blocked,
+  // SIWE wallet rejected silently), the busy/error state lingered
+  // across opens and the buttons rendered as "..." (loading dots)
+  // forever. Reset on each open is cheap and gives the user a clean
+  // slate to retry.
+  useEffect(() => {
+    if (!open) return;
+    setBusy(null);
+    setError(null);
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     // Defensive default — show every provider we have UI for. The probe
@@ -461,7 +473,20 @@ function TelegramLoginButton({
     }
     setBusy(true);
     setError(null);
+    // Defensive timeout — if the Telegram popup is blocked or the user
+    // dismisses without the callback firing (common on iOS Safari where
+    // tg.auth opens a popup window that the OS may swallow), reset the
+    // busy flag after 60s so the button isn't stuck on "…" forever.
+    let resolved = false;
+    const timeoutId = window.setTimeout(() => {
+      if (!resolved) {
+        setBusy(false);
+        setError("Telegram login timed out. Try again, or pick another method.");
+      }
+    }, 60_000);
     tg.auth({ bot_id: botId, request_access: "write" }, async (data) => {
+      resolved = true;
+      window.clearTimeout(timeoutId);
       if (!data) {
         setBusy(false);
         setError("Telegram login was cancelled.");

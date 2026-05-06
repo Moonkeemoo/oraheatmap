@@ -402,14 +402,15 @@ export function Heatmap() {
 
   return (
     <div
+      // app-shell carries the height: 100vh / height: 100dvh pair via
+      // globals.css — the duplicate-property fallback can't be expressed
+      // via inline-style React (object keys deduped). dvh tracks iOS
+      // Safari's collapsing address bar so the Header doesn't slide
+      // off-screen as the toolbar resizes.
+      className="app-shell"
       style={{
         width: "100vw",
         maxWidth: "100vw",
-        // height (not min-height) so the inner middle wrapper with flex:1
-        // gets a determinate parent and the Grid actually stretches to fill
-        // the viewport. min-height collapses flex:1 children to content
-        // size instead of distributing remaining space.
-        height: "100vh",
         background: TOKENS.bg,
         color: TOKENS.text,
         fontFamily: TOKENS.font,
@@ -417,6 +418,10 @@ export function Heatmap() {
         flexDirection: "column",
         position: "relative",
         overflowX: "hidden",
+        // Prevent the page itself from scrolling — only the inner middle
+        // wrapper scrolls. Otherwise iOS Safari can drag the whole
+        // Heatmap root and unstick the Header.
+        overflowY: "hidden",
         boxSizing: "border-box",
       }}
     >
