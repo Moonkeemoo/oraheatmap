@@ -5,9 +5,16 @@ import "./globals.css";
 
 const SITE_URL = "https://oralab.xyz";
 const SITE_NAME = "oralab";
-const SITE_TITLE = "oralab · Polymarket whale tracker · live PnL heatmap";
+// SERP guidelines: lead with the keyword phrase, brand at the end
+// after a pipe. Single dash inside the keyword phrase reads better
+// than two-or-three "·" separators which look noisy in Google's
+// rendered title.
+const SITE_TITLE = "Polymarket whale tracker — live PnL heatmap | oralab";
+// Target ~150-160 chars before Google truncates. Single sentence,
+// load-bearing nouns at the front, no internal-jargon ("PATTERN
+// view", "dossier") that reads like marketing fluff in a snippet.
 const SITE_DESCRIPTION =
-  "Real-time Polymarket whale tracker. Smart-money signals across 9 prediction-market categories, drill from a hot cell to the markets driving it. PATTERN view, whale dossier with 90-day PnL. Free forever for the basic view.";
+  "Real-time heatmap of every Polymarket trade from 10,000+ top wallets. Drill into hot markets and see which whales are pushing them — across 9 categories.";
 
 export const metadata: Metadata = {
   // metadataBase resolves all relative og:image / twitter:image URLs
