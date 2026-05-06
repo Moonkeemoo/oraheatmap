@@ -277,7 +277,12 @@ export default async function Image() {
             </div>
           </div>
 
-          {/* ── Bottom: heatmap panel + stats row, pushed to bottom ── */}
+          {/* ── Bottom: heatmap panel + stats row, pushed to bottom ──
+              Satori (the @vercel/og renderer) doesn't support
+              display: grid, and nested flex with `flex: 1` cells gets
+              quirky on cell distribution — use explicit pixel
+              dimensions throughout. The 1200×630 frame stays fixed,
+              so hardcoding cell sizes is correct here. ── */}
           <div
             style={{
               marginTop: "auto",
@@ -297,7 +302,8 @@ export default async function Image() {
                   "linear-gradient(180deg, rgba(22,27,34,0.92) 0%, rgba(22,27,34,0.78) 100%)",
               }}
             >
-              {/* Category pills column. */}
+              {/* Category pills column — 110×200px, 5 pills × 36px tall
+                  plus 4 × 5px gaps. */}
               <div
                 style={{
                   display: "flex",
@@ -311,20 +317,21 @@ export default async function Image() {
                   <div
                     key={c.label}
                     style={{
-                      flex: 1,
+                      width: 110,
+                      height: 36,
                       fontFamily: "ui-monospace, Menlo, monospace",
                       fontSize: 10,
                       fontWeight: 600,
                       letterSpacing: 1.4,
                       textTransform: "uppercase",
-                      padding: "6px 10px",
+                      padding: "0 10px",
                       borderRadius: 5,
-                      height: 36,
                       display: "flex",
                       alignItems: "center",
                       background: c.bg,
                       color: c.color,
                       border: `1px solid ${c.border}`,
+                      boxSizing: "border-box",
                     }}
                   >
                     {c.label}
@@ -332,31 +339,33 @@ export default async function Image() {
                 ))}
               </div>
 
-              {/* 5×12 cell grid. Flex column of rows, each row is a flex
-                  row of cells. Cell sizing controlled by parent width
-                  via flex: 1 inside each row. */}
+              {/* 5×12 cell grid. 936×200px content area, 12 cells per
+                  row at 73px wide × 36px tall, 5px gaps. Stacked as 5
+                  flex rows so satori doesn't have to do grid. */}
               <div
                 style={{
                   display: "flex",
                   flexDirection: "column",
                   gap: 5,
-                  flex: 1,
+                  width: 936,
+                  height: 200,
                 }}
               >
                 {ROWS.map((row, ri) => (
                   <div
                     key={ri}
-                    style={{ display: "flex", gap: 5, flex: 1 }}
+                    style={{ display: "flex", gap: 5, height: 36 }}
                   >
                     {row.map((cls, ci) => (
                       <div
                         key={ci}
                         style={{
-                          flex: 1,
-                          minHeight: 36,
+                          width: 73,
+                          height: 36,
                           borderRadius: 5,
                           border: "1px solid rgba(255,255,255,0.02)",
                           background: "#1f2530",
+                          boxSizing: "border-box",
                           ...(CELL_STYLES[cls] ?? {}),
                         }}
                       />
