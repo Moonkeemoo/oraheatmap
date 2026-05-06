@@ -4,6 +4,7 @@ import { fmtMoney, fmtMoneyShort } from "@/lib/format";
 import { useCellCycles } from "@/hooks/useCellCycles";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useMarketHistory } from "@/hooks/useMarketHistory";
+import { useRecurringWhales } from "@/hooks/useRecurringWhales";
 import { marketUrl } from "@/lib/polymarket-url";
 import { TOKENS } from "@/lib/tokens";
 import { track } from "@/lib/analytics";
@@ -240,6 +241,30 @@ export function Tooltip({
       }
     : null;
   const cycles = useCellCycles(cyclesArgs, cyclesEnabled);
+  // Recurring whales — wallets that hit this slot across multiple
+  // cycles in the lookback. Same activation gate as the cycle
+  // histogram (PATTERN + locked) so we don't fire the query on hover.
+  // Authed only — anon users see the consolidated sign-in plaque.
+  const recurringScope = cyclesEnabled
+    ? parentCategory
+      ? { category: parentCategory, subcategory: category }
+      : { category }
+    : null;
+  const recurring = useRecurringWhales({
+    scope: recurringScope,
+    kind: cyclesEnabled ? patternKind : null,
+    slotIdx: cyclesEnabled ? serverSlotForCycles : null,
+    lookbackDays,
+    enabled: cyclesEnabled && isAuthed,
+  });
+  // Hit rate denominator — how many cycles SHOULD have fired in the
+  // lookback for this slot. HOUR pattern: each slot occurs once per
+  // day → max = lookbackDays. DOW pattern: each slot occurs once per
+  // week → max = floor(lookbackDays / 7).
+  const expectedCycles =
+    patternKind === "hour-of-day"
+      ? lookbackDays
+      : Math.max(1, Math.floor(lookbackDays / 7));
   // Top whales in this cell — re-sorted by the active metric so the rows
   // match what the heatmap is showing. Hidden in PATTERN mode (no per-cell
   // whale aggregation in the pattern query).
@@ -577,7 +602,30 @@ export function Tooltip({
           >
             <span>Trend (recent vs older half)</span>
             {cell.sampleCount !== undefined && (
-              <span style={{ color: TOKENS.textSec }}>n={cell.sampleCount}</span>
+              // Hit rate — distinguishes a "reliable pattern" from
+              // "one outlier inflating the avg". Active cycles ÷
+              // expected cycles. Color hints at strength: ≥80% green,
+              // 50-79% neutral, <50% muted (data is sparse, take the
+              // avg with a grain of salt).
+              (() => {
+                const pct = Math.round(
+                  (cell.sampleCount / expectedCycles) * 100,
+                );
+                const color =
+                  pct >= 80
+                    ? TOKENS.pos
+                    : pct >= 50
+                      ? TOKENS.textSec
+                      : TOKENS.textMuted;
+                return (
+                  <span
+                    style={{ color, fontFamily: TOKENS.mono }}
+                    title={`Active in ${cell.sampleCount} of ${expectedCycles} expected cycles`}
+                  >
+                    {cell.sampleCount}/{expectedCycles} ({pct}%)
+                  </span>
+                );
+              })()
             )}
           </div>
           {(() => {
@@ -637,13 +685,140 @@ export function Tooltip({
             </div>
           )}
           {cycles.samples && cycles.samples.length > 0 && (
-            <CycleHistogram samples={cycles.samples} metric={metric} />
+            // Histogram bumped from default 44 → 88 — a 44px chart
+            // gets unreadable on big-monitor drawer widths where bars
+            // can't differentiate the spread. 88 doubles the visual
+            // dynamic range without crowding the rest of the drawer.
+            <CycleHistogram samples={cycles.samples} metric={metric} height={88} />
           )}
           {cycles.samples && cycles.samples.length === 0 && !cycles.loading && (
             <div style={{ fontSize: 11, color: TOKENS.textMuted, padding: "8px 0" }}>
               No history for this slot.
             </div>
           )}
+        </div>
+      )}
+
+      {/* Recurring whales — wallets that hit this slot multiple times
+          across cycles. Auth-gated; the consolidated sign-in plaque
+          below the trend block already covers anon users. */}
+      {isPattern && locked && isAuthed && (
+        <div style={{ borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8, marginBottom: 8 }}>
+          <div
+            style={{
+              fontSize: 9,
+              letterSpacing: 0.5,
+              color: TOKENS.textMuted,
+              textTransform: "uppercase",
+              marginBottom: 6,
+              fontWeight: 600,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <span>Recurring whales · this slot</span>
+            <span style={{ color: TOKENS.textSec }}>by cycle hits</span>
+          </div>
+          {recurring.loading && (
+            <div style={{ fontSize: 11, color: TOKENS.textSec, padding: "6px 0" }}>
+              loading…
+            </div>
+          )}
+          {recurring.error && (
+            <div style={{ fontSize: 11, color: TOKENS.neg, padding: "6px 0" }}>
+              {recurring.error}
+            </div>
+          )}
+          {recurring.data && recurring.data.whales.length === 0 && !recurring.loading && (
+            <div style={{ fontSize: 11, color: TOKENS.textMuted, padding: "6px 0", lineHeight: 1.4 }}>
+              No whales hit this slot more than once in the lookback.
+            </div>
+          )}
+          {recurring.data && recurring.data.whales.map((w) => {
+            // Compact relative-time formatter: 8h, 3d, 2w. Drops minutes
+            // because per-cycle granularity is at least a day, so
+            // "37m ago" is misleading.
+            const ageMs = Date.now() - new Date(w.lastSeen).getTime();
+            const days = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+            const lastSeenLabel =
+              days === 0
+                ? `${Math.max(1, Math.floor(ageMs / (60 * 60 * 1000)))}h ago`
+                : days < 7
+                  ? `${days}d ago`
+                  : `${Math.floor(days / 7)}w ago`;
+            const denom = recurring.data!.expectedCycles;
+            return (
+              <button
+                key={w.addr}
+                type="button"
+                onClick={() => onWhaleClick(w.addr)}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "20px 1fr auto auto",
+                  alignItems: "center",
+                  gap: 8,
+                  width: "100%",
+                  padding: "5px 4px",
+                  marginBottom: 2,
+                  background: "transparent",
+                  border: "none",
+                  borderRadius: 4,
+                  cursor: "pointer",
+                  color: "inherit",
+                  fontFamily: "inherit",
+                  textAlign: "left",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.04)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                }}
+                title={`${w.alias}\n${w.addr}`}
+              >
+                <WhaleAvatar
+                  size={20}
+                  color={w.color}
+                  profileImage={w.profileImage}
+                />
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: TOKENS.text,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    fontFamily: w.alias.startsWith("0x") ? TOKENS.mono : TOKENS.font,
+                  }}
+                >
+                  {w.alias}
+                </span>
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: TOKENS.textMuted,
+                    fontFamily: TOKENS.mono,
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {lastSeenLabel}
+                </span>
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: TOKENS.text,
+                    fontFamily: TOKENS.mono,
+                    fontVariantNumeric: "tabular-nums",
+                    fontWeight: 600,
+                    minWidth: 38,
+                    textAlign: "right",
+                  }}
+                >
+                  {w.cycleHits}/{denom}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
 

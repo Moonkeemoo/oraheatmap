@@ -1135,6 +1135,135 @@ export function createApi(deps: ApiDeps) {
       },
     )
     .get(
+      "/api/recurring-whales",
+      async ({ query, set }) => {
+        // For a PATTERN-mode cell (slot × category × kind), return the
+        // top whales who showed up in this slot ACROSS multiple cycles.
+        // Different from cell-stats which sums activity inside ONE
+        // window — recurring counts how many distinct cycles each
+        // whale was active in, surfacing "wallets that hit this slot
+        // like clockwork" rather than "everyone who happened to trade
+        // here this lookback".
+        //
+        // kind:
+        //   "hour-of-day" → cycle = 1 day, slot = (UTC hour / 2),
+        //                   slotIdx 0..11 covers 0-1, 2-3, …, 22-23
+        //   "day-of-week" → cycle = 1 ISO week, slot = ISO weekday
+        //                   slotIdx 0..6 maps Mon..Sun (matches the
+        //                   UI's MON-FIRST display order)
+        const cat = query.category;
+        const sub = query.subcategory ?? null;
+        const cid = query.conditionId ?? null;
+        const kind = query.kind;
+        const slotIdx = query.slotIdx;
+        const lookbackDays = query.lookbackDays ?? 30;
+
+        const cacheKey = [
+          "recurring-whales",
+          cat, sub ?? "", cid ?? "",
+          kind, String(slotIdx), String(lookbackDays),
+        ].join("|");
+        const ttlMs = 5 * 60_000;
+        const cc = cacheControlHeader(ttlMs);
+        const cached = highlightsCache.get(cacheKey);
+        if (cached !== undefined) {
+          set.headers["x-cache"] = "hit";
+          set.headers["cache-control"] = cc;
+          return cached;
+        }
+
+        const scopeFilter = cid
+          ? deps.sql`condition_id = ${cid}`
+          : sub
+            ? deps.sql`category = ${cat} AND subcategory = ${sub}`
+            : deps.sql`category = ${cat}`;
+        const slotFilter =
+          kind === "hour-of-day"
+            ? deps.sql`(EXTRACT(hour FROM ts AT TIME ZONE 'UTC')::int / 2) = ${slotIdx}`
+            : // ISO dow: Mon=1..Sun=7. UI display is Mon-first 0..6,
+              // so slotIdx 0→1, 1→2, …, 6→7. Translate inline.
+              deps.sql`EXTRACT(isodow FROM ts AT TIME ZONE 'UTC')::int = ${slotIdx + 1}`;
+        const cycleExpr =
+          kind === "hour-of-day"
+            ? deps.sql`DATE_TRUNC('day', ts AT TIME ZONE 'UTC')`
+            : deps.sql`DATE_TRUNC('week', ts AT TIME ZONE 'UTC')`;
+
+        type WhaleRow = {
+          whale_addr: string;
+          cycle_hits: number | string;
+          last_seen: string;
+          avg_volume: number | string;
+          total_volume: number | string;
+        };
+        const rows = await deps.sql<WhaleRow[]>`
+          WITH per_cycle AS (
+            SELECT
+              whale_addr,
+              ${cycleExpr} AS cycle,
+              COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)::numeric AS volume,
+              MAX(ts) AS last_ts
+            FROM signals
+            WHERE ts >= NOW() - (${`${lookbackDays} days`}::interval)
+              AND ts <= NOW()
+              AND ${scopeFilter}
+              AND ${slotFilter}
+              AND whale_addr ~ '^0x[0-9a-f]{40}$'
+            GROUP BY whale_addr, cycle
+            HAVING COUNT(*) > 0
+          )
+          SELECT
+            whale_addr,
+            COUNT(*)::bigint                                AS cycle_hits,
+            MAX(last_ts)                                    AS last_seen,
+            AVG(volume)::numeric                            AS avg_volume,
+            SUM(volume)::numeric                            AS total_volume
+          FROM per_cycle
+          GROUP BY whale_addr
+          ORDER BY cycle_hits DESC, total_volume DESC
+          LIMIT 5
+        `;
+
+        // Expected cycle count gives the UI a denominator for the
+        // "12 / 30 cycles" hit-rate display. Computed server-side so
+        // the client doesn't have to reproduce the kind→cycle math.
+        const expectedCycles =
+          kind === "hour-of-day"
+            ? lookbackDays
+            : Math.max(1, Math.floor(lookbackDays / 7));
+
+        const result = {
+          whales: rows.map((w) => ({
+            addr: w.whale_addr,
+            alias: whaleAlias(w.whale_addr),
+            color: whaleColor(w.whale_addr),
+            profileImage: whaleAliasInfo(w.whale_addr)?.profileImage ?? null,
+            cycleHits: Number(w.cycle_hits),
+            lastSeen: typeof w.last_seen === "string"
+              ? w.last_seen
+              : (w.last_seen as unknown as Date).toISOString(),
+            avgVolume: Number(w.avg_volume),
+            totalVolume: Number(w.total_volume),
+          })),
+          expectedCycles,
+          lookbackDays,
+        };
+        highlightsCache.set(cacheKey, result, ttlMs);
+        set.headers["x-cache"] = "miss";
+        set.headers["cache-control"] = cc;
+        return result;
+      },
+      {
+        query: t.Object({
+          category: t.String(),
+          subcategory: t.Optional(t.String()),
+          conditionId: t.Optional(t.String()),
+          kind: t.Union([t.Literal("hour-of-day"), t.Literal("day-of-week")]),
+          slotIdx: t.Numeric({ minimum: 0, maximum: 11 }),
+          lookbackDays: t.Optional(t.Numeric({ minimum: 1, maximum: 90 })),
+        }),
+      },
+    )
+    .get(
       "/api/whales/search",
       ({ query }) => {
         // Powered by the in-memory alias map (loaded at boot from
