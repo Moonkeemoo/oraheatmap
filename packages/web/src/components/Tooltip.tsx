@@ -8,6 +8,7 @@ import { useRecurringWhales } from "@/hooks/useRecurringWhales";
 import { marketUrl } from "@/lib/polymarket-url";
 import { TOKENS } from "@/lib/tokens";
 import { track } from "@/lib/analytics";
+import { DrawerLoading } from "./DrawerLoading";
 import { ProbabilityChart } from "./ProbabilityChart";
 import { CellFeed } from "./tooltip/CellFeed";
 import { RowHighlights } from "./tooltip/RowHighlights";
@@ -515,11 +516,7 @@ export function Tooltip({
             <span>Market probability</span>
             <span style={{ color: TOKENS.textSec }}>ALL</span>
           </div>
-          {marketHistory.loading && (
-            <div style={{ fontSize: 11, color: TOKENS.textSec, padding: "8px 0" }}>
-              loading…
-            </div>
-          )}
+          {marketHistory.loading && <DrawerLoading variant="block" label="loading chart" />}
           {marketHistory.error && (
             <div style={{ fontSize: 11, color: TOKENS.neg, padding: "8px 0" }}>
               {marketHistory.error}
@@ -676,9 +673,7 @@ export function Tooltip({
             <span>Past cycles · {patternKind === "hour-of-day" ? "30 days" : "12 weeks"}</span>
             <span style={{ color: TOKENS.textSec }}>{metric === "signals" ? "trades" : metric}</span>
           </div>
-          {cycles.loading && (
-            <div style={{ fontSize: 11, color: TOKENS.textSec, padding: "8px 0" }}>loading…</div>
-          )}
+          {cycles.loading && <DrawerLoading variant="block" label="loading cycles" />}
           {cycles.error && (
             <div style={{ fontSize: 11, color: TOKENS.neg, padding: "8px 0" }}>
               {cycles.error}
@@ -719,11 +714,7 @@ export function Tooltip({
             <span>Recurring whales · this slot</span>
             <span style={{ color: TOKENS.textSec }}>by cycle hits</span>
           </div>
-          {recurring.loading && (
-            <div style={{ fontSize: 11, color: TOKENS.textSec, padding: "6px 0" }}>
-              loading…
-            </div>
-          )}
+          {recurring.loading && <DrawerLoading variant="rows" rows={3} />}
           {recurring.error && (
             <div style={{ fontSize: 11, color: TOKENS.neg, padding: "6px 0" }}>
               {recurring.error}

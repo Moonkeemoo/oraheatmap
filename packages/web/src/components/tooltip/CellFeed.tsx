@@ -4,6 +4,7 @@ import { fmtMoneyShort } from "@/lib/format";
 import { marketUrl } from "@/lib/polymarket-url";
 import { TOKENS } from "@/lib/tokens";
 import type { FeedEntry } from "@/hooks/useCellFeed";
+import { DrawerLoading } from "../DrawerLoading";
 
 /**
  * Live feed inside the cell drawer — chronological list of signals
@@ -19,7 +20,7 @@ export function CellFeed({
   loading: boolean;
 }) {
   if (loading && entries.length === 0) {
-    return <div style={{ fontSize: 11, color: TOKENS.textMuted }}>Loading…</div>;
+    return <DrawerLoading variant="rows" rows={4} />;
   }
   if (entries.length === 0) {
     return (

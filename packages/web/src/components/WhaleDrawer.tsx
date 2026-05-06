@@ -9,6 +9,7 @@ import { marketUrl } from "@/lib/polymarket-url";
 import { TOKENS } from "@/lib/tokens";
 import type { Category, LiveRange, WhaleProfile } from "@/lib/types";
 import { BalanceChart } from "./BalanceChart";
+import { DrawerLoading } from "./DrawerLoading";
 import { WhaleAvatar } from "./WhaleAvatar";
 
 function rangeLabel(r: LiveRange): string {
@@ -125,7 +126,9 @@ export function WhaleDrawer({
       >
         {data && <DrawerBody data={data} range={range} onClose={onClose} onBack={onBack} />}
         {!data && loading && (
-          <div style={{ padding: 20, color: TOKENS.textSec, fontSize: 13 }}>loading…</div>
+          <div style={{ padding: 20 }}>
+            <DrawerLoading variant="block" label="loading whale profile" />
+          </div>
         )}
         {!data && error && (
           <div style={{ padding: 20, color: TOKENS.neg, fontSize: 13 }}>error: {error}</div>

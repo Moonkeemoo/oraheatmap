@@ -4,6 +4,7 @@ import { fmtMoneyShort } from "@/lib/format";
 import { marketUrl } from "@/lib/polymarket-url";
 import { TOKENS } from "@/lib/tokens";
 import type { HighlightsResponse } from "@/hooks/useRowHighlights";
+import { DrawerLoading } from "../DrawerLoading";
 import { MarketIcon } from "./MarketIcon";
 
 /** Standout-events list for the open cell drawer's row, scoped to the
@@ -17,7 +18,7 @@ export function RowHighlights({
   loading: boolean;
 }) {
   if (loading && !data) {
-    return <div style={{ fontSize: 11, color: TOKENS.textMuted }}>Loading…</div>;
+    return <DrawerLoading variant="rows" rows={3} />;
   }
   if (!data || data.items.length === 0) {
     return (
