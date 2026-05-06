@@ -28,7 +28,13 @@ export function createDb(databaseUrl: string): { db: Db; sql: Sql } {
   }
 
   const sql = postgres(connectionString, {
-    max: 5,
+    // /api/heatmap fires 6 queries in parallel via Promise.all
+    // (heatmap-agg, top-markets, top-whales-per-cell, unique-whales,
+    // top-whales, resolved-markets). Analytics ingest holds a connection
+    // for each batch insert. With max=5 we'd saturate on a single tab
+    // refresh + a slow analytics batch and serialize the rest. 15 gives
+    // headroom without scaring postgres' connection limit (default 100).
+    max: 15,
     idle_timeout: 30,
     onnotice: () => {},
     ...(socketHost ? { host: socketHost } : {}),

@@ -131,36 +131,35 @@ const heatmapCache = new TtlCache<unknown>(512);
 const highlightsCache = new TtlCache<unknown>(512);
 const landingStatsCache = new TtlCache<unknown>(2);
 
-/** TTL for the heatmap response. Heavier ranges → longer TTL since the
- *  underlying data shifts more slowly anyway (12w cells barely change
- *  minute-over-minute). LIVE 1h still has a short TTL because the
- *  rightmost "now" column shifts every 5 minutes. */
+/** TTL for the heatmap response. Tuned so cache TTL > client polling
+ *  interval (REFRESH_MS_LIVE in useHeatmap), so consecutive polls
+ *  hit cache instead of always missing. Visual freshness is preserved
+ *  by SSE optimistic updates layered on top — even a 30s-stale heatmap
+ *  payload feels live to the user. */
 function heatmapTtlMs(mode: string, range: string | undefined): number {
-  if (mode === "pattern") return 60_000;
+  if (mode === "pattern") return 300_000; // 5 min — averages move slowly
   switch (range) {
     case "1h":
-      return 5_000;
+      return 30_000; // client polls 10s; one poll out of 3 will be a fresh fetch
     case "24h":
-      return 15_000;
+      return 60_000; // client polls 30s
     case "12d":
-      return 60_000;
+      return 300_000; // 5 min
     case "12w":
-      return 180_000;
+      return 600_000; // 10 min — daily/weekly buckets barely shift
     default:
-      return 5_000;
+      return 30_000;
   }
 }
 
-/** TTL for /api/highlights. Derived from window span so it matches the
- *  range that was selected upstream — same heuristic as heatmapTtlMs but
- *  computed from the fromTs/toTs delta the client passed. */
+/** TTL for /api/highlights. Mirror the heatmap policy off window span. */
 function highlightsTtlMs(fromIso: string | null, toIso: string): number {
-  if (!fromIso) return 60_000;
+  if (!fromIso) return 300_000;
   const span = new Date(toIso).getTime() - new Date(fromIso).getTime();
-  if (span <= 2 * 3600_000) return 5_000;
-  if (span <= 36 * 3600_000) return 15_000;
-  if (span <= 14 * 86400_000) return 60_000;
-  return 180_000;
+  if (span <= 2 * 3600_000) return 30_000;
+  if (span <= 36 * 3600_000) return 60_000;
+  if (span <= 14 * 86400_000) return 300_000;
+  return 600_000;
 }
 
 /** Build a HTTP Cache-Control header that mirrors the in-process TTL.
@@ -476,21 +475,29 @@ export function createApi(deps: ApiDeps) {
 
         if (rows.length === 0) return { ok: true, inserted: 0 };
 
-        // Per-row INSERTs in a single round-trip via Promise.all wrapped
-        // in a transaction — keeps the event taxonomy schema simple
-        // (jsonb cast happens in the VALUES clause) and avoids the
-        // postgres-js bulk-insert helper's stricter typing.
-        await deps.sql.begin(async (tx) => {
-          for (const r of rows) {
-            await tx`
-              INSERT INTO analytics_events
-                (ts, session_id, user_id, name, path, referrer, ua_brief, country, props)
-              VALUES (${r.ts}::timestamptz, ${r.session_id}, ${r.user_id}, ${r.name},
-                      ${r.path}, ${r.referrer}, ${r.ua_brief}, ${r.country},
-                      ${r.props}::jsonb)
-            `;
-          }
-        });
+        // Single multi-row INSERT via UNNEST so one batch holds the
+        // postgres connection for one round-trip instead of N. Earlier
+        // we wrapped per-row INSERTs in a transaction — that worked,
+        // but with the connection pool sized for /api/heatmap's heavy
+        // parallel queries, a 50-event batch could saturate a slot for
+        // long enough to back-up reader requests.
+        await deps.sql`
+          INSERT INTO analytics_events
+            (ts, session_id, user_id, name, path, referrer, ua_brief, country, props)
+          SELECT
+            ts::timestamptz, session_id, user_id, name, path, referrer, ua_brief, country, props::jsonb
+          FROM UNNEST(
+            ${deps.sql.array(rows.map((r) => r.ts))}::text[],
+            ${deps.sql.array(rows.map((r) => r.session_id))}::text[],
+            ${deps.sql.array(rows.map((r) => r.user_id))}::text[],
+            ${deps.sql.array(rows.map((r) => r.name))}::text[],
+            ${deps.sql.array(rows.map((r) => r.path))}::text[],
+            ${deps.sql.array(rows.map((r) => r.referrer))}::text[],
+            ${deps.sql.array(rows.map((r) => r.ua_brief))}::text[],
+            ${deps.sql.array(rows.map((r) => r.country))}::text[],
+            ${deps.sql.array(rows.map((r) => r.props))}::text[]
+          ) AS t(ts, session_id, user_id, name, path, referrer, ua_brief, country, props)
+        `;
         return { ok: true, inserted: rows.length };
       },
       {
