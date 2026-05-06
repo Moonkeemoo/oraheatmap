@@ -99,20 +99,17 @@ function makeRowMeta(
 ): RowMeta {
   // Whales mode — row keys are whale addresses, not category slugs.
   // Render a neutral grey pill (colour-as-identity is meaningless when
-  // every row is a whale) and append the LVL reputation score to the
-  // alias so the row reads "Theo4 · L82". Drops the deterministic
-  // per-address tint that came in with whaleMeta.color.
+  // every row is a whale). LVL was previously appended inline to the
+  // alias but ate label-column width and made every name truncate;
+  // dropped — the score still lives in WhaleDrawer's header badge for
+  // anyone who taps the row.
   if (data.subject === "whales") {
     const meta = data.whaleMeta?.[cat];
     const alias = meta?.alias ?? shortenAddress(cat);
-    const lvl = meta?.score;
-    const label = lvl !== undefined && lvl !== null
-      ? `${alias} · L${lvl}`
-      : alias;
     return {
       cat,
       rowColor: "#252b33", // neutral panel-grey, no per-whale tint
-      rowLabel: label,
+      rowLabel: alias,
       rawLabel: alias,
       isResolved: false,
       isL3: false,
