@@ -1,4 +1,5 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { categoryMeta } from "@/lib/categories";
 import { fmtMoney, fmtMoneyShort } from "@/lib/format";
@@ -226,11 +227,81 @@ function StatCell({
   );
 }
 
-/** Floating popover anchored above the stat card. Appears on hover (desktop)
- *  or tap (mobile) so the user can drill into a single number — much richer
- *  than a native title= tooltip. On mobile renders as a bottom-sheet because
- *  the parent strip's overflow-x: auto otherwise clips an absolute-positioned
- *  popover regardless of overflow-y: visible. */
+/** Mobile bottom-sheet. Rendered via React portal into document.body so
+ *  it escapes the StatsBar's overflow-x scrollport — without the portal,
+ *  iOS Safari treats the position: fixed sheet as if anchored to the
+ *  scrollable ancestor and clips it to the strip's visible bounds.
+ *  Same pattern Tooltip drawer / WhaleDrawer / MobileFilters use, but
+ *  those bypass the issue by being rendered at the Heatmap root level. */
+function MobileKpiSheet({
+  children,
+  onClose,
+}: {
+  children: ReactNode;
+  onClose?: () => void;
+}) {
+  // Portal target lives on document.body — only available client-side, so
+  // gate the render behind a mounted flag to keep SSR happy.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  if (!mounted) return null;
+  const sheet = (
+    <>
+      <div
+        onClick={onClose}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.55)",
+          zIndex: 100,
+          animation: "tipIn .18s ease-out",
+        }}
+      />
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: "fixed",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: "100vw",
+          maxHeight: "75vh",
+          background: TOKENS.panel,
+          borderTop: `1px solid ${TOKENS.borderHi}`,
+          borderTopLeftRadius: 16,
+          borderTopRightRadius: 16,
+          boxShadow: "0 -20px 60px rgba(0,0,0,0.6)",
+          zIndex: 101,
+          padding: "10px 16px",
+          paddingBottom: "max(env(safe-area-inset-bottom, 16px), 16px)",
+          fontFamily: TOKENS.font,
+          color: TOKENS.text,
+          animation: "drawerInBottom .22s ease-out",
+          overflowY: "auto",
+          boxSizing: "border-box",
+        }}
+      >
+        <div
+          aria-hidden
+          style={{
+            width: 40,
+            height: 4,
+            borderRadius: 4,
+            background: TOKENS.border,
+            margin: "0 auto 10px",
+          }}
+        />
+        {children}
+      </div>
+    </>
+  );
+  return createPortal(sheet, document.body);
+}
+
+/** Floating popover anchored above the stat card. Desktop only; mobile
+ *  branches off through MobileKpiSheet at the top of KpiPopover. */
 function KpiPopover({
   width,
   children,
@@ -243,57 +314,7 @@ function KpiPopover({
   onClose?: () => void;
 }) {
   if (isMobile) {
-    return (
-      <>
-        <div
-          onClick={onClose}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.55)",
-            zIndex: 50,
-            animation: "tipIn .18s ease-out",
-          }}
-        />
-        <div
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            position: "fixed",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            width: "100vw",
-            maxHeight: "75vh",
-            background: TOKENS.panel,
-            borderTop: `1px solid ${TOKENS.borderHi}`,
-            borderTopLeftRadius: 16,
-            borderTopRightRadius: 16,
-            boxShadow: "0 -20px 60px rgba(0,0,0,0.6)",
-            zIndex: 51,
-            padding: "12px 16px",
-            paddingBottom: "max(env(safe-area-inset-bottom, 16px), 16px)",
-            fontFamily: TOKENS.font,
-            color: TOKENS.text,
-            animation: "drawerInBottom .22s ease-out",
-            overflowY: "auto",
-            boxSizing: "border-box",
-          }}
-        >
-          <div
-            aria-hidden
-            style={{
-              alignSelf: "center",
-              width: 40,
-              height: 4,
-              borderRadius: 4,
-              background: TOKENS.border,
-              margin: "0 auto 12px",
-            }}
-          />
-          {children}
-        </div>
-      </>
-    );
+    return <MobileKpiSheet onClose={onClose}>{children}</MobileKpiSheet>;
   }
   return (
     <div
