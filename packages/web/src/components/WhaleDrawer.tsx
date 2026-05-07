@@ -284,11 +284,21 @@ function DrawerBody({
       {/* Stats */}
       <Section title={`In ${rangeLabel(range)}`}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
-          <Stat label="Signals" value={data.stats.signals.toLocaleString()} />
-          <Stat label="Volume" value={fmtMoneyShort(data.stats.volume)} />
+          {/* Signals = BUY + SELL + SETTLEMENT count. Volume above
+              wasn't matching it intuitively because Volume counts
+              ONLY BUY-side USD entered; SETTLEMENT events (open
+              positions auto-resolving) bloat the signals count
+              without adding to entries. Clarified the labels:
+              "Trades" reads better than the internal "Signals"
+              term for the headline strip, and "Entries" + the
+              "BUY" sub mirrors the StatsBar convention so users
+              don't read "Volume" as gross trading activity. */}
+          <Stat label="Trades" value={data.stats.signals.toLocaleString()} sub="incl. settlements" />
+          <Stat label="Entries" value={fmtMoneyShort(data.stats.volume)} sub="BUY (USD)" />
           <Stat
             label="PnL"
             value={fmtMoneyShort(data.stats.pnl)}
+            sub="realized"
             color={data.stats.pnl > 0 ? TOKENS.pos : data.stats.pnl < 0 ? TOKENS.neg : TOKENS.text}
           />
           <Stat
@@ -513,7 +523,17 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Stat({ label, value, color }: { label: string; value: string; color?: string }) {
+function Stat({
+  label,
+  value,
+  color,
+  sub,
+}: {
+  label: string;
+  value: string;
+  color?: string;
+  sub?: string;
+}) {
   return (
     <div>
       <div
@@ -539,6 +559,19 @@ function Stat({ label, value, color }: { label: string; value: string; color?: s
       >
         {value}
       </div>
+      {sub && (
+        <div
+          style={{
+            fontSize: 9,
+            color: TOKENS.textMuted,
+            fontFamily: TOKENS.mono,
+            letterSpacing: 0.2,
+            marginTop: 2,
+          }}
+        >
+          {sub}
+        </div>
+      )}
     </div>
   );
 }
