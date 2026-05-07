@@ -411,7 +411,11 @@ export function Header({
         padding: "10px 20px",
         borderBottom: `1px solid ${TOKENS.border}`,
         display: "flex",
-        alignItems: "center",
+        // Bottom-align everything so the burger + LiveStatus sit on the
+        // SAME baseline as the toggle pills inside each Section. With
+        // alignItems:center the burger floated mid-row while the pills
+        // sat lower (under their WHO/HOW labels) — visually unaligned.
+        alignItems: "flex-end",
         gap: 18,
         flexShrink: 0,
         minWidth: 0,
@@ -419,17 +423,18 @@ export function Header({
       }}
     >
       {/* Burger + LiveStatus — leftmost, no section header (these are
-          chrome / status, not a filter dimension). Aligned to the
-          control row's vertical centre, not the section-label baseline. */}
+          chrome / status, not a filter dimension). Bottom-aligned so it
+          lines up with the toggle pills, not their WHO/HOW labels. */}
       <div style={{ display: "inline-flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
         <BurgerMenu onRequestLogin={onRequestLogin} />
         <LiveStatus />
       </div>
 
-      {/* Centre group — flex:1 so it absorbs slack, allowing wrap on
-          narrower viewports while the legend + logo stay pinned right.
-          rowGap covers wrap-to-second-line spacing without stacking
-          sections too tight. */}
+      {/* Centre group — flex:1 so it absorbs slack and pushes the brand
+          logo to the far right edge. The scale legend belongs to the
+          filter cluster (it explains the WHAT metric's colour scale),
+          so it sits as the last child of this group rather than next
+          to the logo. rowGap covers wrap-to-second-line spacing. */}
       <div
         style={{
           flex: 1,
@@ -539,23 +544,29 @@ export function Header({
             })}
           </div>
         </Section>
+
+        {/* Scale legend — sits directly after WHAT because it's the
+            colour key for whichever metric is selected. Wrapped in a
+            slight horizontal padding so it doesn't touch the WHAT pill
+            strip. flex:0 keeps it tightly grouped with the filters
+            instead of drifting toward the logo when the centre group
+            has slack space. */}
+        <div style={{ paddingBottom: 4 }}>
+          <ScaleLegend metric={metric} />
+        </div>
       </div>
 
-      {/* Right side — scale legend (PNL / VOLUME / etc gradient) pinned
-          to the controls' vertical baseline so it lines up with the
-          pill rows. Brand mark sits flush right at hero size. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 18, flexShrink: 0 }}>
-        <ScaleLegend metric={metric} />
-        <div
-          style={{
-            color: TOKENS.text,
-            display: "flex",
-            alignItems: "center",
-            flexShrink: 0,
-          }}
-        >
-          <BrandLogo size="hero" />
-        </div>
+      {/* Brand mark — flush far right, pushed there by flex:1 on the
+          centre group above. */}
+      <div
+        style={{
+          color: TOKENS.text,
+          display: "flex",
+          alignItems: "center",
+          flexShrink: 0,
+        }}
+      >
+        <BrandLogo size="hero" />
       </div>
     </div>
   );
