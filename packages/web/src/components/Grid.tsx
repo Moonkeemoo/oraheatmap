@@ -423,10 +423,18 @@ function RowLabelBadge({
 function SortableRow({
   rowKey,
   reorderEnabled,
+  isDimmed,
+  onHoverChange,
   children,
 }: {
   rowKey: string;
   reorderEnabled: boolean;
+  /** When the user hovers a different row, this row fades out. The
+   *  hovered row stays at full opacity; other rows drop to ~40% so
+   *  the eye locks onto a single row of data. Standard "highlight
+   *  by dim siblings" pattern. */
+  isDimmed: boolean;
+  onHoverChange: (rowKey: string | null) => void;
   children: (
     listeners: Record<string, (event: unknown) => void> | undefined,
     attributes: Record<string, unknown>,
@@ -450,15 +458,26 @@ function SortableRow({
     gridTemplateColumns: "subgrid",
     gap: 4,
     transform: CSS.Transform.toString(transform),
-    transition,
-    // Hide the live row while dragging — DragOverlay paints the moving copy.
-    opacity: isDragging ? 0 : 1,
+    // Compose the dnd-kit transition (slide-on-reorder) with our own
+    // opacity transition so dimming feels smooth without breaking the
+    // drag animation. Empty string → no transition for the dimming
+    // path during drag.
+    transition: [transition, "opacity 140ms ease"].filter(Boolean).join(", "),
+    // Drag wins over dimming — DragOverlay paints the moving copy and
+    // we hide the live row entirely.
+    opacity: isDragging ? 0 : isDimmed ? 0.32 : 1,
     // Lift dragged item above peers (defensive — DragOverlay handles z-index).
     zIndex: isDragging ? 2 : "auto",
     position: "relative",
   };
   return (
-    <div ref={setNodeRef} style={style} data-row-key={rowKey}>
+    <div
+      ref={setNodeRef}
+      style={style}
+      data-row-key={rowKey}
+      onMouseEnter={() => onHoverChange(rowKey)}
+      onMouseLeave={() => onHoverChange(null)}
+    >
       {children(
         listeners as unknown as Record<string, (e: unknown) => void> | undefined,
         attributes as unknown as Record<string, unknown>,
@@ -730,9 +749,16 @@ export function Grid({
   );
 
   const [activeKey, setActiveKey] = useState<string | null>(null);
+  /** Currently hovered row key — drives the dim-sibling row highlight.
+   *  `null` = nothing hovered, all rows render at full opacity. Mouse
+   *  leaving a row clears it; entering a different row replaces it.
+   *  Suppressed during drag so the dragged row doesn't simultaneously
+   *  read as "hovered" and "moving". */
+  const [hoveredRow, setHoveredRow] = useState<string | null>(null);
 
   const handleDragStart = (e: DragStartEvent): void => {
     setActiveKey(String(e.active.id));
+    setHoveredRow(null);
   };
 
   const handleDragEnd = (e: DragEndEvent): void => {
@@ -1002,7 +1028,13 @@ export function Grid({
 
         <SortableContext items={displayCategories} strategy={verticalListSortingStrategy}>
           {displayCategories.map((cat) => (
-            <SortableRow key={cat} rowKey={cat} reorderEnabled={reorderEnabled}>
+            <SortableRow
+              key={cat}
+              rowKey={cat}
+              reorderEnabled={reorderEnabled}
+              isDimmed={hoveredRow !== null && hoveredRow !== cat && activeKey === null}
+              onHoverChange={setHoveredRow}
+            >
               {(listeners, attributes) =>
                 renderRowInner(cat, {
                   reorderEnabled,

@@ -136,6 +136,54 @@ function MetricTab({
   );
 }
 
+/** Uppercase 9px section label (WHO / HOW / WHEN / WHAT) sitting above
+ *  each control group in the desktop header. Matches the design where
+ *  every slice of chrome carries a small grey title so the user can
+ *  scan the toolbar by category instead of memorising icon meaning. */
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        fontSize: 9,
+        fontFamily: TOKENS.font,
+        fontWeight: 700,
+        letterSpacing: 1.2,
+        color: TOKENS.textMuted,
+        textTransform: "uppercase",
+        marginBottom: 5,
+        // 1ch left padding so the label sits visually centred over a
+        // pill-style toggle's first item rather than flush against the
+        // rounded corner. Keeps the section grid feeling looser.
+        paddingLeft: 2,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Wrap a control group with a SectionLabel header. */
+function Section({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-start",
+      }}
+    >
+      <SectionLabel>{label}</SectionLabel>
+      {children}
+    </div>
+  );
+}
+
 function SubjectToggle({
   subject,
   setSubject,
@@ -351,180 +399,163 @@ export function Header({
     );
   }
 
-  // ── Desktop layout (unchanged) ─────────────────────────────────────────
+  // ── Desktop layout — single horizontal toolbar ────────────────────
+  // Sections (WHO / HOW / WHEN / WHAT) sit side by side, each carrying
+  // a 9px uppercase label above its control group. Mirrors the
+  // labelled-toolbar pattern in the design — user scans by category
+  // ("am I picking who? when? what metric?") instead of memorising
+  // pill-strip positions. Brand mark + scale legend pinned far right.
   return (
     <div
       style={{
-        // Two-column layout: chip+controls stacked on the left, brand logo
-        // on the right occupying the full column height (align-self stretch).
-        // No row-of-rows + per-row padding stuff — the chip's vertical
-        // padding is just the header padding.
-        padding: "8px 24px",
+        padding: "10px 20px",
         borderBottom: `1px solid ${TOKENS.border}`,
         display: "flex",
-        alignItems: "stretch",
-        gap: 16,
+        alignItems: "center",
+        gap: 18,
         flexShrink: 0,
         minWidth: 0,
         boxSizing: "border-box",
       }}
     >
-      {/* Left column — chip pinned to the top of the header, controls
-          pinned to the bottom. justify-content:space-between gives both
-          rows their natural height without an artificial gap pushing the
-          chip down (was the "floating" feeling). */}
+      {/* Burger + LiveStatus — leftmost, no section header (these are
+          chrome / status, not a filter dimension). Aligned to the
+          control row's vertical centre, not the section-label baseline. */}
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        <BurgerMenu onRequestLogin={onRequestLogin} />
+        <LiveStatus />
+      </div>
+
+      {/* Centre group — flex:1 so it absorbs slack, allowing wrap on
+          narrower viewports while the legend + logo stay pinned right.
+          rowGap covers wrap-to-second-line spacing without stacking
+          sections too tight. */}
       <div
         style={{
           flex: 1,
           minWidth: 0,
           display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
-          // Without this, default align-items:stretch makes flex-column
-          // children fill the full cross-axis width — both the chip and
-          // the controls-row visually stretched into "horse-sized" pills.
-          alignItems: "flex-start",
-          gap: 8,
+          alignItems: "flex-end",
+          gap: 18,
+          rowGap: 12,
+          flexWrap: "wrap",
         }}
       >
-        {/* Burger leads (top-left). Identity card lives INSIDE its dropdown
-            now — replaces the standalone UserChip. LiveStatus stays
-            outside because it changes every second and the user wants it
-            visible without opening anything. */}
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <BurgerMenu onRequestLogin={onRequestLogin} />
-          <LiveStatus />
-        </div>
-        {/* Filter controls row — read left-to-right: mode → mode-block
-            (range OR patternKind) → metric → scale. */}
-        <div
-          style={{
-            // Take full column width so flex-wrap actually has a boundary
-            // to break at on narrow viewports. Without this, align-items:
-            // flex-start on the parent column would shrink this row to its
-            // content width and the row would never wrap.
-            width: "100%",
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            rowGap: 10,
-            flexWrap: "wrap",
-            justifyContent: "flex-start",
-            minWidth: 0,
-          }}
-        >
-        <SubjectToggle
-          subject={subject}
-          setSubject={(s) => (isAuthed || s === "trades" ? setSubject(s) : onRequestLogin())}
-          locked={!isAuthed}
-        />
-        <div style={{ width: 1, height: 26, background: TOKENS.border }} />
-        <ModeToggle
-          mode={mode}
-          setMode={gate(setMode)}
-          daysOfData={daysOfData}
-          locked={!isAuthed}
-        />
-        <div style={{ width: 1, height: 26, background: TOKENS.border }} />
-        {mode === "live" && (
-          <div style={{ display: "flex", gap: 5 }}>
-            {LIVE_RANGES.map((r) => (
-              <Pill
-                key={r}
-                active={range === r}
-                onClick={() => (isAuthed ? setRange(r) : onRequestLogin())}
-                title={isAuthed ? undefined : "Sign in to switch ranges"}
-              >
-                {r}
-                {!isAuthed && range !== r && <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>}
-              </Pill>
-            ))}
-          </div>
-        )}
-        {mode === "pattern" && (
-          <div style={{ display: "flex", gap: 5 }}>
-            {PATTERN_KINDS.map((p) => (
-              <Pill
-                key={p.kind}
-                active={patternKind === p.kind}
-                onClick={() => (isAuthed ? setPatternKind(p.kind) : onRequestLogin())}
-                title={isAuthed ? undefined : "Sign in to switch pattern"}
-              >
-                {p.label}
-                {!isAuthed && patternKind !== p.kind && <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>}
-              </Pill>
-            ))}
-          </div>
-        )}
-        {mode === "macro" && (
-          <div style={{ display: "flex", gap: 5 }}>
-            {MACRO_KINDS.map((m) => (
-              <Pill
-                key={m.kind}
-                active={macroKind === m.kind}
-                onClick={() => (isAuthed ? setMacroKind(m.kind) : onRequestLogin())}
-                title={isAuthed ? m.title : "Sign in to switch macro frame"}
-              >
-                {m.label}
-                {!isAuthed && macroKind !== m.kind && <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>}
-              </Pill>
-            ))}
-          </div>
-        )}
-        <div style={{ width: 1, height: 26, background: TOKENS.border }} />
+        <Section label="WHO">
+          <SubjectToggle
+            subject={subject}
+            setSubject={(s) => (isAuthed || s === "trades" ? setSubject(s) : onRequestLogin())}
+            locked={!isAuthed}
+          />
+        </Section>
 
-        <div
-          style={{
-            display: "flex",
-            gap: 0,
-            background: TOKENS.panel,
-            padding: 3,
-            borderRadius: 8,
-            border: `1px solid ${TOKENS.border}`,
-          }}
-        >
-          {METRICS.filter(
-            // WHALES metric collapses to 1 per cell when each row IS a
-            // whale. Drop it from the desktop tab strip in the same
-            // way mobile filter sheet does.
-            (mt) => !(subject === "whales" && mt.id === "whales"),
-          ).map((m) => {
-            const isActive = metric === m.id;
-            const locked = !isAuthed && !isActive;
-            return (
-              <MetricTab
-                key={m.id}
-                active={isActive}
-                onClick={() => (isAuthed ? setMetric(m.id) : onRequestLogin())}
-                title={isAuthed ? undefined : "Sign in to switch metric"}
-              >
-                {m.label}
-                {m.unit ? ` (${m.unit})` : ""}
-                {locked && <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>}
-              </MetricTab>
-            );
-          })}
-        </div>
-        <div style={{ width: 1, height: 26, background: TOKENS.border }} />
+        <Section label="HOW">
+          <ModeToggle
+            mode={mode}
+            setMode={gate(setMode)}
+            daysOfData={daysOfData}
+            locked={!isAuthed}
+          />
+        </Section>
 
-        <ScaleLegend metric={metric} />
-        </div>
+        <Section label="WHEN">
+          {mode === "live" && (
+            <div style={{ display: "flex", gap: 5 }}>
+              {LIVE_RANGES.map((r) => (
+                <Pill
+                  key={r}
+                  active={range === r}
+                  onClick={() => (isAuthed ? setRange(r) : onRequestLogin())}
+                  title={isAuthed ? undefined : "Sign in to switch ranges"}
+                >
+                  {r}
+                  {!isAuthed && range !== r && <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>}
+                </Pill>
+              ))}
+            </div>
+          )}
+          {mode === "pattern" && (
+            <div style={{ display: "flex", gap: 5 }}>
+              {PATTERN_KINDS.map((p) => (
+                <Pill
+                  key={p.kind}
+                  active={patternKind === p.kind}
+                  onClick={() => (isAuthed ? setPatternKind(p.kind) : onRequestLogin())}
+                  title={isAuthed ? undefined : "Sign in to switch pattern"}
+                >
+                  {p.label}
+                  {!isAuthed && patternKind !== p.kind && <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>}
+                </Pill>
+              ))}
+            </div>
+          )}
+          {mode === "macro" && (
+            <div style={{ display: "flex", gap: 5 }}>
+              {MACRO_KINDS.map((m) => (
+                <Pill
+                  key={m.kind}
+                  active={macroKind === m.kind}
+                  onClick={() => (isAuthed ? setMacroKind(m.kind) : onRequestLogin())}
+                  title={isAuthed ? m.title : "Sign in to switch macro frame"}
+                >
+                  {m.label}
+                  {!isAuthed && macroKind !== m.kind && <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>}
+                </Pill>
+              ))}
+            </div>
+          )}
+        </Section>
+
+        <Section label="WHAT">
+          <div
+            style={{
+              display: "flex",
+              gap: 0,
+              background: TOKENS.panel,
+              padding: 3,
+              borderRadius: 8,
+              border: `1px solid ${TOKENS.border}`,
+            }}
+          >
+            {METRICS.filter(
+              // WHALES metric collapses to 1 per cell when each row IS a
+              // whale. Drop it from the desktop tab strip in the same
+              // way mobile filter sheet does.
+              (mt) => !(subject === "whales" && mt.id === "whales"),
+            ).map((m) => {
+              const isActive = metric === m.id;
+              const locked = !isAuthed && !isActive;
+              return (
+                <MetricTab
+                  key={m.id}
+                  active={isActive}
+                  onClick={() => (isAuthed ? setMetric(m.id) : onRequestLogin())}
+                  title={isAuthed ? undefined : "Sign in to switch metric"}
+                >
+                  {m.label}
+                  {locked && <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>}
+                </MetricTab>
+              );
+            })}
+          </div>
+        </Section>
       </div>
 
-      {/* Right column — brand mark at fixed hero size (icon 64, ORALAB 32,
-          descriptor 11). align-self:center vertically centers the logo in
-          the column whose height is driven by chip + controls. Doesn't
-          stretch on tall left-column wraps, so the logo never balloons. */}
-      <div
-        style={{
-          color: TOKENS.text,
-          display: "flex",
-          alignItems: "center",
-          alignSelf: "center",
-          flexShrink: 0,
-        }}
-      >
-        <BrandLogo size="hero" />
+      {/* Right side — scale legend (PNL / VOLUME / etc gradient) pinned
+          to the controls' vertical baseline so it lines up with the
+          pill rows. Brand mark sits flush right at hero size. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 18, flexShrink: 0 }}>
+        <ScaleLegend metric={metric} />
+        <div
+          style={{
+            color: TOKENS.text,
+            display: "flex",
+            alignItems: "center",
+            flexShrink: 0,
+          }}
+        >
+          <BrandLogo size="hero" />
+        </div>
       </div>
     </div>
   );
