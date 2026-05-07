@@ -253,6 +253,7 @@ function RowLabelBadge({
   clickableRow,
   onRowClick,
   isMobile,
+  hideAffordance,
   dragListeners,
   dragAttributes,
 }: {
@@ -260,6 +261,11 @@ function RowLabelBadge({
   clickableRow: boolean;
   onRowClick?: (rowKey: string) => void;
   isMobile?: boolean;
+  /** Suppress the › drill / ↗ external-link chevron in the corner.
+   *  Used in whales-subject rows where the click target IS the row
+   *  itself (opens the whale drawer) but there's no nested level for
+   *  a drill arrow to point at. */
+  hideAffordance?: boolean;
   /** dnd-kit useSortable listeners — when present, the badge acts as
    *  the drag source. Mobile only: long-press on the badge starts a
    *  reorder drag (TouchSensor 250ms delay activation). Desktop drags
@@ -286,7 +292,12 @@ function RowLabelBadge({
   // their current sizes; non-interactive rows skip the reserve. Mobile
   // shrinks this aggressively so 7-letter L1 labels ("CULTURE",
   // "POLITICS", "ECONOMICS") survive the narrow label column.
-  const padRight = isInteractive ? (isMobile ? 12 : 18) : (isMobile ? 4 : 8);
+  // No affordance → no chevron in the corner → no padding reserved
+  // for it. Even on interactive whales rows, the click target is the
+  // whole pill and the alias text wants every available pixel.
+  const padRight = !hideAffordance && isInteractive
+    ? (isMobile ? 12 : 18)
+    : (isMobile ? 4 : 8);
   const padLeft = isMobile ? 5 : 8;
   const badgeStyle: React.CSSProperties = {
     background: rowColor,
@@ -350,12 +361,16 @@ function RowLabelBadge({
     }
   };
   // Pick which affordance kind to show. L3-with-link wins over drill (a
-  // market row is never simultaneously a drill target).
-  const affordanceKind: "drill" | "external" | null = l3Url
-    ? "external"
-    : clickableRow
-      ? "drill"
-      : null;
+  // market row is never simultaneously a drill target). hideAffordance
+  // overrides everything — used by whales rows where the entire pill
+  // is the click target so a drill arrow would mislead.
+  const affordanceKind: "drill" | "external" | null = hideAffordance
+    ? null
+    : l3Url
+      ? "external"
+      : clickableRow
+        ? "drill"
+        : null;
   // touch-action: none disables the browser's default touch handling
   // (scroll / zoom / select) on the draggable badge so dnd-kit's
   // long-press detector gets clean pointer events. Only set when the
@@ -744,15 +759,13 @@ export function Grid({
     },
   ): React.ReactNode => {
     const meta = makeRowMeta(cat, data);
-    // Whales subject — rows are individual whales, no L2/L3 drill.
-    // The row label shouldn't render the › chevron affordance (drill
-    // hint) since clicking it doesn't drill anywhere; that frees up
-    // ~12px of label width for the alias text.
-    const clickableRow =
-      data.subject !== "whales" &&
-      !meta.isL3 &&
-      onRowClick !== undefined &&
-      !options.isDragOverlay;
+    const clickableRow = !meta.isL3 && onRowClick !== undefined && !options.isDragOverlay;
+    // Whales subject — row clicks open the whale drawer (handler set
+    // by the parent via onRowClick). The drill chevron is suppressed
+    // because there's no L2/L3 hierarchy to drill into; the click
+    // affordance is the row label itself, not a chevron pointing into
+    // a deeper level.
+    const hideAffordance = data.subject === "whales";
     // Hide the explicit drag-handle column on mobile — the 6-dot grip
     // is too small to tap reliably on touch. Mobile drags via long-
     // press on the colored badge itself (TouchSensor's 250ms delay
@@ -790,6 +803,7 @@ export function Grid({
               meta={meta}
               clickableRow={clickableRow}
               onRowClick={onRowClick}
+              hideAffordance={hideAffordance}
               dragListeners={badgeDragListeners}
               dragAttributes={badgeDragAttributes}
             />

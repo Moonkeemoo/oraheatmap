@@ -612,17 +612,12 @@ export function Heatmap() {
                   metric={metric}
                   onHover={(h) => setHover(h)}
                   onClick={(h) => {
-                    // Whales mode: rows ARE whale addresses, so a cell
-                    // click on (whale × bucket) doesn't have a "cell
-                    // tooltip" worth showing — open that whale's full
-                    // profile drawer instead (same as clicking the
-                    // whale's row label). Skip the panelCell flow.
-                    if (subject === "whales") {
-                      track.whaleDrawerOpen("cell", h.category);
-                      setPanelCell(null);
-                      setWhaleProfileAddr(h.category);
-                      return;
-                    }
+                    // Whales subject — cell click is a no-op. Whale
+                    // profile opens via the row-label tap (handler in
+                    // onRowClick below) so the user has one obvious
+                    // affordance per whale instead of every cell
+                    // bouncing them into a drawer.
+                    if (subject === "whales") return;
                     // Toggle: clicking the same cell again closes the panel.
                     // Clicking a different cell SWAPS content (instead of
                     // close-then-open) — Tooltip re-renders with new props.
@@ -649,30 +644,38 @@ export function Heatmap() {
                     }
                   }}
                   onRowClick={
-                    // PATTERN doesn't support L3 (per-market) drill — bail
-                    // out when we're already inside a category, otherwise the
-                    // › chevron leads nowhere.
-                    mode === "pattern" && displayData.drillCategory
-                      ? undefined
-                      : !displayData.drillCategory
-                        ? (key) => {
-                            if (isAuthed) {
-                              track.drillOpen(2, key);
-                              setDrillCategory(key as Category);
-                            } else {
-                              requestLogin("drill_locked");
-                            }
-                          }
-                        : !displayData.drillSubcategory
+                    // Whales subject — row tap = whale profile drawer.
+                    // No drill (whales have no L2/L3 nesting yet).
+                    subject === "whales"
+                      ? (addr) => {
+                          track.whaleDrawerOpen("cell", addr);
+                          setPanelCell(null);
+                          setWhaleProfileAddr(addr);
+                        }
+                      : // PATTERN doesn't support L3 (per-market) drill — bail
+                        // out when we're already inside a category, otherwise the
+                        // › chevron leads nowhere.
+                        mode === "pattern" && displayData.drillCategory
+                        ? undefined
+                        : !displayData.drillCategory
                           ? (key) => {
                               if (isAuthed) {
-                                track.drillOpen(3, displayData.drillCategory!, key);
-                                setDrillSubcategory(key);
+                                track.drillOpen(2, key);
+                                setDrillCategory(key as Category);
                               } else {
                                 requestLogin("drill_locked");
                               }
                             }
-                          : undefined
+                          : !displayData.drillSubcategory
+                            ? (key) => {
+                                if (isAuthed) {
+                                  track.drillOpen(3, displayData.drillCategory!, key);
+                                  setDrillSubcategory(key);
+                                } else {
+                                  requestLogin("drill_locked");
+                                }
+                              }
+                            : undefined
                   }
                   lockedCellId={panelCell?.cellId ?? null}
                   flashByCell={flashByCell}
