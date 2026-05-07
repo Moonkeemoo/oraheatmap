@@ -556,23 +556,59 @@ const WHALES_REPUTATION_LOOKBACK_DAYS = 90;
 const WHALES_MIN_TRADES = 5;
 
 /** Top-N whales for any whales-subject heatmap. Single ranking
- *  query so live / pattern / macro all share the same row set. */
+ *  query so live / pattern / macro all share the same row set.
+ *  Process-level cache + background refresh keeps the cost off the
+ *  hot heatmap-request path — the underlying 90d scan over signals
+ *  costs 1-3 seconds, refreshing it once every 10 minutes is fine
+ *  because reputation moves on a daily scale. */
+const TOP_WHALES_TTL_MS = 10 * 60_000;
+type CachedTopWhales = { value: ReadonlyArray<string>; ts: number };
+let topWhalesCache: CachedTopWhales | null = null;
+let topWhalesInflight: Promise<ReadonlyArray<string>> | null = null;
+
 export async function queryTopWhalesByReputation(
   sql: Sql,
 ): Promise<ReadonlyArray<string>> {
-  type AddrRow = { whale_addr: string };
-  const rows = await sql<AddrRow[]>`
-    SELECT whale_addr
-    FROM signals
-    WHERE ts >= NOW() - (${`${WHALES_REPUTATION_LOOKBACK_DAYS} days`}::interval)
-      AND ts <= NOW()
-      AND whale_addr ~ '^0x[0-9a-f]{40}$'
-    GROUP BY whale_addr
-    HAVING COUNT(*) >= ${WHALES_MIN_TRADES}
-    ORDER BY COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) DESC
-    LIMIT ${WHALES_TOP_N}
-  `;
-  return rows.map((r) => r.whale_addr);
+  const now = Date.now();
+  // Fresh cache → return synchronously, no DB hit at all.
+  if (topWhalesCache && now - topWhalesCache.ts < TOP_WHALES_TTL_MS) {
+    return topWhalesCache.value;
+  }
+  // Refresh inflight → coalesce — multiple parallel whales requests
+  // share one DB call instead of stampeding the same query.
+  if (topWhalesInflight) return topWhalesInflight;
+
+  // If we have ANY stale value, return it immediately and refresh in
+  // the background (stale-while-revalidate). Only the very first
+  // cold request blocks on the DB.
+  const fetchFresh = async (): Promise<ReadonlyArray<string>> => {
+    type AddrRow = { whale_addr: string };
+    const rows = await sql<AddrRow[]>`
+      SELECT whale_addr
+      FROM signals
+      WHERE ts >= NOW() - (${`${WHALES_REPUTATION_LOOKBACK_DAYS} days`}::interval)
+        AND ts <= NOW()
+        AND whale_addr ~ '^0x[0-9a-f]{40}$'
+      GROUP BY whale_addr
+      HAVING COUNT(*) >= ${WHALES_MIN_TRADES}
+      ORDER BY COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) DESC
+      LIMIT ${WHALES_TOP_N}
+    `;
+    const value = rows.map((r) => r.whale_addr);
+    topWhalesCache = { value, ts: Date.now() };
+    return value;
+  };
+
+  topWhalesInflight = fetchFresh().finally(() => {
+    topWhalesInflight = null;
+  });
+
+  if (topWhalesCache) {
+    // Stale but usable — kick off the refresh and return immediately.
+    void topWhalesInflight;
+    return topWhalesCache.value;
+  }
+  return topWhalesInflight;
 }
 
 export async function queryWhalesAggRows(
