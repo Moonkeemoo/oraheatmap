@@ -546,18 +546,21 @@ export function Header({
         </Section>
 
         {/* Scale legend — sits directly after WHAT because it's the
-            colour key for whichever metric is selected. Wrapped in a
-            slight horizontal padding so it doesn't touch the WHAT pill
-            strip. flex:0 keeps it tightly grouped with the filters
-            instead of drifting toward the logo when the centre group
-            has slack space. */}
-        <div style={{ paddingBottom: 4 }}>
+            colour key for whichever metric is selected. ScaleLegend
+            renders the LOW/MID/HIGH labels via position:absolute 17px
+            below the swatches; without padding-bottom they overflow
+            the header and bleed into the grid below. paddingBottom: 16
+            keeps them contained inside the header. */}
+        <div style={{ paddingBottom: 16 }}>
           <ScaleLegend metric={metric} />
         </div>
       </div>
 
-      {/* Brand mark — flush far right, pushed there by flex:1 on the
-          centre group above. */}
+      {/* Brand mark — compact size for the single-row toolbar. Hero
+          size (60px icon) made sense for the old two-row layout where
+          it had to balance a tall left column; in the new ~44px
+          toolbar it dominated and pushed everything else into the
+          bottom edge via alignItems:flex-end. */}
       <div
         style={{
           color: TOKENS.text,
@@ -566,7 +569,7 @@ export function Header({
           flexShrink: 0,
         }}
       >
-        <BrandLogo size="hero" />
+        <BrandLogo size="compact" />
       </div>
     </div>
   );

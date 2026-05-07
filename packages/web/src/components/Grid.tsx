@@ -467,17 +467,17 @@ function SortableRow({
     zIndex: isDragging ? 2 : isHovered ? 1 : "auto",
     position: "relative",
     // Hovered row picks up:
-    //   - a faint amber halo via box-shadow, sitting just outside the
-    //     row's bounding box so it reads as a frame around the entire
-    //     subgrid (label + cells) without nudging layout
-    //   - a very dim accent backdrop (TOKENS.accent at ~6% alpha)
-    //     showing through the inter-cell gaps + label gutter so the
-    //     row feels "lit up" even where the heat-coloured cells
-    //     dominate the foreground
+    //   - a soft amber outline (~50% alpha so it reads as "selected"
+    //     without competing with the heat-coloured cells for attention)
+    //   - a very dim accent backdrop showing through the inter-cell
+    //     gaps + label gutter
+    // First pass used full-saturation TOKENS.accent at 1.5px which the
+    // user flagged as too bright — the framed row was louder than the
+    // data inside it. Halved the outline alpha and dropped the glow.
     boxShadow: isHovered
-      ? `0 0 0 1.5px ${TOKENS.accent}, 0 0 14px -2px ${TOKENS.accent}55`
+      ? `0 0 0 1px ${TOKENS.accent}66`
       : "none",
-    backgroundColor: isHovered ? `${TOKENS.accent}10` : "transparent",
+    backgroundColor: isHovered ? `${TOKENS.accent}0a` : "transparent",
     borderRadius: isHovered ? 6 : 0,
   };
   return (
