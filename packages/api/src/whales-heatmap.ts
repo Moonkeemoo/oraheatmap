@@ -267,6 +267,26 @@ export async function handleWhalesSubject(
       profileImage: string | null;
     } | null;
   } | null = null;
+  // Per-row sums lifted out so they can feed BOTH the totals tile and
+  // the TOP WHALES popover list — no need to walk cells twice.
+  type RowStat = {
+    addr: string;
+    signals: number;
+    volume: number;
+    pnl: number;
+  };
+  const rowStats: RowStat[] = topAddrs.map((addr) => {
+    let signals = 0;
+    let volume = 0;
+    let pnl = 0;
+    for (const c of cells[addr] ?? []) {
+      signals += c.count;
+      volume += c.volume;
+      pnl += c.pnl;
+    }
+    return { addr, signals, volume, pnl };
+  });
+
   if (mode !== "pattern") {
     let signalsSum = 0;
     let volumeSum = 0;
@@ -274,22 +294,14 @@ export async function handleWhalesSubject(
     let activeRows = 0;
     let topAddr: string | null = null;
     let topAddrVolume = 0;
-    for (const addr of topAddrs) {
-      let rowSignals = 0;
-      let rowVolume = 0;
-      let rowPnl = 0;
-      for (const c of cells[addr] ?? []) {
-        rowSignals += c.count;
-        rowVolume += c.volume;
-        rowPnl += c.pnl;
-      }
-      signalsSum += rowSignals;
-      volumeSum += rowVolume;
-      pnlSum += rowPnl;
-      if (rowSignals > 0) activeRows += 1;
-      if (rowVolume > topAddrVolume) {
-        topAddrVolume = rowVolume;
-        topAddr = addr;
+    for (const r of rowStats) {
+      signalsSum += r.signals;
+      volumeSum += r.volume;
+      pnlSum += r.pnl;
+      if (r.signals > 0) activeRows += 1;
+      if (r.volume > topAddrVolume) {
+        topAddrVolume = r.volume;
+        topAddr = r.addr;
       }
     }
     totals = {
@@ -308,6 +320,27 @@ export async function handleWhalesSubject(
         : null,
     };
   }
+
+  // TOP WHALES popover list — same shape as trades-subject. Sort by
+  // reputation score so the list reflects "our rating" regardless of
+  // which whaleSet (online / watchlist / top) is active. Falls back to
+  // volume for whales that don't have a 90d reputation score yet.
+  const topWhalesList = rowStats
+    .map((r) => ({
+      addr: r.addr,
+      alias: whaleAlias(r.addr),
+      color: whaleColor(r.addr),
+      profileImage: whaleAliasInfo(r.addr)?.profileImage ?? null,
+      signals: r.signals,
+      volume: r.volume,
+      pnl: r.pnl,
+      score: repByAddr.get(r.addr) ?? 0,
+    }))
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return b.volume - a.volume;
+    })
+    .slice(0, 10);
   return {
     generatedAt: new Date().toISOString(),
     range: assembleRange,
@@ -321,6 +354,10 @@ export async function handleWhalesSubject(
     cells,
     // Populated above for live/macro, null for pattern.
     totals,
+    // TOP WHALES popover list — visible row set ranked by reputation
+    // score (falls back to volume on ties / score=0). Same shape as
+    // the trades-subject response so StatsBar reads it identically.
+    topWhales: topWhalesList,
     mode,
     subject: "whales" as const,
     // Surface kind / macroKind so the client knows which pattern /

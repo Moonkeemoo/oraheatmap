@@ -41,6 +41,7 @@ import {
 } from "./heatmap-query";
 import { type PatternKind, queryPattern } from "./pattern-query";
 import { SUBCATEGORY_LABELS, subcategoriesOf } from "./subcategorize";
+import { computeReputation } from "./whale-profile";
 import { whaleAlias, whaleAliasInfo, whaleColor } from "./whale-display";
 
 /** Top-N markets per (category, bucket) cell. UI re-sorts client-side
@@ -241,22 +242,67 @@ export async function handleTradesSubject(
           profileImage: whaleAliasInfo(macroTopWhaleAddr)?.profileImage ?? null,
         }
       : null;
-    const macroTopWhalesDecorated = macroTopWhaleRows.map((r) => {
-      const addr = r.whale_addr;
-      return {
-        addr,
-        alias: whaleAlias(addr),
-        color: whaleColor(addr),
-        profileImage: whaleAliasInfo(addr)?.profileImage ?? null,
-        signals: typeof r.signals === "number" ? r.signals : Number(r.signals),
-        volume: typeof r.volume_usd === "number" ? r.volume_usd : Number(r.volume_usd),
-        pnl: r.pnl_usd === null
-          ? 0
-          : typeof r.pnl_usd === "number"
-            ? r.pnl_usd
-            : Number(r.pnl_usd),
-      };
-    });
+    // Same reputation lookup as the live branch — small batch query
+    // for the ~10 macro top whales so the popover ranks by our rating
+    // instead of raw window-volume.
+    const macroTopAddrs = macroTopWhaleRows.map((r) => r.whale_addr);
+    type MacroRepRow = {
+      whale_addr: string;
+      trades: number | string;
+      wins: number | string;
+      losses: number | string;
+      pnl: number | string | null;
+    };
+    const macroRepRows = macroTopAddrs.length === 0
+      ? []
+      : await sql<MacroRepRow[]>`
+          SELECT
+            whale_addr,
+            COUNT(*)::bigint                                              AS trades,
+            COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS wins,
+            COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS losses,
+            COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl
+          FROM signals
+          WHERE ts >= NOW() - INTERVAL '90 days'
+            AND whale_addr = ANY(${macroTopAddrs}::text[])
+          GROUP BY whale_addr
+        `;
+    const macroRepByAddr = new Map<string, number>();
+    for (const r of macroRepRows) {
+      const trades = Number(r.trades);
+      const wins = Number(r.wins);
+      const losses = Number(r.losses);
+      const decided = wins + losses;
+      const winRate = decided > 0 ? wins / decided : null;
+      const pnl = r.pnl === null ? 0 : Number(r.pnl);
+      macroRepByAddr.set(
+        r.whale_addr,
+        computeReputation({ pnl, trades, winRate }),
+      );
+    }
+    const macroTopWhalesDecorated = macroTopWhaleRows
+      .map((r) => {
+        const addr = r.whale_addr;
+        const volume = typeof r.volume_usd === "number" ? r.volume_usd : Number(r.volume_usd);
+        return {
+          addr,
+          alias: whaleAlias(addr),
+          color: whaleColor(addr),
+          profileImage: whaleAliasInfo(addr)?.profileImage ?? null,
+          signals: typeof r.signals === "number" ? r.signals : Number(r.signals),
+          volume,
+          pnl: r.pnl_usd === null
+            ? 0
+            : typeof r.pnl_usd === "number"
+              ? r.pnl_usd
+              : Number(r.pnl_usd),
+          score: macroRepByAddr.get(addr) ?? 0,
+        };
+      })
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return b.volume - a.volume;
+      });
     return {
       ...grid,
       mode: "macro" as const,
@@ -422,22 +468,69 @@ export async function handleTradesSubject(
         profileImage: whaleAliasInfo(topWhaleAddr)?.profileImage ?? null,
       }
     : null;
-  const topWhales = topWhaleRows.map((r) => {
-    const addr = r.whale_addr;
-    return {
-      addr,
-      alias: whaleAlias(addr),
-      color: whaleColor(addr),
-      profileImage: whaleAliasInfo(addr)?.profileImage ?? null,
-      signals: typeof r.signals === "number" ? r.signals : Number(r.signals),
-      volume: typeof r.volume_usd === "number" ? r.volume_usd : Number(r.volume_usd),
-      pnl: r.pnl_usd === null
-        ? 0
-        : typeof r.pnl_usd === "number"
-          ? r.pnl_usd
-          : Number(r.pnl_usd),
-    };
-  });
+  // Pull a 90d reputation row for each of the top whales surfaced in
+  // the popover so the list ranks by our rating instead of just
+  // window-volume. Keeps the cost bounded — we only score the ~10
+  // addresses that already came back from queryTopWhales, not the
+  // whole 10k corpus. Single batch query → cheap.
+  const topAddrsForRep = topWhaleRows.map((r) => r.whale_addr);
+  type ReputationRow = {
+    whale_addr: string;
+    trades: number | string;
+    wins: number | string;
+    losses: number | string;
+    pnl: number | string | null;
+  };
+  const repRowsForTop = topAddrsForRep.length === 0
+    ? []
+    : await sql<ReputationRow[]>`
+        SELECT
+          whale_addr,
+          COUNT(*)::bigint                                              AS trades,
+          COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS wins,
+          COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS losses,
+          COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl
+        FROM signals
+        WHERE ts >= NOW() - INTERVAL '90 days'
+          AND whale_addr = ANY(${topAddrsForRep}::text[])
+        GROUP BY whale_addr
+      `;
+  const repByAddr = new Map<string, number>();
+  for (const r of repRowsForTop) {
+    const trades = Number(r.trades);
+    const wins = Number(r.wins);
+    const losses = Number(r.losses);
+    const decided = wins + losses;
+    const winRate = decided > 0 ? wins / decided : null;
+    const pnl = r.pnl === null ? 0 : Number(r.pnl);
+    repByAddr.set(
+      r.whale_addr,
+      computeReputation({ pnl, trades, winRate }),
+    );
+  }
+  const topWhales = topWhaleRows
+    .map((r) => {
+      const addr = r.whale_addr;
+      const volume = typeof r.volume_usd === "number" ? r.volume_usd : Number(r.volume_usd);
+      return {
+        addr,
+        alias: whaleAlias(addr),
+        color: whaleColor(addr),
+        profileImage: whaleAliasInfo(addr)?.profileImage ?? null,
+        signals: typeof r.signals === "number" ? r.signals : Number(r.signals),
+        volume,
+        pnl: r.pnl_usd === null
+          ? 0
+          : typeof r.pnl_usd === "number"
+            ? r.pnl_usd
+            : Number(r.pnl_usd),
+        score: repByAddr.get(addr) ?? 0,
+      };
+    })
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return b.volume - a.volume;
+    });
   const drillSubcategoryLabel = drillSubcategory
     ? SUBCATEGORY_LABELS[drillSubcategory] ?? drillSubcategory
     : null;
