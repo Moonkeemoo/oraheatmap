@@ -560,34 +560,6 @@ export function Heatmap() {
                 onBackToCategory={() => setDrillSubcategory(null)}
               />
             )}
-            {/* Empty-state CTA for the WATCHLIST tab when authed but
-                nothing is pinned. Renders BEFORE the Grid so the user
-                sees a helpful prompt instead of an empty heatmap. */}
-            {subject === "whales" &&
-              whaleSet === "watchlist" &&
-              isAuthed &&
-              watchlist.ready &&
-              watchlist.addrs.length === 0 && (
-                <div
-                  style={{
-                    margin: "16px 0",
-                    padding: "20px 24px",
-                    border: `1px dashed ${TOKENS.border}`,
-                    borderRadius: 8,
-                    color: TOKENS.textSec,
-                    fontFamily: TOKENS.font,
-                    fontSize: 13,
-                    lineHeight: 1.5,
-                    textAlign: "center",
-                  }}
-                >
-                  <div style={{ marginBottom: 6, color: TOKENS.text, fontWeight: 600 }}>
-                    Watchlist is empty
-                  </div>
-                  Open any whale and tap the <strong>Pin</strong> button to add
-                  them here. Pinned whales stay across sessions.
-                </div>
-              )}
             {(() => {
               // Scope key encodes (level, mode, parents). Range is intentionally
               // NOT in the scope — a user's preferred Sports order survives
@@ -744,6 +716,37 @@ export function Heatmap() {
                 />
               );
             })()}
+            {/* Empty-state CTA for the WATCHLIST tab when authed but
+                nothing is pinned. Renders AFTER the Grid so the time
+                scale + WhaleSetToggle stay visible on top, and the
+                CTA fills the empty body area below — user complaint
+                was the prompt was sitting above the time row. */}
+            {subject === "whales" &&
+              whaleSet === "watchlist" &&
+              isAuthed &&
+              watchlist.ready &&
+              watchlist.addrs.length === 0 && (
+                <div
+                  style={{
+                    margin: "20px auto 0",
+                    padding: "20px 24px",
+                    maxWidth: 520,
+                    border: `1px dashed ${TOKENS.border}`,
+                    borderRadius: 8,
+                    color: TOKENS.textSec,
+                    fontFamily: TOKENS.font,
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                    textAlign: "center",
+                  }}
+                >
+                  <div style={{ marginBottom: 6, color: TOKENS.text, fontWeight: 600 }}>
+                    Watchlist is empty
+                  </div>
+                  Open any whale and tap the <strong>Pin</strong> button to add
+                  them here. Pinned whales stay across sessions.
+                </div>
+              )}
             {panelCell && (
               <Tooltip
                 key={`panel-${panelCell.cellId}`}
