@@ -230,11 +230,15 @@ function ClickAffordance({ kind }: { kind: "drill" | "external" }) {
         position: "absolute",
         top: 4,
         right: 6,
-        opacity: 0.75,
+        // Hidden by default — appears only on row hover via the badge's
+        // onMouseEnter handler bumping data-affordance opacity to 1.
+        // Matches the Lists L3 chrome where the chevron / external arrow
+        // is a hover-only affordance, not a permanent visual.
+        opacity: 0,
         fontSize: kind === "external" ? 10 : 13,
         lineHeight: 1,
         transition: "transform .15s, opacity .15s",
-        color: "rgba(255,255,255,0.95)",
+        color: "rgba(255,255,255,0.85)",
         // Click goes through to the parent button/anchor — this span is
         // decoration-only.
         pointerEvents: "none",
@@ -280,69 +284,61 @@ function RowLabelBadge({
     : clickableRow
       ? `Drill into ${meta.isDrillRow ? "markets" : "subcategories"}`
       : undefined;
-  // Subtle "raised" feel for clickable rows — a 1px inner highlight on the
-  // top edge + a 1px outer border on the bottom edge reads as a button.
-  // Combined with the corner-pinned ›/↗ icon it's hard to mistake for
-  // static text.
-  const interactiveBoxShadow = isInteractive
-    ? "inset 0 1px 0 rgba(255,255,255,0.18), 0 1px 0 rgba(0,0,0,0.18)"
-    : "none";
-  // Reserve room on the right for the corner-pinned affordance icon so the
-  // text never visually overlaps it. 18px is enough for both › and ↗ at
-  // their current sizes; non-interactive rows skip the reserve. Mobile
-  // shrinks this aggressively so 7-letter L1 labels ("CULTURE",
-  // "POLITICS", "ECONOMICS") survive the narrow label column.
-  // No affordance → no chevron in the corner → no padding reserved
-  // for it. Even on interactive whales rows, the click target is the
-  // whole pill and the alias text wants every available pixel.
+  // ── Lists L3 design ────────────────────────────────────────────────
+  // Bare-pill chrome: transparent background, faint hairline border,
+  // text in pure white, with a vertical bar marker on the LEFT in the
+  // category/whale colour. Replaces the older fully-coloured badge —
+  // saturated category backgrounds were dominating the eye when sat
+  // next to heat-coloured cells, and hue parity between marker bar
+  // and category cells is enough to read "this is the SPORTS row".
+  // Same chrome applies on desktop AND mobile; the marker bar shrinks
+  // for mobile / dense L3 so it doesn't tower over short row heights.
+  const markerW = 3;
+  const markerH = isMobile ? 12 : isL3 ? 12 : 16;
   const padRight = !hideAffordance && isInteractive
-    ? (isMobile ? 12 : 18)
+    ? (isMobile ? 10 : 14)
     : (isMobile ? 4 : 8);
-  const padLeft = isMobile ? 5 : 8;
+  const padLeft = isMobile ? 6 : 8;
+  const restingBorder = "1px solid rgba(255,255,255,0.07)";
+  const restingBg = "transparent";
+  const hoverBorder = "1px solid rgba(255,255,255,0.16)";
+  const hoverBg = "rgba(255,255,255,0.04)";
   const badgeStyle: React.CSSProperties = {
-    background: rowColor,
+    background: restingBg,
     color: "#fff",
-    border: "none",
+    border: restingBorder,
     fontFamily: "inherit",
     fontSize: isMobile && !isL3 ? 11 : 10,
     fontWeight: isL3 ? 600 : 700,
     letterSpacing: isL3 ? 0.2 : isMobile ? 0.4 : 0.6,
     padding: `5px ${padRight}px 5px ${padLeft}px`,
-    borderRadius: 4,
+    borderRadius: 6,
     textTransform: isL3 ? "none" : "uppercase",
-    textAlign: isL3 ? ("left" as const) : ("center" as const),
+    // Bar marker sits on the left of the text, so left-align label
+    // content. L3 already wanted left alignment for multi-line market
+    // questions; L1/L2 switch from centre to left to match.
+    textAlign: "left",
     width: "100%",
     cursor: isInteractive ? "pointer" : "default",
-    transition: "filter .15s, transform .15s, box-shadow .15s",
+    transition: "background-color .12s, border-color .12s",
     opacity: isResolved ? 0.55 : 1,
     textDecoration: isResolved ? "line-through" : "none",
     boxSizing: "border-box",
-    // Always relative so the corner-pinned affordance has a positioned
-    // ancestor regardless of L1/L2/L3.
     position: "relative",
     whiteSpace: isL3 ? "normal" : "nowrap",
-    // L3 multi-line: clamp at 2 lines with ellipsis so long tennis names
-    // ("Internazionali BNL d'Italia, Qualification: P1 vs P2") don't bleed
-    // past the badge box. L1/L2 single-line: nowrap + ellipsis as before.
     overflow: "hidden",
-    textOverflow: isL3 ? undefined : ("ellipsis" as const),
     lineHeight: isL3 ? "1.25" : undefined,
     wordBreak: isL3 ? ("break-word" as const) : undefined,
-    boxShadow: interactiveBoxShadow,
-    ...(isL3
-      ? {
-          display: "-webkit-box",
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: "vertical" as const,
-        }
-      : { display: "block" }),
+    display: "inline-flex",
+    alignItems: "center",
+    gap: isMobile ? 6 : 8,
   };
   const onEnter = (e: React.MouseEvent<HTMLElement>): void => {
     if (!isInteractive) return;
     const el = e.currentTarget;
-    el.style.filter = "brightness(1.18)";
-    el.style.boxShadow =
-      "inset 0 1px 0 rgba(255,255,255,0.28), 0 2px 0 rgba(0,0,0,0.22), 0 0 0 1px rgba(255,255,255,0.22)";
+    el.style.background = hoverBg;
+    el.style.borderColor = "rgba(255,255,255,0.16)";
+    el.style.border = hoverBorder;
     const aff = el.querySelector<HTMLSpanElement>("[data-affordance]");
     if (aff) {
       aff.style.opacity = "1";
@@ -352,18 +348,14 @@ function RowLabelBadge({
   const onLeave = (e: React.MouseEvent<HTMLElement>): void => {
     if (!isInteractive) return;
     const el = e.currentTarget;
-    el.style.filter = "none";
-    el.style.boxShadow = interactiveBoxShadow;
+    el.style.background = restingBg;
+    el.style.border = restingBorder;
     const aff = el.querySelector<HTMLSpanElement>("[data-affordance]");
     if (aff) {
-      aff.style.opacity = "0.75";
+      aff.style.opacity = "0";
       aff.style.transform = "translateX(0)";
     }
   };
-  // Pick which affordance kind to show. L3-with-link wins over drill (a
-  // market row is never simultaneously a drill target). hideAffordance
-  // overrides everything — used by whales rows where the entire pill
-  // is the click target so a drill arrow would mislead.
   const affordanceKind: "drill" | "external" | null = hideAffordance
     ? null
     : l3Url
@@ -371,14 +363,49 @@ function RowLabelBadge({
       : clickableRow
         ? "drill"
         : null;
-  // touch-action: none disables the browser's default touch handling
-  // (scroll / zoom / select) on the draggable badge so dnd-kit's
-  // long-press detector gets clean pointer events. Only set when the
-  // badge is actually wired as a drag source — otherwise we'd block
-  // the user from scrolling the page by touching a non-draggable row.
   const draggableStyle: React.CSSProperties = dragListeners
     ? { ...badgeStyle, touchAction: "none", userSelect: "none" }
     : badgeStyle;
+  // Marker bar — a thin vertical strip in the category/whale colour
+  // sitting at the leftmost edge of the pill. Uses meta.rowColor so
+  // category rows stay hue-coded and whale rows pick up their per-
+  // address deterministic colour.
+  const marker = (
+    <span
+      aria-hidden="true"
+      style={{
+        flex: "0 0 auto",
+        width: markerW,
+        height: markerH,
+        borderRadius: 2,
+        background: rowColor,
+      }}
+    />
+  );
+  // Body text — wrapped so flex row can pin marker at left + chevron
+  // at right, with the label growing to fill the middle. L3 multi-
+  // line clamp moves to this inner span so the marker bar stays a
+  // single fixed-height element next to the (potentially) two-line
+  // label.
+  const labelEl = (
+    <span
+      style={{
+        flex: 1,
+        minWidth: 0,
+        overflow: "hidden",
+        textOverflow: isL3 ? undefined : "ellipsis",
+        ...(isL3
+          ? {
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical" as const,
+            }
+          : null),
+      }}
+    >
+      {rowLabel}
+    </span>
+  );
   if (l3Url) {
     return (
       <a
@@ -392,7 +419,8 @@ function RowLabelBadge({
         {...(dragAttributes ?? {})}
         {...(dragListeners ?? {})}
       >
-        {rowLabel}
+        {marker}
+        {labelEl}
         {affordanceKind && <ClickAffordance kind={affordanceKind} />}
       </a>
     );
@@ -409,7 +437,8 @@ function RowLabelBadge({
       {...(dragAttributes ?? {})}
       {...(dragListeners ?? {})}
     >
-      {rowLabel}
+      {marker}
+      {labelEl}
       {affordanceKind && <ClickAffordance kind={affordanceKind} />}
     </button>
   );
