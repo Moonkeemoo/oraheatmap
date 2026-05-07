@@ -1028,14 +1028,16 @@ export function Grid({
           gridTemplateRows: isMacro
             ? `${(isMobile ? timeRowH : TIME_ROW_H) - 4}px repeat(${displayCategories.length}, minmax(36px, 1fr))`
             : `${timeRowH}px repeat(${displayCategories.length}, minmax(${minRowH}px, 1fr))`,
-          // 4px column gap between cells stays — anything bigger
-          // breaks the "this row is a continuous strip of values"
-          // read. Vertical row gap bumped 4 → 6 so each row gets
-          // micro-air around it; tightly stacked badge borders read
-          // as a wall of bars ("наляпано"). Macro keeps tight 2px in
-          // both directions because dense matrices want to read as a
-          // continuous canvas, not a list.
-          rowGap: isMacro ? 2 : 6,
+          // Column gap stays at 4 (2 macro) — anything bigger breaks
+          // the "this row is a continuous strip of values" read. Row
+          // gap is bigger because tightly-stacked badge borders read
+          // as a wall of bars ("наляпано"). Mobile gets the most
+          // breathing room because the smaller text + denser badges
+          // read as squashed unless there's clear air around each
+          // row; desktop can get away with less. Macro keeps tight
+          // 2px in both directions because dense matrices want to
+          // read as a continuous canvas, not a list.
+          rowGap: isMacro ? 2 : isMobile ? 10 : 6,
           columnGap: isMacro ? 2 : 4,
           width: "100%",
           height: "100%",
