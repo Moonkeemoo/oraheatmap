@@ -258,6 +258,25 @@ CREATE INDEX IF NOT EXISTS user_row_orders_user_idx
   ON user_row_orders (user_id);
 
 -- ══════════════════════════════════════════
+-- Per-user whale watchlist
+-- ══════════════════════════════════════════
+-- Pinned whales surfaced in the WHALES subject view's WATCHLIST tab.
+-- One row per (user_id) — full set of pinned addresses lives in `addrs`
+-- as a lowercased text[] sorted alphabetically. Replace-on-write
+-- semantics (POST /api/me/watchlist sends the entire current set), so
+-- there's no per-(user, addr) row and no need for an index beyond the
+-- PK.
+--
+-- user_id mirrors the user_row_orders convention — Auth.js JWT `sub`,
+-- no FK so SIWE / Telegram providers (which don't populate auth_users)
+-- still work.
+CREATE TABLE IF NOT EXISTS user_whale_watchlist (
+  user_id    TEXT PRIMARY KEY,
+  addrs      TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ══════════════════════════════════════════
 -- Product analytics — anonymised event log
 -- ══════════════════════════════════════════
 -- First-party event store. Frontend SDK at packages/web/src/lib/analytics.ts

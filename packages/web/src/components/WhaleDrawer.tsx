@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo } from "react";
+import { useSession } from "next-auth/react";
 import { useWhaleProfile } from "@/hooks/useWhaleProfile";
+import { useWatchlist } from "@/hooks/useWatchlist";
 import { categoryMeta } from "@/lib/categories";
 import { fmtMoney, fmtMoneyShort } from "@/lib/format";
 import { marketUrl } from "@/lib/polymarket-url";
@@ -182,6 +184,12 @@ function DrawerBody({
               </a>
             )}
           </div>
+          {/* Pin / unpin to watchlist. Anon users get the disabled
+              state with a "sign in to pin" tooltip — hides the action
+              from the empty-state-on-WATCHLIST flow. Authed: filled
+              accent when pinned, hairline outline when not, instant
+              optimistic toggle via useWatchlist. */}
+          <PinButton addr={data.addr} />
           <button
             onClick={onClose}
             aria-label="Close whale profile"
@@ -538,6 +546,61 @@ function CopyableAddress({ addr }: { addr: string }) {
  * Hover tooltip surfaces the inputs (PnL, trades, win rate) so the
  * user can sanity-check the score without leaving the drawer.
  */
+/** Watchlist toggle button shown in the WhaleDrawer header. Anon
+ *  users see a locked variant with no click effect (label-only); the
+ *  WhaleSetToggle's WATCHLIST tab handles the "sign in to pin"
+ *  funnel, so we don't need to open the login modal from here.
+ *
+ *  Pinned state: filled accent, "★ Pinned".
+ *  Unpinned + authed: hairline outline, "☆ Pin".
+ *  Anon: disabled, faint outline, "☆ Pin" with tooltip.
+ */
+function PinButton({ addr }: { addr: string }) {
+  const { status } = useSession();
+  const isAuthed = status === "authenticated";
+  const watchlist = useWatchlist();
+  const pinned = watchlist.has(addr);
+  const onClick = (): void => {
+    if (!isAuthed) return;
+    void watchlist.toggle(addr);
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={
+        !isAuthed
+          ? "Sign in to pin whales to your watchlist"
+          : pinned
+            ? "Remove from watchlist"
+            : "Pin to watchlist"
+      }
+      style={{
+        background: pinned ? TOKENS.accent : "transparent",
+        border: `1px solid ${pinned ? TOKENS.accent : TOKENS.border}`,
+        color: pinned ? "#1a1410" : isAuthed ? TOKENS.text : TOKENS.textMuted,
+        fontFamily: TOKENS.font,
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: 0.4,
+        textTransform: "uppercase",
+        padding: "5px 10px",
+        borderRadius: 6,
+        cursor: isAuthed ? "pointer" : "help",
+        lineHeight: 1,
+        opacity: !isAuthed ? 0.6 : 1,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        transition: "background-color .12s, border-color .12s, color .12s",
+      }}
+    >
+      <span style={{ fontSize: 12 }}>{pinned ? "★" : "☆"}</span>
+      <span>{pinned ? "Pinned" : "Pin"}</span>
+    </button>
+  );
+}
+
 function ReputationBadge({
   reputation,
 }: {

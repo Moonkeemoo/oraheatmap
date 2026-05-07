@@ -27,6 +27,7 @@ import {
   type HeatmapCell,
   type HeatmapRange,
   MACRO_CONFIG,
+  queryActiveWhalesInWindow,
   queryTopWhalesByReputation,
   queryWhalesAggRows,
   queryWhalesMacroAggRows,
@@ -35,6 +36,16 @@ import {
 } from "./heatmap-query";
 import { computeReputation } from "./whale-profile";
 import { whaleAlias, whaleAliasInfo, whaleColor } from "./whale-display";
+
+/** Which set of whales to render as rows in the WHALES subject view.
+ *   - "online"    → top-N currently-active addresses in the LIVE window
+ *                   (or in the current mode's lookback for PATTERN/MACRO)
+ *   - "watchlist" → user's pinned set (passed in via `watchlistAddrs`).
+ *                   Empty = empty heatmap, no fallback to top-N (the UI
+ *                   shows an empty-state CTA instead).
+ *   - "top"       → existing top-50 by 90-day realised PnL reputation
+ *                   (the previous default; kept for anonymous fallback). */
+export type WhaleSet = "online" | "watchlist" | "top";
 
 export type WhalesHandlerInput = {
   sql: Sql;
@@ -48,14 +59,43 @@ export type WhalesHandlerInput = {
   trackedWhales: number;
   dataSpan: { earliestTs: string | null; daysOfData: number };
   now: Date;
+  /** Source of the whale row set. Default "top" preserves the previous
+   *  behaviour for anonymous users + clients that haven't been updated
+   *  to send the param. */
+  whaleSet?: WhaleSet;
+  /** Lowercased pinned addresses. Only used when whaleSet === "watchlist".
+   *  Server-side cap of 100 (enforced at the /api/me/watchlist endpoint)
+   *  keeps the worst-case row count bounded. */
+  watchlistAddrs?: ReadonlyArray<string>;
 };
 
 export async function handleWhalesSubject(
   input: WhalesHandlerInput,
 ): Promise<unknown> {
   const { sql, query, mode, metric, trackedWhales, dataSpan, now } = input;
-  const topAddrs = await queryTopWhalesByReputation(sql);
+  const whaleSet: WhaleSet = input.whaleSet ?? "top";
   const range: HeatmapRange = query.range ?? "1h";
+
+  // Pick the row set:
+  //   online    → active in the current mode's window. For LIVE use the
+  //               selected range, for MACRO/PATTERN use a fixed lookback
+  //               that matches the mode's rendered span (7d / 30d).
+  //   watchlist → exactly what the user pinned, no top-N filtering. UI
+  //               surfaces an empty-state when this is empty.
+  //   top       → existing reputation-ranked top-50.
+  let topAddrs: ReadonlyArray<string>;
+  if (whaleSet === "watchlist") {
+    topAddrs = input.watchlistAddrs ?? [];
+  } else if (whaleSet === "online") {
+    const windowMinutes = mode === "live"
+      ? RANGE_CONFIG[range].windowMinutes
+      : mode === "macro"
+        ? (query.macroKind === "day-12w" ? 12 * 7 * 24 * 60 : 7 * 24 * 60)
+        : 30 * 24 * 60; // pattern: 30d lookback by default
+    topAddrs = await queryActiveWhalesInWindow(sql, windowMinutes, 50);
+  } else {
+    topAddrs = await queryTopWhalesByReputation(sql);
+  }
 
   // Build buckets + cells by mode. PATTERN gets a custom assembly
   // path because each cell needs current_*+avg_* + delta+sampleCount
@@ -223,5 +263,6 @@ export async function handleWhalesSubject(
     whaleMeta,
     metric,
     dataSpan,
+    whaleSet,
   };
 }

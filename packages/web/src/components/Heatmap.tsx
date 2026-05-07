@@ -27,6 +27,8 @@ import type {
   Subject,
 } from "@/lib/types";
 import { Breadcrumb } from "./Breadcrumb";
+import { WhaleSetToggle } from "./WhaleSetToggle";
+import { useWatchlist } from "@/hooks/useWatchlist";
 import { Footer } from "./Footer";
 import { Grid } from "./Grid";
 import { Header } from "./Header";
@@ -123,6 +125,7 @@ export function Heatmap() {
     patternKind,
     macroKind,
     metric,
+    whaleSet,
     drillCategory,
     drillSubcategory,
     setSubject,
@@ -131,6 +134,7 @@ export function Heatmap() {
     setPatternKind,
     setMacroKind,
     setMetric,
+    setWhaleSet,
     setDrillCategory,
     setDrillSubcategory,
   } = filters;
@@ -138,6 +142,17 @@ export function Heatmap() {
   const { status: authStatus } = useSession();
   const isAuthed = authStatus === "authenticated";
   const isMobile = useIsMobile();
+  // Per-user watchlist — drives the WATCHLIST tab + pin button in
+  // WhaleDrawer. Anon users get an empty list; pin/unpin are no-ops.
+  const watchlist = useWatchlist();
+  // Auto-fall-back: if user lands on whaleSet=watchlist and signs out
+  // (or has nothing pinned), bounce them to ONLINE so the heatmap
+  // doesn't render an empty grid silently.
+  useEffect(() => {
+    if (subject === "whales" && whaleSet === "watchlist" && !isAuthed) {
+      setWhaleSet("online");
+    }
+  }, [subject, whaleSet, isAuthed, setWhaleSet]);
 
   // Initialise the analytics SDK once — fires session_start + the
   // initial pageview. Subsequent events fire as the user interacts.
@@ -285,6 +300,10 @@ export function Heatmap() {
     drillCategory: subject === "whales" ? null : drillCategory,
     drillSubcategory:
       subject === "whales" || mode === "pattern" ? null : drillSubcategory,
+    // whaleSet picks which row set the WHALES subject renders. Anon
+    // users land on "online" by default; the toggle's WATCHLIST option
+    // is gated client-side and switches via setWhaleSet.
+    whaleSet: subject === "whales" ? whaleSet : undefined,
   });
 
   // Whenever a fresh fetch arrives, drop the optimistic queue.
@@ -541,6 +560,49 @@ export function Heatmap() {
                 onBackToCategory={() => setDrillSubcategory(null)}
               />
             )}
+            {subject === "whales" && (
+              <WhaleSetToggle
+                whaleSet={whaleSet}
+                setWhaleSet={setWhaleSet}
+                isAuthed={isAuthed}
+                onRequestLogin={() => setLoginOpen(true)}
+                // Count on the currently-active tab is precise (the
+                // grid is rendering exactly that many rows); the
+                // inactive tab's count is a hint and would require a
+                // second fetch to be exact, so we omit it (passes
+                // null through to the toggle which renders no badge).
+                onlineCount={whaleSet === "online" ? displayData.categories.length : null}
+                watchlistCount={watchlist.addrs.length}
+              />
+            )}
+            {/* Empty-state CTA for the WATCHLIST tab when authed but
+                nothing is pinned. Renders BEFORE the Grid so the user
+                sees a helpful prompt instead of an empty heatmap. */}
+            {subject === "whales" &&
+              whaleSet === "watchlist" &&
+              isAuthed &&
+              watchlist.ready &&
+              watchlist.addrs.length === 0 && (
+                <div
+                  style={{
+                    margin: "16px 0",
+                    padding: "20px 24px",
+                    border: `1px dashed ${TOKENS.border}`,
+                    borderRadius: 8,
+                    color: TOKENS.textSec,
+                    fontFamily: TOKENS.font,
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                    textAlign: "center",
+                  }}
+                >
+                  <div style={{ marginBottom: 6, color: TOKENS.text, fontWeight: 600 }}>
+                    Watchlist is empty
+                  </div>
+                  Open any whale and tap the <strong>Pin</strong> button to add
+                  them here. Pinned whales stay across sessions.
+                </div>
+              )}
             {(() => {
               // Scope key encodes (level, mode, parents). Range is intentionally
               // NOT in the scope — a user's preferred Sports order survives

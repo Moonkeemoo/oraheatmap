@@ -23,6 +23,12 @@ export type Mode = "live" | "pattern" | "macro";
  * + MACRO = each whale's density over the long window.
  */
 export type Subject = "trades" | "whales";
+
+/** Source of the whale row set when subject="whales".
+ *   - "online"    → top-N currently active in the mode's window
+ *   - "watchlist" → user's pinned set (auth required)
+ *   - "top"       → 90d realised PnL leaders (default fallback) */
+export type WhaleSet = "online" | "watchlist" | "top";
 export type MacroKind = "hour-week" | "day-12w";
 
 export type LiveRange = "1h" | "24h" | "12d" | "12w";
@@ -170,6 +176,11 @@ export type HeatmapResponse = {
   totals: HeatmapTotals | null;
   metric: HeatmapMetric;
   dataSpan: { earliestTs: string | null; daysOfData: number };
+  /** Whales-mode only — echoes the whaleSet that produced this response.
+   *  Frontend uses it to detect the "watchlist but you have nothing
+   *  pinned" empty-state vs the "watchlist with results" populated
+   *  state. */
+  whaleSet?: WhaleSet;
   /** Whales-mode only — display metadata for each whale-keyed row.
    *  Categories array holds whale addresses; this map fills in the
    *  alias / avatar / reputation level so the row label can render

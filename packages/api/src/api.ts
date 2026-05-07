@@ -251,6 +251,56 @@ export function createApi(deps: ApiDeps) {
         }),
       },
     )
+    // ── Per-user whale watchlist ──────────────────────────────────────
+    // Pinned whales drive the WATCHLIST tab in the WHALES subject view.
+    // Read returns the full lowercased set; write replaces it (frontend
+    // sends the new full set on each pin/unpin). 100-addr cap so a
+    // misbehaving client can't flood the row.
+    .get("/api/me/watchlist", async ({ request, set }) => {
+      const user = await readAuthFromHeaders(request.headers);
+      if (!user || !user.id) {
+        set.status = 401;
+        return { error: "unauthenticated" };
+      }
+      const rows = await deps.sql<{ addrs: string[] }[]>`
+        SELECT addrs FROM user_whale_watchlist WHERE user_id = ${user.id}
+      `;
+      return { addrs: rows[0]?.addrs ?? [] };
+    })
+    .post(
+      "/api/me/watchlist",
+      async ({ body, request, set }) => {
+        const user = await readAuthFromHeaders(request.headers);
+        if (!user || !user.id) {
+          set.status = 401;
+          return { error: "unauthenticated" };
+        }
+        // Lowercase + dedupe + sort so the on-disk set is canonical
+        // regardless of client-side ordering. Polymarket addresses are
+        // hex; rejecting non-hex prevents stray pins of bogus strings.
+        const seen = new Set<string>();
+        for (const raw of body.addrs) {
+          const a = raw.trim().toLowerCase();
+          if (!/^0x[0-9a-f]{40}$/.test(a)) continue;
+          seen.add(a);
+        }
+        const addrs = Array.from(seen).sort();
+        await deps.sql`
+          INSERT INTO user_whale_watchlist (user_id, addrs, updated_at)
+          VALUES (${user.id}, ${addrs as unknown as string[]}::text[], NOW())
+          ON CONFLICT (user_id)
+          DO UPDATE SET addrs = EXCLUDED.addrs, updated_at = NOW()
+        `;
+        return { ok: true, addrs };
+      },
+      {
+        body: t.Object({
+          addrs: t.Array(t.String({ minLength: 1, maxLength: 64 }), {
+            maxItems: 100,
+          }),
+        }),
+      },
+    )
     .get("/api/health", async () => {
       let dbOk = false;
       try {
@@ -401,7 +451,7 @@ export function createApi(deps: ApiDeps) {
     )
     .get(
       "/api/heatmap",
-      async ({ query, set }) => {
+      async ({ query, request, set }) => {
         const mode = query.mode ?? "live";
         const metric = query.metric ?? "signals";
 
@@ -419,6 +469,10 @@ export function createApi(deps: ApiDeps) {
           query.category ?? "",
           query.subcategory ?? "",
           metric,
+          // whaleSet only matters for subject=whales but cheap to add
+          // unconditionally; keys for trades responses just gain a
+          // suffix that always equals the same default.
+          query.whaleSet ?? "top",
         ].join("|");
         const ttlMs = heatmapTtlMs(mode, query.range);
         const ccHeader = cacheControlHeader(ttlMs);
@@ -436,8 +490,26 @@ export function createApi(deps: ApiDeps) {
 
         // subject === "whales" — pivot rows from categories to top-N
         // whale addresses. All bucketing + assembly logic lives in
-        // whales-heatmap.ts; api.ts just dispatches and caches.
+        // whales-heatmap.ts; api.ts dispatches, caches, and (for
+        // watchlist mode) hydrates the user's pinned set from DB.
         if (subject === "whales") {
+          const whaleSet = (query.whaleSet ?? "top") as "online" | "watchlist" | "top";
+          // Watchlist needs the authenticated user's pinned set. Anon
+          // users get an empty list → empty heatmap → frontend shows
+          // an empty-state CTA. Note: response cache key already
+          // includes whaleSet but NOT user_id, so two authed users
+          // hitting "watchlist" with different pins would see each
+          // other's data — bypass the cache entirely for watchlist.
+          let watchlistAddrs: string[] = [];
+          if (whaleSet === "watchlist") {
+            const user = await readAuthFromHeaders(request.headers);
+            if (user?.id) {
+              const rows = await deps.sql<{ addrs: string[] }[]>`
+                SELECT addrs FROM user_whale_watchlist WHERE user_id = ${user.id}
+              `;
+              watchlistAddrs = rows[0]?.addrs ?? [];
+            }
+          }
           const whalesResponse = await handleWhalesSubject({
             sql: deps.sql,
             query: { range: query.range, macroKind: query.macroKind, kind: query.kind },
@@ -446,10 +518,17 @@ export function createApi(deps: ApiDeps) {
             trackedWhales,
             dataSpan,
             now,
+            whaleSet,
+            watchlistAddrs,
           });
-          heatmapCache.set(cacheKey, whalesResponse, ttlMs);
+          // Skip the shared cache for watchlist responses — payload is
+          // user-specific. ONLINE and TOP are public so they cache as
+          // before.
+          if (whaleSet !== "watchlist") {
+            heatmapCache.set(cacheKey, whalesResponse, ttlMs);
+          }
           set.headers["x-cache"] = "miss";
-          set.headers["cache-control"] = ccHeader;
+          set.headers["cache-control"] = whaleSet === "watchlist" ? "private, no-store" : ccHeader;
           return whalesResponse;
         }
 
@@ -509,6 +588,13 @@ export function createApi(deps: ApiDeps) {
            *  individual market (condition_id) instead of subcategory.
            *  rowLabels in the response then map condition_id → marketQuestion. */
           subcategory: t.Optional(t.String()),
+          /** Which set of whales to render as rows (subject=whales only):
+           *  online    → currently active (cheap GROUP BY over signals)
+           *  watchlist → authenticated user's pinned set
+           *  top       → 90d realised PnL leaders (default, public). */
+          whaleSet: t.Optional(
+            t.Union([t.Literal("online"), t.Literal("watchlist"), t.Literal("top")]),
+          ),
         }),
       },
     )

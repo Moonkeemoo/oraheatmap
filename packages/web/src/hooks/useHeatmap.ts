@@ -10,6 +10,7 @@ import type {
   Mode,
   PatternKind,
   Subject,
+  WhaleSet,
 } from "@/lib/types";
 
 const REFRESH_MS_LIVE: Record<LiveRange, number> = {
@@ -39,6 +40,7 @@ function cacheKeyFor(args: {
   lookbackDays?: number;
   drillCategory?: Category | null;
   drillSubcategory?: string | null;
+  whaleSet?: WhaleSet;
 }): string {
   return [
     args.subject,
@@ -49,6 +51,7 @@ function cacheKeyFor(args: {
     args.lookbackDays ?? "",
     args.drillCategory ?? "",
     args.drillSubcategory ?? "",
+    args.whaleSet ?? "",
   ].join("|");
 }
 function cachePut(key: string, value: HeatmapResponse): void {
@@ -96,6 +99,7 @@ export function useHeatmap(args: {
   lookbackDays?: number;
   drillCategory?: Category | null;
   drillSubcategory?: string | null;
+  whaleSet?: WhaleSet;
 }): UseHeatmapResult {
   const [data, setData] = useState<HeatmapResponse | null>(() => {
     // Initial mount: hydrate from cache if available so the grid has
@@ -167,6 +171,7 @@ export function useHeatmap(args: {
     args.lookbackDays,
     args.drillCategory,
     args.drillSubcategory,
+    args.whaleSet,
   ]);
 
   return { data, loading, error };

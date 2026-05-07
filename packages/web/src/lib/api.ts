@@ -34,6 +34,7 @@ export async function fetchHeatmap(args: {
   lookbackDays?: number;
   drillCategory?: Category | null;
   drillSubcategory?: string | null;
+  whaleSet?: import("./types").WhaleSet;
 }): Promise<HeatmapResponse> {
   const params = new URLSearchParams();
   params.set("mode", args.mode);
@@ -52,6 +53,9 @@ export async function fetchHeatmap(args: {
   if (args.drillCategory) params.set("category", args.drillCategory);
   if (args.drillCategory && args.drillSubcategory) {
     params.set("subcategory", args.drillSubcategory);
+  }
+  if (args.subject === "whales" && args.whaleSet) {
+    params.set("whaleSet", args.whaleSet);
   }
   const res = await fetch(`${apiBase()}/api/heatmap?${params.toString()}`, {
     // Lean on the browser HTTP cache — server returns short-lived

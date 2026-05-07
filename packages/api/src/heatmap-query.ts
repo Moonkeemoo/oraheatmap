@@ -611,6 +611,30 @@ export async function queryTopWhalesByReputation(
   return topWhalesInflight;
 }
 
+/** Top-N whales active in the LIVE window. Sorted by USD volume in
+ *  the window. Cheap query — single GROUP BY over the latest N
+ *  minutes of `signals`, hits the existing ts index. Used to populate
+ *  the WHALES subject's "ONLINE" tab so the user sees who's actually
+ *  trading right now rather than a static reputation top-50. */
+export async function queryActiveWhalesInWindow(
+  sql: Sql,
+  windowMinutes: number,
+  limit: number = 50,
+): Promise<ReadonlyArray<string>> {
+  type AddrRow = { whale_addr: string };
+  const rows = await sql<AddrRow[]>`
+    SELECT whale_addr
+    FROM signals
+    WHERE ts >= NOW() - (${windowMinutes} * INTERVAL '1 minute')
+      AND ts <= NOW()
+      AND whale_addr ~ '^0x[0-9a-f]{40}$'
+    GROUP BY whale_addr
+    ORDER BY COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0) DESC
+    LIMIT ${limit}
+  `;
+  return rows.map((r) => r.whale_addr);
+}
+
 export async function queryWhalesAggRows(
   sql: Sql,
   range: HeatmapRange,

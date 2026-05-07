@@ -11,6 +11,7 @@ import type {
   Mode,
   PatternKind,
   Subject,
+  WhaleSet,
 } from "@/lib/types";
 
 /**
@@ -43,6 +44,7 @@ export type UrlFilters = {
   patternKind: PatternKind;
   macroKind: MacroKind;
   metric: HeatmapMetric;
+  whaleSet: WhaleSet;
   drillCategory: Category | null;
   drillSubcategory: string | null;
   setSubject: (s: Subject) => void;
@@ -51,6 +53,7 @@ export type UrlFilters = {
   setPatternKind: (k: PatternKind) => void;
   setMacroKind: (k: MacroKind) => void;
   setMetric: (m: HeatmapMetric) => void;
+  setWhaleSet: (w: WhaleSet) => void;
   setDrillCategory: (c: Category | null) => void;
   setDrillSubcategory: (s: string | null) => void;
 };
@@ -77,6 +80,9 @@ export function useUrlFilters(): UrlFilters {
   );
   const [metric, setMetric] = useState<HeatmapMetric>(
     () => parseMetric(searchParams?.get("metric")) ?? "volume",
+  );
+  const [whaleSet, setWhaleSet] = useState<WhaleSet>(
+    () => parseWhaleSet(searchParams?.get("wset")) ?? "online",
   );
   const [drillCategory, setDrillCategory] = useState<Category | null>(
     () => (searchParams?.get("cat") as Category | null) ?? null,
@@ -118,6 +124,11 @@ export function useUrlFilters(): UrlFilters {
       params.set("mkind", macroKind);
     }
     if (metric !== "volume") params.set("metric", metric);
+    // Default whaleSet "online" stays out of the URL — only the
+    // off-default selections (watchlist, top) emit a query param.
+    if (subject === "whales" && whaleSet !== "online") {
+      params.set("wset", whaleSet);
+    }
     if (drillCategory) params.set("cat", drillCategory);
     if (drillSubcategory) params.set("sub", drillSubcategory);
     const qs = params.toString();
@@ -130,6 +141,7 @@ export function useUrlFilters(): UrlFilters {
     patternKind,
     macroKind,
     metric,
+    whaleSet,
     drillCategory,
     drillSubcategory,
     pathname,
@@ -143,6 +155,7 @@ export function useUrlFilters(): UrlFilters {
     patternKind,
     macroKind,
     metric,
+    whaleSet,
     drillCategory,
     drillSubcategory,
     setSubject,
@@ -151,6 +164,7 @@ export function useUrlFilters(): UrlFilters {
     setPatternKind,
     setMacroKind,
     setMetric,
+    setWhaleSet,
     setDrillCategory,
     setDrillSubcategory,
   };
@@ -178,6 +192,9 @@ function parsePatternKind(
 }
 function parseMacroKind(v: string | null | undefined): MacroKind | undefined {
   return v === "hour-week" || v === "day-12w" ? v : undefined;
+}
+function parseWhaleSet(v: string | null | undefined): WhaleSet | undefined {
+  return v === "online" || v === "watchlist" || v === "top" ? v : undefined;
 }
 function parseMetric(v: string | null | undefined): HeatmapMetric | undefined {
   return v === "pnl" ||
