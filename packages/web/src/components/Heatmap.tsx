@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useHeatmap } from "@/hooks/useHeatmap";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useRowOrder } from "@/hooks/useRowOrder";
 import { useSse } from "@/hooks/useSse";
+import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { initAnalytics, track } from "@/lib/analytics";
 import { applySignal } from "@/lib/heatmap-apply";
 import { recordSignal } from "@/lib/live-clock";
@@ -110,45 +110,30 @@ function flashSlotIndex(
 }
 
 export function Heatmap() {
-  // URL-backed filter state — survives reload + makes deep links
-  // shareable ("here's the cell I'm looking at"). Hydrate from URL on
-  // first render via useState's lazy initialiser; sync state → URL in
-  // a useEffect below. Defaults intentionally produce a CLEAN URL
-  // ("/app" with no params) so unmodified state doesn't pollute
-  // shareable links — only non-default selections write a query
-  // param.
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const [subject, setSubject] = useState<Subject>(
-    () => parseSubject(searchParams?.get("subject")) ?? "trades",
-  );
-  const [mode, setMode] = useState<Mode>(
-    () => parseMode(searchParams?.get("mode")) ?? "live",
-  );
-  // Default view: 1h × volume — the freshest possible take, lands on the
-  // page as a "live signals NOW" hook for anonymous visitors. Every
-  // other range (24h / 12d / 12w) and mode/kind/metric requires auth.
-  // Was 24h up to 2026-05-06; 1h reads more "real-time", which is the
-  // value-prop pitch and easier on the cold cache (smaller payload).
-  const [range, setRange] = useState<LiveRange>(
-    () => parseRange(searchParams?.get("range")) ?? "1h",
-  );
-  const [patternKind, setPatternKind] = useState<PatternKind>(
-    () => parsePatternKind(searchParams?.get("pkind")) ?? "hour-of-day",
-  );
-  const [macroKind, setMacroKind] = useState<MacroKind>(
-    () => parseMacroKind(searchParams?.get("mkind")) ?? "hour-week",
-  );
-  const [metric, setMetric] = useState<HeatmapMetric>(
-    () => parseMetric(searchParams?.get("metric")) ?? "volume",
-  );
-  const [drillCategory, setDrillCategory] = useState<Category | null>(
-    () => (searchParams?.get("cat") as Category | null) ?? null,
-  );
-  const [drillSubcategory, setDrillSubcategory] = useState<string | null>(
-    () => searchParams?.get("sub") ?? null,
-  );
+  // URL-backed filter state — extracted into useUrlFilters so this
+  // component stays focused on render + drawer interlock. Defaults
+  // (live · 1h · volume · trades · no drill) produce a clean URL
+  // (`/app` with no params); any non-default pick writes a query
+  // param so links are shareable.
+  const filters = useUrlFilters();
+  const {
+    subject,
+    mode,
+    range,
+    patternKind,
+    macroKind,
+    metric,
+    drillCategory,
+    drillSubcategory,
+    setSubject,
+    setMode,
+    setRange,
+    setPatternKind,
+    setMacroKind,
+    setMetric,
+    setDrillCategory,
+    setDrillSubcategory,
+  } = filters;
   const [loginOpen, setLoginOpen] = useState(false);
   const { status: authStatus } = useSession();
   const isAuthed = authStatus === "authenticated";
@@ -159,51 +144,6 @@ export function Heatmap() {
   useEffect(() => {
     initAnalytics();
   }, []);
-
-  // Subject "whales" rows ARE whales, so the WHALES metric (per-cell
-  // distinct whale count) collapses to 1 everywhere — meaningless.
-  // Snap metric to volume when subject flips to whales while metric
-  // is whales.
-  useEffect(() => {
-    if (subject === "whales" && metric === "whales") {
-      setMetric("volume");
-    }
-  }, [subject, metric]);
-
-  // Sync filter state → URL. Defaults are omitted so the URL stays
-  // tidy ("/app" alone) while user is on the canonical view; any
-  // non-default pick gets a query param. router.replace (not push)
-  // so each toggle isn't a separate history entry — back-button
-  // takes the user out of /app, not through their last 12 metric
-  // switches. scroll: false so the page doesn't jump to top on
-  // every URL update.
-  useEffect(() => {
-    const params = new URLSearchParams();
-    if (subject !== "trades") params.set("subject", subject);
-    if (mode !== "live") params.set("mode", mode);
-    if (mode === "live" && range !== "1h") params.set("range", range);
-    if (mode === "pattern" && patternKind !== "hour-of-day")
-      params.set("pkind", patternKind);
-    if (mode === "macro" && macroKind !== "hour-week")
-      params.set("mkind", macroKind);
-    if (metric !== "volume") params.set("metric", metric);
-    if (drillCategory) params.set("cat", drillCategory);
-    if (drillSubcategory) params.set("sub", drillSubcategory);
-    const qs = params.toString();
-    const url = qs ? `${pathname}?${qs}` : pathname;
-    router.replace(url, { scroll: false });
-  }, [
-    subject,
-    mode,
-    range,
-    patternKind,
-    macroKind,
-    metric,
-    drillCategory,
-    drillSubcategory,
-    pathname,
-    router,
-  ]);
 
   // Lock body scroll while the heatmap shell is mounted. Without this,
   // mobile Safari's address-bar resize events let the document itself
@@ -458,12 +398,6 @@ export function Heatmap() {
     setHover(null);
     setPanelCell(null);
   }, [mode, range, patternKind, drillCategory, drillSubcategory]);
-
-  // Drilling out of a category should also clear any L3 state — going from
-  // (Sports/NBA) back to "All categories" must NOT keep `nba` lying around.
-  useEffect(() => {
-    if (drillCategory === null && drillSubcategory !== null) setDrillSubcategory(null);
-  }, [drillCategory, drillSubcategory]);
 
   // Analytics-instrumented setters. Use these everywhere instead of
   // raw setMode/setRange/etc so the events feed reflects only real
@@ -927,29 +861,4 @@ function metricAffectedBy(metric: HeatmapMetric, s: SignalEvent): boolean {
   }
 }
 
-// ── URL-state parsers ────────────────────────────────────────────────
-// All return undefined for unknown / missing values so the lazy
-// initialiser falls through to the default. Keeps URL deserialisation
-// in one place — every state field has the same shape: `parse(input) ??
-// "default"`.
-
-function parseSubject(v: string | null | undefined): Subject | undefined {
-  return v === "trades" || v === "whales" ? v : undefined;
-}
-function parseMode(v: string | null | undefined): Mode | undefined {
-  return v === "live" || v === "pattern" || v === "macro" ? v : undefined;
-}
-function parseRange(v: string | null | undefined): LiveRange | undefined {
-  return v === "1h" || v === "24h" || v === "12d" || v === "12w" ? v : undefined;
-}
-function parsePatternKind(v: string | null | undefined): PatternKind | undefined {
-  return v === "hour-of-day" || v === "day-of-week" ? v : undefined;
-}
-function parseMacroKind(v: string | null | undefined): MacroKind | undefined {
-  return v === "hour-week" || v === "day-12w" ? v : undefined;
-}
-function parseMetric(v: string | null | undefined): HeatmapMetric | undefined {
-  return v === "pnl" || v === "volume" || v === "signals" || v === "whales" || v === "winrate"
-    ? v
-    : undefined;
-}
+// (URL parsers moved to hooks/useUrlFilters.ts.)
