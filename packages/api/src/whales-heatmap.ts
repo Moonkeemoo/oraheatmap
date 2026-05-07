@@ -24,8 +24,6 @@ import type { Sql } from "postgres";
 import {
   assembleHeatmap,
   buildBuckets,
-  fetchTopWhale,
-  fetchUniqueWhalesInWindow,
   type HeatmapCell,
   type HeatmapRange,
   MACRO_CONFIG,
@@ -241,14 +239,21 @@ export async function handleWhalesSubject(
   }
 
   // ── Totals for the StatsBar ───────────────────────────────────────
-  // Trades subject populates totals via fetchTopWhale +
-  // fetchUniqueWhalesInWindow. Same shape works for whales subject —
-  // ACTIVE WHALES + TOP WHALE tile read from data.totals on the client,
-  // and showing 0 / — in the WHALES view when the same numbers are
-  // visible right above in the heatmap reads as "broken stats".
-  // PATTERN keeps totals: null because it has no real-time semantics
-  // (the heatmap aggregates across cycles, so "active in this window"
-  // doesn't apply).
+  // Derive totals straight from the already-fetched cells instead of
+  // calling fetchTopWhale + fetchUniqueWhalesInWindow. Those two
+  // queries scan the full `signals` window (12d / 12w on the wide
+  // ranges) and stacking them on top of the whales-subject's own
+  // heavy 90d reputation scan + per-whale aggregation pushed total
+  // request time over Caddy's 60s proxy timeout → 502.
+  //
+  // Tradeoff: ACTIVE WHALES count is now scoped to the rows the user
+  // actually sees (top-50 by reputation / online / pinned set) rather
+  // than the full corpus. That's actually closer to the intent of the
+  // tile in this view ("how many of MY rows are firing right now").
+  // TOP WHALE is the highest-volume row in the visible set, picked by
+  // summing cell volume — same answer the user can read off the grid.
+  // PATTERN keeps null because cells aggregate across cycles and the
+  // tile would be misleading.
   let totals: {
     signals: number;
     volume: number;
@@ -263,37 +268,42 @@ export async function handleWhalesSubject(
     } | null;
   } | null = null;
   if (mode !== "pattern") {
-    const windowMinutes = mode === "macro"
-      ? MACRO_CONFIG[query.macroKind ?? "hour-week"].windowMinutes
-      : RANGE_CONFIG[range].windowMinutes;
-    const [topWhaleAddr, uniqueWhales] = await Promise.all([
-      fetchTopWhale(sql, windowMinutes),
-      fetchUniqueWhalesInWindow(sql, windowMinutes),
-    ]);
-    // Sum across the displayed cells for signals/volume/pnl so the
-    // headline tiles match what's visible in the grid.
     let signalsSum = 0;
     let volumeSum = 0;
     let pnlSum = 0;
+    let activeRows = 0;
+    let topAddr: string | null = null;
+    let topAddrVolume = 0;
     for (const addr of topAddrs) {
+      let rowSignals = 0;
+      let rowVolume = 0;
+      let rowPnl = 0;
       for (const c of cells[addr] ?? []) {
-        signalsSum += c.count;
-        volumeSum += c.volume;
-        pnlSum += c.pnl;
+        rowSignals += c.count;
+        rowVolume += c.volume;
+        rowPnl += c.pnl;
+      }
+      signalsSum += rowSignals;
+      volumeSum += rowVolume;
+      pnlSum += rowPnl;
+      if (rowSignals > 0) activeRows += 1;
+      if (rowVolume > topAddrVolume) {
+        topAddrVolume = rowVolume;
+        topAddr = addr;
       }
     }
     totals = {
       signals: signalsSum,
       volume: volumeSum,
       pnl: pnlSum,
-      uniqueWhales,
-      activeWhales: uniqueWhales,
-      topWhale: topWhaleAddr
+      uniqueWhales: activeRows,
+      activeWhales: activeRows,
+      topWhale: topAddr
         ? {
-            addr: topWhaleAddr,
-            alias: whaleAlias(topWhaleAddr),
-            color: whaleColor(topWhaleAddr),
-            profileImage: whaleAliasInfo(topWhaleAddr)?.profileImage ?? null,
+            addr: topAddr,
+            alias: whaleAlias(topAddr),
+            color: whaleColor(topAddr),
+            profileImage: whaleAliasInfo(topAddr)?.profileImage ?? null,
           }
         : null,
     };
