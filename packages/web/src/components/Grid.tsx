@@ -485,6 +485,7 @@ function SortableRow({
   rowKey,
   reorderEnabled,
   isHovered,
+  hoverEnabled,
   onHoverChange,
   children,
 }: {
@@ -497,6 +498,12 @@ function SortableRow({
    *  a glance. Highlighting only the hovered row keeps the data read
    *  truthful. */
   isHovered: boolean;
+  /** When false, skip the mouseEnter/Leave wiring + the highlight
+   *  styles entirely. Touch devices don't have a hover concept and
+   *  the previous behaviour painted a stale outline on the last
+   *  tapped row, which was confusing — the user wasn't pointing at
+   *  it. */
+  hoverEnabled: boolean;
   onHoverChange: (rowKey: string | null) => void;
   children: (
     listeners: Record<string, (event: unknown) => void> | undefined,
@@ -527,27 +534,22 @@ function SortableRow({
     opacity: isDragging ? 0 : 1,
     zIndex: isDragging ? 2 : isHovered ? 1 : "auto",
     position: "relative",
-    // Hovered row picks up:
-    //   - a soft amber outline (~50% alpha so it reads as "selected"
-    //     without competing with the heat-coloured cells for attention)
-    //   - a very dim accent backdrop showing through the inter-cell
-    //     gaps + label gutter
-    // First pass used full-saturation TOKENS.accent at 1.5px which the
-    // user flagged as too bright — the framed row was louder than the
-    // data inside it. Halved the outline alpha and dropped the glow.
-    boxShadow: isHovered
+    // Hovered row picks up a soft amber outline + faint accent
+    // backdrop (~50% / ~4% alpha so it reads as "selected" without
+    // competing with the heat-coloured cells for attention).
+    boxShadow: isHovered && hoverEnabled
       ? `0 0 0 1px ${TOKENS.accent}66`
       : "none",
-    backgroundColor: isHovered ? `${TOKENS.accent}0a` : "transparent",
-    borderRadius: isHovered ? 6 : 0,
+    backgroundColor: isHovered && hoverEnabled ? `${TOKENS.accent}0a` : "transparent",
+    borderRadius: isHovered && hoverEnabled ? 6 : 0,
   };
   return (
     <div
       ref={setNodeRef}
       style={style}
       data-row-key={rowKey}
-      onMouseEnter={() => onHoverChange(rowKey)}
-      onMouseLeave={() => onHoverChange(null)}
+      onMouseEnter={hoverEnabled ? () => onHoverChange(rowKey) : undefined}
+      onMouseLeave={hoverEnabled ? () => onHoverChange(null) : undefined}
     >
       {children(
         listeners as unknown as Record<string, (e: unknown) => void> | undefined,
@@ -999,11 +1001,15 @@ export function Grid({
       : isL3Grid
         ? LABEL_W_L3
         : LABEL_W;
-  const minRowH = isWhales
-    ? isMobile ? 22 : 26
-    : isMobile
-      ? isL3Grid ? 36 : 28
-      : isL3Grid ? MIN_ROW_H_L3 : MIN_ROW_H;
+  // Equalise row height between trades and whales subjects so the
+  // rhythm reads identical across modes (mobile-trades vs mobile-
+  // whales had a 22 vs 28 split that made the gap-to-row ratio look
+  // different per subject — user flagged it as inconsistent). Keep
+  // the L3 carve-out: market questions wrap over 2 lines so they
+  // need taller rows.
+  const minRowH = isMobile
+    ? isL3Grid ? 36 : 26
+    : isL3Grid ? MIN_ROW_H_L3 : MIN_ROW_H;
   const cellMinW = isMobile ? 14 : 0;
   const timeRowH = isMobile ? 44 : TIME_ROW_H;
 
@@ -1129,6 +1135,7 @@ export function Grid({
               rowKey={cat}
               reorderEnabled={reorderEnabled}
               isHovered={hoveredRow === cat && activeKey === null}
+              hoverEnabled={!isMobile}
               onHoverChange={setHoveredRow}
             >
               {(listeners, attributes) =>
