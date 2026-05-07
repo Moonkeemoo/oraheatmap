@@ -34,6 +34,7 @@ import { HeatmapSkeleton } from "./HeatmapSkeleton";
 import { LoginModal } from "./LoginModal";
 import { StatsBar, StatsBarSkeleton } from "./StatsBar";
 import { Tooltip, type TooltipAnchor } from "./Tooltip";
+import { WhaleCellDrawer } from "./WhaleCellDrawer";
 import { WhaleDrawer } from "./WhaleDrawer";
 
 type HoverState = {
@@ -266,6 +267,18 @@ export function Heatmap() {
   // cell again toggles it off.
   const [panelCell, setPanelCell] = useState<HoverState | null>(null);
   const [whaleProfileAddr, setWhaleProfileAddr] = useState<string | null>(null);
+  // Per-cell whale drawer scope. Distinct from whaleProfileAddr
+  // (full 90d profile) — this drawer is scoped to one bucket for
+  // LIVE / MACRO or one slot for PATTERN. Null when closed.
+  const [whaleCellScope, setWhaleCellScope] = useState<{
+    addr: string;
+    alias: string;
+    fromTs?: string | null;
+    toTs?: string | null;
+    kind?: PatternKind | null;
+    slot?: number | null;
+    slotLabel: string;
+  } | null>(null);
   // When the whale drawer is opened by clicking a whale row INSIDE a cell
   // panel, stash the panel state here so the drawer's ← button can pop
   // back to it. Cleared when the drawer is closed via X / overlay / ESC.
@@ -612,12 +625,46 @@ export function Heatmap() {
                   metric={metric}
                   onHover={(h) => setHover(h)}
                   onClick={(h) => {
-                    // Whales subject — cell click is a no-op. Whale
-                    // profile opens via the row-label tap (handler in
-                    // onRowClick below) so the user has one obvious
-                    // affordance per whale instead of every cell
-                    // bouncing them into a drawer.
-                    if (subject === "whales") return;
+                    // Whales subject — cell click opens the per-cell
+                    // detail drawer (this whale × this bucket / slot).
+                    // Distinct from row-label tap which opens the
+                    // full whale profile.
+                    if (subject === "whales") {
+                      const addr = h.category;
+                      const meta = displayData.whaleMeta?.[addr];
+                      const alias = meta?.alias ?? addr;
+                      const slotIdx = parseSlotFromCellId(h.cellId) ?? 0;
+                      if (mode === "pattern") {
+                        // Pattern slots are stored as JS dow / hour-of-day
+                        // index — same convention as the recurring-whales
+                        // endpoint expects.
+                        setWhaleCellScope({
+                          addr,
+                          alias,
+                          kind: patternKind,
+                          slot: slotIdx,
+                          slotLabel: h.slotLabel,
+                        });
+                      } else {
+                        // LIVE / MACRO — bucket window from buckets[]
+                        // timestamps. Next bucket's ts is the upper
+                        // bound; trailing bucket falls back to "now".
+                        const bs = displayData.buckets;
+                        const fromTs = bs[slotIdx]?.ts ?? null;
+                        const toTs =
+                          bs[slotIdx + 1]?.ts ??
+                          displayData.windowEnd ??
+                          new Date().toISOString();
+                        setWhaleCellScope({
+                          addr,
+                          alias,
+                          fromTs,
+                          toTs,
+                          slotLabel: h.slotLabel,
+                        });
+                      }
+                      return;
+                    }
                     // Toggle: clicking the same cell again closes the panel.
                     // Clicking a different cell SWAPS content (instead of
                     // close-then-open) — Tooltip re-renders with new props.
@@ -852,6 +899,10 @@ export function Heatmap() {
               }
             : undefined
         }
+      />
+      <WhaleCellDrawer
+        scope={whaleCellScope}
+        onClose={() => setWhaleCellScope(null)}
       />
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
     </div>

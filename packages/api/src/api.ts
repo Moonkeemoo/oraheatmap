@@ -1347,6 +1347,229 @@ export function createApi(deps: ApiDeps) {
       },
     )
     .get(
+      "/api/whale-cell",
+      async ({ query, set }) => {
+        // Per-cell tooltip data for a SINGLE whale × time-bucket
+        // (LIVE / MACRO) or whale × pattern-slot (PATTERN). Used by
+        // the whales-subject drawer that opens on cell tap. Returns
+        // - summary: counters for the headline strip
+        // - trades: chronological signal list (LIVE / MACRO only —
+        //   PATTERN cells aggregate across cycles so a "trade list"
+        //   would mix unrelated time windows)
+        // - cycles: per-cycle values for the histogram (PATTERN only)
+        // - markets: top N markets the whale touched in this scope.
+        const addr = query.addr;
+        const fromTs = query.fromTs ?? null;
+        const toTs = query.toTs ?? null;
+        const kind = query.kind ?? null;
+        const slot = query.slot;
+        const lookbackDays = query.lookbackDays ?? 90;
+
+        const cacheKey = [
+          "whale-cell",
+          addr,
+          fromTs ?? "",
+          toTs ?? "",
+          kind ?? "",
+          slot ?? "",
+          String(lookbackDays),
+        ].join("|");
+        const ttlMs = 60_000;
+        const cc = cacheControlHeader(ttlMs);
+        const cached = highlightsCache.get(cacheKey);
+        if (cached !== undefined) {
+          set.headers["x-cache"] = "hit";
+          set.headers["cache-control"] = cc;
+          return cached;
+        }
+
+        const isPattern = kind !== null && slot !== undefined;
+        const slotFilter = isPattern
+          ? kind === "hour-of-day"
+            ? deps.sql`(EXTRACT(hour FROM ts AT TIME ZONE 'UTC')::int / 2) = ${slot}`
+            : deps.sql`EXTRACT(dow FROM ts AT TIME ZONE 'UTC')::int = ${slot}`
+          : deps.sql`TRUE`;
+        const tsFilter = isPattern
+          ? deps.sql`AND ts >= NOW() - (${`${lookbackDays} days`}::interval)`
+          : fromTs && toTs
+            ? deps.sql`AND ts >= ${fromTs}::timestamptz AND ts < ${toTs}::timestamptz`
+            : deps.sql``;
+
+        // ── Summary headline (always populated) ───────────────────
+        type SummaryRow = {
+          trades: number | string;
+          volume: number | string;
+          pnl: number | string | null;
+          buy_volume: number | string;
+          sell_volume: number | string;
+          wins: number | string;
+          losses: number | string;
+        };
+        const summaryRows = await deps.sql<SummaryRow[]>`
+          SELECT
+            COUNT(*)::bigint                                              AS trades,
+            COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS volume,
+            COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl,
+            COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS buy_volume,
+            COALESCE(SUM(size * price) FILTER (WHERE side = 'SELL'), 0)   AS sell_volume,
+            COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS wins,
+            COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS losses
+          FROM signals
+          WHERE whale_addr = ${addr}
+            AND ${slotFilter}
+            ${tsFilter}
+        `;
+        const s = summaryRows[0];
+        const summary = {
+          trades: Number(s?.trades ?? 0),
+          volume: Number(s?.volume ?? 0),
+          pnl: Number(s?.pnl ?? 0),
+          buyVolume: Number(s?.buy_volume ?? 0),
+          sellVolume: Number(s?.sell_volume ?? 0),
+          wins: Number(s?.wins ?? 0),
+          losses: Number(s?.losses ?? 0),
+        };
+
+        // ── Trade list — LIVE / MACRO only ────────────────────────
+        type TradeRow = {
+          ts: Date | string;
+          side: "BUY" | "SELL" | "SETTLEMENT";
+          category: string;
+          subcategory: string | null;
+          condition_id: string | null;
+          market_question: string | null;
+          market_slug: string | null;
+          size: number;
+          price: number;
+          realized_pnl: number | null;
+        };
+        const trades = isPattern
+          ? []
+          : await deps.sql<TradeRow[]>`
+              SELECT ts, side, category, subcategory, condition_id, market_question,
+                     market_slug, size, price, realized_pnl
+              FROM signals
+              WHERE whale_addr = ${addr}
+                ${tsFilter}
+              ORDER BY ts DESC
+              LIMIT 50
+            `;
+
+        // ── Cycle histogram — PATTERN only ────────────────────────
+        type CycleRow = {
+          cycle: Date | string;
+          count: number | string;
+          volume: number | string;
+          pnl: number | string | null;
+        };
+        const cycleExpr =
+          kind === "hour-of-day"
+            ? deps.sql`DATE_TRUNC('day', ts AT TIME ZONE 'UTC')`
+            : deps.sql`DATE_TRUNC('week', ts AT TIME ZONE 'UTC')`;
+        const cycles = !isPattern
+          ? []
+          : await deps.sql<CycleRow[]>`
+              SELECT
+                ${cycleExpr}                                                AS cycle,
+                COUNT(*)::bigint                                            AS count,
+                COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)  AS volume,
+                COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl
+              FROM signals
+              WHERE whale_addr = ${addr}
+                AND ${slotFilter}
+                ${tsFilter}
+              GROUP BY cycle
+              ORDER BY cycle
+            `;
+        const expectedCycles = isPattern
+          ? kind === "hour-of-day"
+            ? lookbackDays
+            : Math.max(1, Math.floor(lookbackDays / 7))
+          : 0;
+
+        // ── Markets touched ───────────────────────────────────────
+        type MarketRow = {
+          condition_id: string;
+          market_question: string | null;
+          market_slug: string | null;
+          market_icon: string | null;
+          signals: number | string;
+          volume: number | string;
+          pnl: number | string | null;
+        };
+        const marketRows = await deps.sql<MarketRow[]>`
+          SELECT
+            condition_id,
+            MAX(market_question) AS market_question,
+            MAX(market_slug)     AS market_slug,
+            MAX(market_icon)     AS market_icon,
+            COUNT(*)::bigint                                              AS signals,
+            COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS volume,
+            COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl
+          FROM signals
+          WHERE whale_addr = ${addr}
+            AND condition_id IS NOT NULL
+            AND ${slotFilter}
+            ${tsFilter}
+          GROUP BY condition_id
+          ORDER BY signals DESC
+          LIMIT 5
+        `;
+
+        const result = {
+          summary,
+          trades: trades.map((t) => ({
+            ts: typeof t.ts === "string" ? t.ts : (t.ts as Date).toISOString(),
+            side: t.side,
+            category: t.category,
+            subcategory: t.subcategory,
+            conditionId: t.condition_id,
+            marketQuestion: t.market_question,
+            marketSlug: t.market_slug,
+            size: Number(t.size),
+            price: Number(t.price),
+            sizeUsd: Number(t.size) * Number(t.price),
+            realizedPnl: t.realized_pnl === null ? null : Number(t.realized_pnl),
+          })),
+          cycles: cycles.map((c) => ({
+            cycle:
+              typeof c.cycle === "string"
+                ? c.cycle
+                : (c.cycle as Date).toISOString(),
+            count: Number(c.count),
+            volume: Number(c.volume),
+            pnl: c.pnl === null ? 0 : Number(c.pnl),
+          })),
+          expectedCycles,
+          markets: marketRows.map((m) => ({
+            conditionId: m.condition_id,
+            marketQuestion: m.market_question,
+            marketSlug: m.market_slug,
+            marketIcon: m.market_icon,
+            signals: Number(m.signals),
+            volume: Number(m.volume),
+            pnl: m.pnl === null ? 0 : Number(m.pnl),
+          })),
+        };
+        highlightsCache.set(cacheKey, result, ttlMs);
+        set.headers["x-cache"] = "miss";
+        set.headers["cache-control"] = cc;
+        return result;
+      },
+      {
+        query: t.Object({
+          addr: t.String(),
+          fromTs: t.Optional(t.String()),
+          toTs: t.Optional(t.String()),
+          kind: t.Optional(
+            t.Union([t.Literal("hour-of-day"), t.Literal("day-of-week")]),
+          ),
+          slot: t.Optional(t.Numeric({ minimum: 0, maximum: 11 })),
+          lookbackDays: t.Optional(t.Numeric({ minimum: 1, maximum: 365 })),
+        }),
+      },
+    )
+    .get(
       "/api/recurring-whales",
       async ({ query, set }) => {
         // For a PATTERN-mode cell (slot × category × kind), return the
