@@ -567,10 +567,15 @@ function MacroDayHeader({
   buckets,
   gap,
   macroKind,
+  topLeftCell,
 }: {
   buckets: ReadonlyArray<HeatmapBucket>;
   gap: number;
   macroKind: "hour-week" | "day-12w";
+  /** Same slot as the LIVE / PATTERN time row's top-left cell —
+   *  rendered in the corner above the row labels so the
+   *  WhaleSetToggle is reachable in MACRO too. */
+  topLeftCell?: React.ReactNode;
 }) {
   // Walk the buckets and group adjacent ones with the same calendar
   // bucket — day for hour-week, month for day-12w. The matching unit
@@ -606,7 +611,16 @@ function MacroDayHeader({
         gap,
       }}
     >
-      <div />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "flex-start",
+          minWidth: 0,
+        }}
+      >
+        {topLeftCell}
+      </div>
       {groups.map((g, gi) => {
         const isToday = isCurrent(g.date);
         const isFirst = gi === 0;
@@ -1141,6 +1155,7 @@ export function Grid({
             buckets={buckets}
             gap={2}
             macroKind={data.macroKind ?? "hour-week"}
+            topLeftCell={topLeftCell}
           />
         )}
 
