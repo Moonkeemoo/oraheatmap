@@ -423,17 +423,19 @@ function RowLabelBadge({
 function SortableRow({
   rowKey,
   reorderEnabled,
-  isDimmed,
+  isHovered,
   onHoverChange,
   children,
 }: {
   rowKey: string;
   reorderEnabled: boolean;
-  /** When the user hovers a different row, this row fades out. The
-   *  hovered row stays at full opacity; other rows drop to ~40% so
-   *  the eye locks onto a single row of data. Standard "highlight
-   *  by dim siblings" pattern. */
-  isDimmed: boolean;
+  /** Hovered row gets an explicit highlight (outline + faint backdrop)
+   *  WITHOUT dimming siblings — dimming was rejected because lowering
+   *  opacity on the colour-coded cells in other rows shifts their
+   *  apparent intensity tone, making the heatmap look misleading at
+   *  a glance. Highlighting only the hovered row keeps the data read
+   *  truthful. */
+  isHovered: boolean;
   onHoverChange: (rowKey: string | null) => void;
   children: (
     listeners: Record<string, (event: unknown) => void> | undefined,
@@ -458,17 +460,25 @@ function SortableRow({
     gridTemplateColumns: "subgrid",
     gap: 4,
     transform: CSS.Transform.toString(transform),
-    // Compose the dnd-kit transition (slide-on-reorder) with our own
-    // opacity transition so dimming feels smooth without breaking the
-    // drag animation. Empty string → no transition for the dimming
-    // path during drag.
-    transition: [transition, "opacity 140ms ease"].filter(Boolean).join(", "),
-    // Drag wins over dimming — DragOverlay paints the moving copy and
-    // we hide the live row entirely.
-    opacity: isDragging ? 0 : isDimmed ? 0.32 : 1,
-    // Lift dragged item above peers (defensive — DragOverlay handles z-index).
-    zIndex: isDragging ? 2 : "auto",
+    transition: [transition, "box-shadow 140ms ease, background-color 140ms ease"]
+      .filter(Boolean)
+      .join(", "),
+    opacity: isDragging ? 0 : 1,
+    zIndex: isDragging ? 2 : isHovered ? 1 : "auto",
     position: "relative",
+    // Hovered row picks up:
+    //   - a faint amber halo via box-shadow, sitting just outside the
+    //     row's bounding box so it reads as a frame around the entire
+    //     subgrid (label + cells) without nudging layout
+    //   - a very dim accent backdrop (TOKENS.accent at ~6% alpha)
+    //     showing through the inter-cell gaps + label gutter so the
+    //     row feels "lit up" even where the heat-coloured cells
+    //     dominate the foreground
+    boxShadow: isHovered
+      ? `0 0 0 1.5px ${TOKENS.accent}, 0 0 14px -2px ${TOKENS.accent}55`
+      : "none",
+    backgroundColor: isHovered ? `${TOKENS.accent}10` : "transparent",
+    borderRadius: isHovered ? 6 : 0,
   };
   return (
     <div
@@ -1032,7 +1042,7 @@ export function Grid({
               key={cat}
               rowKey={cat}
               reorderEnabled={reorderEnabled}
-              isDimmed={hoveredRow !== null && hoveredRow !== cat && activeKey === null}
+              isHovered={hoveredRow === cat && activeKey === null}
               onHoverChange={setHoveredRow}
             >
               {(listeners, attributes) =>
