@@ -560,21 +560,6 @@ export function Heatmap() {
                 onBackToCategory={() => setDrillSubcategory(null)}
               />
             )}
-            {subject === "whales" && (
-              <WhaleSetToggle
-                whaleSet={whaleSet}
-                setWhaleSet={setWhaleSet}
-                isAuthed={isAuthed}
-                onRequestLogin={() => setLoginOpen(true)}
-                // Count on the currently-active tab is precise (the
-                // grid is rendering exactly that many rows); the
-                // inactive tab's count is a hint and would require a
-                // second fetch to be exact, so we omit it (passes
-                // null through to the toggle which renders no badge).
-                onlineCount={whaleSet === "online" ? displayData.categories.length : null}
-                watchlistCount={watchlist.addrs.length}
-              />
-            )}
             {/* Empty-state CTA for the WATCHLIST tab when authed but
                 nothing is pinned. Renders BEFORE the Grid so the user
                 sees a helpful prompt instead of an empty heatmap. */}
@@ -628,6 +613,25 @@ export function Heatmap() {
                 <Grid
                   data={displayData}
                   metric={metric}
+                  // Render the WhaleSetToggle inline in the grid's
+                  // top-left cell (corner above the row labels, on the
+                  // same baseline as the time scale) when subject is
+                  // whales. Keeps it visually anchored to the rows it
+                  // controls without giving it a separate header row.
+                  topLeftCell={
+                    subject === "whales" ? (
+                      <WhaleSetToggle
+                        whaleSet={whaleSet}
+                        setWhaleSet={setWhaleSet}
+                        isAuthed={isAuthed}
+                        onRequestLogin={() => setLoginOpen(true)}
+                        onlineCount={
+                          whaleSet === "online" ? displayData.categories.length : null
+                        }
+                        watchlistCount={watchlist.addrs.length}
+                      />
+                    ) : null
+                  }
                   onHover={(h) => setHover(h)}
                   onClick={(h) => {
                     // Whales subject — cell click opens the per-cell

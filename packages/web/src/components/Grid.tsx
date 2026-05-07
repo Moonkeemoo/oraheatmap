@@ -718,6 +718,7 @@ export function Grid({
   onReorder,
   reorderEnabled,
   onRequestLogin,
+  topLeftCell,
 }: {
   data: HeatmapResponse;
   metric: HeatmapMetric;
@@ -740,6 +741,12 @@ export function Grid({
   /** When false, drag handles render as locked icons that prompt login. */
   reorderEnabled: boolean;
   onRequestLogin?: () => void;
+  /** Optional content rendered in the top-left grid cell (the empty
+   *  space at column 1, row 1 — the corner above the row labels and
+   *  to the left of the time row). Used to inline the WhaleSetToggle
+   *  on the same horizontal baseline as the time scale instead of
+   *  giving it a separate row above the heatmap. */
+  topLeftCell?: React.ReactNode;
 }) {
   const num = data.buckets.length;
   const isPattern = data.mode === "pattern";
@@ -1061,7 +1068,16 @@ export function Grid({
               gap: 4,
             }}
           >
-            <div />
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "flex-start",
+                minWidth: 0,
+              }}
+            >
+              {topLeftCell}
+            </div>
             {buckets.map((b, i) => {
               const lbl = formatSlotLabel(b, data.mode, data.patternKind, i, data.range);
               const isNow = i === nowSlotIndex;

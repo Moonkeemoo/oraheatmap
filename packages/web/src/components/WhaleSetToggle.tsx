@@ -68,19 +68,20 @@ export function WhaleSetToggle({
         style={{
           display: "inline-flex",
           alignItems: "center",
-          gap: 6,
+          gap: 4,
           background: active ? TOKENS.accent : "transparent",
           border: `1px solid ${active ? TOKENS.accent : "rgba(255,255,255,0.10)"}`,
           color: active ? "#1a1410" : TOKENS.textSec,
           fontFamily: TOKENS.font,
-          fontSize: 11,
+          fontSize: 9,
           fontWeight: 700,
-          letterSpacing: 0.5,
+          letterSpacing: 0.4,
           textTransform: "uppercase",
-          padding: "6px 12px",
+          padding: "3px 8px",
           borderRadius: 999,
           cursor: locked ? "help" : "pointer",
           transition: "background-color .12s, border-color .12s, color .12s",
+          lineHeight: 1.1,
         }}
       >
         <span>{label}</span>
@@ -88,7 +89,7 @@ export function WhaleSetToggle({
           <span
             style={{
               fontFamily: TOKENS.mono,
-              fontSize: 10,
+              fontSize: 9,
               fontWeight: 600,
               opacity: active ? 0.75 : 0.55,
             }}
@@ -97,7 +98,7 @@ export function WhaleSetToggle({
           </span>
         )}
         {locked && (
-          <span style={{ fontSize: 9, opacity: 0.7 }}>🔒</span>
+          <span style={{ fontSize: 8, opacity: 0.7 }}>🔒</span>
         )}
       </button>
     );
@@ -107,8 +108,10 @@ export function WhaleSetToggle({
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 6,
-        padding: "6px 0 4px",
+        // Tight column-gap so two pills fit in the label-column width
+        // (which is ~150px desktop / 140px mobile when subject=whales).
+        gap: 4,
+        flexWrap: "wrap",
       }}
     >
       {renderTab("online", "Online", onlineCount, false)}

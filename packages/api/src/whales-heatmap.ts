@@ -24,6 +24,8 @@ import type { Sql } from "postgres";
 import {
   assembleHeatmap,
   buildBuckets,
+  fetchTopWhale,
+  fetchUniqueWhalesInWindow,
   type HeatmapCell,
   type HeatmapRange,
   MACRO_CONFIG,
@@ -237,6 +239,65 @@ export async function handleWhalesSubject(
       score: repByAddr.get(addr),
     };
   }
+
+  // ── Totals for the StatsBar ───────────────────────────────────────
+  // Trades subject populates totals via fetchTopWhale +
+  // fetchUniqueWhalesInWindow. Same shape works for whales subject —
+  // ACTIVE WHALES + TOP WHALE tile read from data.totals on the client,
+  // and showing 0 / — in the WHALES view when the same numbers are
+  // visible right above in the heatmap reads as "broken stats".
+  // PATTERN keeps totals: null because it has no real-time semantics
+  // (the heatmap aggregates across cycles, so "active in this window"
+  // doesn't apply).
+  let totals: {
+    signals: number;
+    volume: number;
+    pnl: number;
+    uniqueWhales: number;
+    activeWhales: number;
+    topWhale: {
+      addr: string;
+      alias: string;
+      color: string;
+      profileImage: string | null;
+    } | null;
+  } | null = null;
+  if (mode !== "pattern") {
+    const windowMinutes = mode === "macro"
+      ? MACRO_CONFIG[query.macroKind ?? "hour-week"].windowMinutes
+      : RANGE_CONFIG[range].windowMinutes;
+    const [topWhaleAddr, uniqueWhales] = await Promise.all([
+      fetchTopWhale(sql, windowMinutes),
+      fetchUniqueWhalesInWindow(sql, windowMinutes),
+    ]);
+    // Sum across the displayed cells for signals/volume/pnl so the
+    // headline tiles match what's visible in the grid.
+    let signalsSum = 0;
+    let volumeSum = 0;
+    let pnlSum = 0;
+    for (const addr of topAddrs) {
+      for (const c of cells[addr] ?? []) {
+        signalsSum += c.count;
+        volumeSum += c.volume;
+        pnlSum += c.pnl;
+      }
+    }
+    totals = {
+      signals: signalsSum,
+      volume: volumeSum,
+      pnl: pnlSum,
+      uniqueWhales,
+      activeWhales: uniqueWhales,
+      topWhale: topWhaleAddr
+        ? {
+            addr: topWhaleAddr,
+            alias: whaleAlias(topWhaleAddr),
+            color: whaleColor(topWhaleAddr),
+            profileImage: whaleAliasInfo(topWhaleAddr)?.profileImage ?? null,
+          }
+        : null,
+    };
+  }
   return {
     generatedAt: new Date().toISOString(),
     range: assembleRange,
@@ -248,7 +309,8 @@ export async function handleWhalesSubject(
     categories: topAddrs as ReadonlyArray<string>,
     buckets,
     cells,
-    totals: null,
+    // Populated above for live/macro, null for pattern.
+    totals,
     mode,
     subject: "whales" as const,
     // Surface kind / macroKind so the client knows which pattern /
