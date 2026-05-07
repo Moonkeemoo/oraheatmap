@@ -56,6 +56,18 @@ Full data source docs: `docs/handoff-polymarket-whale-feeds.md` (from oralab rep
 - **No trade execution in MVP** — read-only signals. Execution lives in oralab
 - **All env vars in `.env`** — no hardcoded URLs, thresholds, or TTLs in code. See `.env.example`
 
+## Architectural discipline
+
+Two big avoidable refactors so far. To prevent the third:
+
+1. **Extract a primitive by the 3rd duplicate, not the 5th.** Drawer/sheet chrome was copy-pasted 5 times before consolidation (~250 LOC of dup). When you find yourself ABOUT to copy a structural pattern (modal/drawer/popover/skeleton/etc.) for the third time, stop and extract it (`<Drawer>`, `useFoo()`). One session of refactor < N sessions of inconsistency drift.
+2. **Sketch hierarchies before encoding flat enums.** "WHALES" was added to `Mode` enum first (LIVE/PATTERN/MACRO/WHALES); the user's actual mental model was `Subject (TRADES vs WHALES) × Mode (LIVE/PATTERN/MACRO)`. Migrating ~10 files later took a full session. Before adding a top-level enum value, ask: would two orthogonal enums fit better than one big mixed one? If the user describes a hierarchy in plain language ("WHO → HOW → WHEN → WHAT"), encode that hierarchy in the state shape, don't flatten it.
+3. **State in a 700+ LOC component → hook.** When `useState` count climbs past ~5 and the component is already large, extract a custom hook (`useUrlFilters`, `useDrawerState`). Re-running the component every state change vs. an isolated hook makes the diff radically clearer too.
+4. **Fit the existing types before stretching them.** "This is mostly like a `HeatmapCell` but with extra fields" → either extend the type with optional fields used only in the new path, or alias as a different name. Don't silently add new optional fields on a shared type without comment.
+5. **Naming consistency is free leverage.** "subject" vs "kind" vs "type" — pick one for the same concept and use it everywhere. Inconsistent vocab makes greps miss.
+
+These don't apply to bugfixes / small enhancements. They apply when adding a feature that touches 3+ files.
+
 ## Polymarket data sources
 
 ### RTDS firehose (primary — whale detection)
