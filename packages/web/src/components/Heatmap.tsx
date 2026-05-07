@@ -355,11 +355,20 @@ export function Heatmap() {
     if (!metricAffectedBy(metric, s)) return;
 
     // Determine the row key the signal belongs to in the current view:
+    //   subject="whales" → s.whaleAddr (must be one of the top-N
+    //                      addresses currently shown as rows)
     //   L1 → s.category (must match one of fetchedData.categories)
     //   L2 → s.subcategory (must be in the drilled category's sublist)
     //   L3 → s.conditionId (must be one of the markets currently shown)
     let rowKey: string;
-    if (fetchedData.drillSubcategory) {
+    if (fetchedData.subject === "whales") {
+      // Whale corpus is stored lowercased; SSE may emit either case
+      // depending on how the wallet was reported by RTDS — normalise
+      // here so the .includes() comparison is reliable.
+      const addr = s.whaleAddr?.toLowerCase();
+      if (!addr || !fetchedData.categories.includes(addr)) return;
+      rowKey = addr;
+    } else if (fetchedData.drillSubcategory) {
       if (
         s.category !== fetchedData.drillCategory ||
         s.subcategory !== fetchedData.drillSubcategory ||

@@ -19,9 +19,17 @@ import type { Category, HeatmapResponse, SignalEvent } from "./types";
  * full re-rank). Those go slightly stale between refetches; acceptable.
  */
 export function applySignal(d: HeatmapResponse, s: SignalEvent): HeatmapResponse {
+  // subject="whales" → row=whaleAddr (must match one of the top-N
+  //                    addresses currently shown). Categories array
+  //                    holds the lowercased whale addresses; SSE may
+  //                    emit either case so we lowercase to compare.
   // L1 → row=category, L2 → row=subcategory, L3 → row=conditionId.
   let rowKey: string;
-  if (d.drillSubcategory) {
+  if (d.subject === "whales") {
+    const addr = s.whaleAddr?.toLowerCase();
+    if (!addr || !d.categories.includes(addr)) return d;
+    rowKey = addr;
+  } else if (d.drillSubcategory) {
     if (
       s.category !== d.drillCategory ||
       s.subcategory !== d.drillSubcategory ||
