@@ -57,8 +57,13 @@ function StatCell({
     if (!item.popover) return;
     // The whale card has its own onClick that bubbles up. Don't
     // toggle the popover when the click came from THAT element.
+    // Same goes for clicks inside the popover itself — taps on the
+    // search input or pinned-list rows previously closed the popover
+    // on the way back down because they bubbled into the card and
+    // re-toggled `hovered`.
     const target = e.target as HTMLElement;
     if (target.closest("[data-stats-whale-click]")) return;
+    if (target.closest("[data-stats-popover]")) return;
     onHoverChange(!hovered);
   };
   return (
@@ -318,6 +323,7 @@ function KpiPopover({
   }
   return (
     <div
+      data-stats-popover
       style={{
         position: "absolute",
         // Anchor to the card's left edge; `bottom: 100% + margin` puts the
