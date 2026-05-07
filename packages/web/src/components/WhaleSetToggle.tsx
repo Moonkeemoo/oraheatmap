@@ -40,9 +40,16 @@ export function WhaleSetToggle({
    *  on either tab. */
   watchlistCount: number;
 }) {
+  // Tiny pills with icon + count, no word labels — both pills need to
+  // fit on a single line inside the ~150px label-column. Earlier
+  // "ONLINE / WATCHLIST" labels wrapped to two rows on every viewport.
+  // Tooltip carries the long-form description so the meaning isn't
+  // lost: hover/long-press surfaces "Whales active in the current
+  // window" / "Your pinned whales".
   const renderTab = (
     s: WhaleSet,
-    label: string,
+    icon: string,
+    iconActive: string,
     count: number | null,
     locked: boolean,
   ): React.ReactNode => {
@@ -68,37 +75,38 @@ export function WhaleSetToggle({
         style={{
           display: "inline-flex",
           alignItems: "center",
-          gap: 4,
+          gap: 3,
           background: active ? TOKENS.accent : "transparent",
           border: `1px solid ${active ? TOKENS.accent : "rgba(255,255,255,0.10)"}`,
           color: active ? "#1a1410" : TOKENS.textSec,
           fontFamily: TOKENS.font,
           fontSize: 9,
           fontWeight: 700,
-          letterSpacing: 0.4,
-          textTransform: "uppercase",
-          padding: "3px 8px",
+          padding: "2px 6px",
           borderRadius: 999,
           cursor: locked ? "help" : "pointer",
           transition: "background-color .12s, border-color .12s, color .12s",
-          lineHeight: 1.1,
+          lineHeight: 1,
+          flexShrink: 0,
         }}
       >
-        <span>{label}</span>
+        <span style={{ fontSize: 10, lineHeight: 1 }}>
+          {active ? iconActive : icon}
+        </span>
         {count !== null && (
           <span
             style={{
               fontFamily: TOKENS.mono,
               fontSize: 9,
               fontWeight: 600,
-              opacity: active ? 0.75 : 0.55,
+              opacity: active ? 0.85 : 0.7,
             }}
           >
             {count}
           </span>
         )}
         {locked && (
-          <span style={{ fontSize: 8, opacity: 0.7 }}>🔒</span>
+          <span style={{ fontSize: 8, opacity: 0.7, marginLeft: 1 }}>🔒</span>
         )}
       </button>
     );
@@ -108,14 +116,15 @@ export function WhaleSetToggle({
       style={{
         display: "inline-flex",
         alignItems: "center",
-        // Tight column-gap so two pills fit in the label-column width
-        // (which is ~150px desktop / 140px mobile when subject=whales).
-        gap: 4,
-        flexWrap: "wrap",
+        gap: 3,
+        flexWrap: "nowrap",
       }}
     >
-      {renderTab("online", "Online", onlineCount, false)}
-      {renderTab("watchlist", "Watchlist", watchlistCount, !isAuthed)}
+      {/* Online — green pulsing dot icon. Filled when active so the
+          whole pill carries that "live signal" feel. */}
+      {renderTab("online", "●", "●", onlineCount, false)}
+      {/* Watchlist — star icon, filled when pinned-set is active. */}
+      {renderTab("watchlist", "☆", "★", watchlistCount, !isAuthed)}
     </div>
   );
 }
