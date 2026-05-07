@@ -24,8 +24,9 @@
  * pending/committed split, the heatmap reflects each tap as it happens.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { TOKENS } from "@/lib/tokens";
+import { Drawer } from "./Drawer";
 import type {
   HeatmapMetric,
   LiveRange,
@@ -230,17 +231,6 @@ export function MobileFiltersSheet({
   // want to see all four at once.
   const [expanded, setExpanded] = useState<ExpandedRow>("subject");
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   const reset = (): void => {
     setMode("live");
     setRange("1h");
@@ -265,43 +255,23 @@ export function MobileFiltersSheet({
   const lockedMetric = (id: HeatmapMetric): boolean => !isAuthed && id !== "volume";
 
   return (
-    <>
-      <div
-        onClick={onClose}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.55)",
-          zIndex: 100,
-          animation: "tipIn .18s ease-out",
-        }}
-      />
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          position: "fixed",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          width: "100vw",
-          maxHeight: "85vh",
-          background: TOKENS.panel,
-          borderTop: `1px solid ${TOKENS.borderHi}`,
-          borderTopLeftRadius: 16,
-          borderTopRightRadius: 16,
-          boxShadow: "0 -20px 60px rgba(0,0,0,0.6)",
-          zIndex: 101,
-          padding: "10px 14px",
-          paddingBottom: "max(env(safe-area-inset-bottom, 14px), 14px)",
-          display: "flex",
-          flexDirection: "column",
-          fontFamily: TOKENS.font,
-          color: TOKENS.text,
-          animation: "drawerInBottom .22s ease-out",
-          overflowY: "auto",
-          boxSizing: "border-box",
-        }}
-      >
+    <Drawer
+      open={open}
+      onClose={onClose}
+      zIndex={101}
+      backdropOpacity={0.55}
+      panelStyle={{
+        // The filters sheet sits HIGHER in the stack than other
+        // drawers (above LoginModal etc.), borderRadius is 16 instead
+        // of 14, and gets explicit padding + safe-area-inset-bottom.
+        // Override the Drawer defaults inline.
+        borderTopLeftRadius: 16,
+        borderTopRightRadius: 16,
+        padding: "10px 14px",
+        paddingBottom: "max(env(safe-area-inset-bottom, 14px), 14px)",
+        boxSizing: "border-box",
+      }}
+    >
         {/* Drag-handle bar — pure visual cue that this is a bottom sheet. */}
         <div
           aria-hidden
@@ -520,8 +490,7 @@ export function MobileFiltersSheet({
             APPLY
           </button>
         </div>
-      </div>
-    </>
+    </Drawer>
   );
 }
 

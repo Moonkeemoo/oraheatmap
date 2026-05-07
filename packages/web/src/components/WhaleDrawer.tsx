@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
-import { useIsMobile } from "@/hooks/useIsMobile";
+import { useMemo } from "react";
 import { useWhaleProfile } from "@/hooks/useWhaleProfile";
 import { categoryMeta } from "@/lib/categories";
 import { fmtMoney, fmtMoneyShort } from "@/lib/format";
@@ -9,6 +8,7 @@ import { marketUrl } from "@/lib/polymarket-url";
 import { TOKENS } from "@/lib/tokens";
 import type { Category, LiveRange, WhaleProfile } from "@/lib/types";
 import { BalanceChart } from "./BalanceChart";
+import { Drawer } from "./Drawer";
 import { DrawerLoading } from "./DrawerLoading";
 import { WhaleAvatar } from "./WhaleAvatar";
 
@@ -54,98 +54,19 @@ export function WhaleDrawer({
 }) {
   const { data, loading, error } = useWhaleProfile({ addr, range });
   const open = addr !== null;
-  const isMobile = useIsMobile();
-
-  // ESC key closes the drawer.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
 
   return (
-    <>
-      {/* Click-outside overlay — full viewport, dim, closes on click. */}
-      <div
-        onClick={onClose}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.45)",
-          zIndex: 50,
-          animation: "tipIn .18s ease-out",
-        }}
-      />
-      <aside
-        // Stop click propagation so clicks INSIDE the drawer don't close it.
-        onClick={(e) => e.stopPropagation()}
-        style={
-          isMobile
-            ? {
-                position: "fixed",
-                left: 0,
-                right: 0,
-                bottom: 0,
-                width: "100vw",
-                maxHeight: "85vh",
-                background: TOKENS.panel,
-                borderTop: `1px solid ${TOKENS.borderHi}`,
-                borderTopLeftRadius: 14,
-                borderTopRightRadius: 14,
-                boxShadow: "0 -20px 60px rgba(0,0,0,0.6)",
-                zIndex: 51,
-                display: "flex",
-                flexDirection: "column",
-                fontFamily: TOKENS.font,
-                color: TOKENS.text,
-                animation: "drawerInBottom .22s ease-out",
-                overflowY: "auto",
-              }
-            : {
-                position: "fixed",
-                top: 0,
-                right: 0,
-                width: "min(440px, 92vw)",
-                height: "100vh",
-                background: TOKENS.panel,
-                borderLeft: `1px solid ${TOKENS.borderHi}`,
-                boxShadow: "-20px 0 60px rgba(0,0,0,0.6)",
-                zIndex: 51,
-                display: "flex",
-                flexDirection: "column",
-                fontFamily: TOKENS.font,
-                color: TOKENS.text,
-                animation: "drawerIn .18s ease-out",
-              }
-        }
-      >
-        {data && <DrawerBody data={data} range={range} onClose={onClose} onBack={onBack} />}
-        {!data && loading && (
-          <div style={{ padding: 20 }}>
-            <DrawerLoading variant="block" />
-          </div>
-        )}
-        {!data && error && (
-          <div style={{ padding: 20, color: TOKENS.neg, fontSize: 13 }}>error: {error}</div>
-        )}
-      </aside>
-      {/* Slide-in keyframe — defined here so we don't have to touch globals.css. */}
-      <style>{`
-        @keyframes drawerIn {
-          0% { transform: translateX(20px); opacity: 0; }
-          100% { transform: translateX(0); opacity: 1; }
-        }
-        @keyframes drawerInBottom {
-          0% { transform: translateY(40px); opacity: 0; }
-          100% { transform: translateY(0); opacity: 1; }
-        }
-      `}</style>
-    </>
+    <Drawer open={open} onClose={onClose}>
+      {data && <DrawerBody data={data} range={range} onClose={onClose} onBack={onBack} />}
+      {!data && loading && (
+        <div style={{ padding: 20 }}>
+          <DrawerLoading variant="block" />
+        </div>
+      )}
+      {!data && error && (
+        <div style={{ padding: 20, color: TOKENS.neg, fontSize: 13 }}>error: {error}</div>
+      )}
+    </Drawer>
   );
 }
 

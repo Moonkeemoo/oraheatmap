@@ -12,6 +12,7 @@ import { DrawerLoading } from "./DrawerLoading";
 import { ProbabilityChart } from "./ProbabilityChart";
 import { CellFeed } from "./tooltip/CellFeed";
 import { RowHighlights } from "./tooltip/RowHighlights";
+import { Drawer } from "./Drawer";
 import { CycleHistogram, rowIndexToServerSlot } from "./tooltip/CycleHistogram";
 import { MacroContext } from "./tooltip/MacroContext";
 import { SlotCharacter, SlotCharacterSkeleton } from "./tooltip/SlotCharacter";
@@ -1197,68 +1198,11 @@ export function Tooltip({
     </>
   );
 
-  // ── Drawer chrome — right-side slide-in (mirrors WhaleDrawer). ─────────
+  // ── Drawer chrome — right-side slide-in / mobile bottom sheet via
+  // shared <Drawer> primitive. ──────────────────────────────────────
   if (isDrawer) {
     return (
-      <>
-        {/* Click-outside overlay — full viewport, dim, dismisses on click. */}
-        <div
-          onClick={onClose}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            zIndex: 50,
-            animation: "tipIn .18s ease-out",
-          }}
-        />
-        <aside
-          onClick={(e) => e.stopPropagation()}
-          style={
-            isMobile
-              ? {
-                  // Mobile: bottom-sheet shtorka — pinned to the bottom of
-                  // the viewport, scrolls internally. Top-rounded to read as
-                  // a sheet, not a panel. Slide-up animation (drawerInBottom)
-                  // mirrors the bottom-sheet UX from native iOS / Android.
-                  position: "fixed",
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  width: "100vw",
-                  maxHeight: "85vh",
-                  background: TOKENS.panel,
-                  borderTop: `1px solid ${TOKENS.borderHi}`,
-                  borderTopLeftRadius: 14,
-                  borderTopRightRadius: 14,
-                  boxShadow: "0 -20px 60px rgba(0,0,0,0.6)",
-                  zIndex: 51,
-                  display: "flex",
-                  flexDirection: "column",
-                  fontFamily: TOKENS.font,
-                  color: TOKENS.text,
-                  animation: "drawerInBottom .22s ease-out",
-                  overflowY: "auto",
-                }
-              : {
-                  position: "fixed",
-                  top: 0,
-                  right: 0,
-                  width: "min(440px, 92vw)",
-                  height: "100vh",
-                  background: TOKENS.panel,
-                  borderLeft: `1px solid ${TOKENS.borderHi}`,
-                  boxShadow: "-20px 0 60px rgba(0,0,0,0.6)",
-                  zIndex: 51,
-                  display: "flex",
-                  flexDirection: "column",
-                  fontFamily: TOKENS.font,
-                  color: TOKENS.text,
-                  animation: "drawerIn .18s ease-out",
-                  overflowY: "auto",
-                }
-          }
-        >
+      <Drawer open={true} onClose={onClose ?? (() => {})}>
           {/* Top bar — close button + slot label so the user knows which
               cell is loaded. Stays sticky so it's reachable while scrolling
               long bodies (top whales / probability chart inflate L3 height). */}
@@ -1323,18 +1267,7 @@ export function Tooltip({
             </button>
           </div>
           <div style={{ padding: "14px 16px 24px", flex: 1 }}>{body}</div>
-          <style>{`
-            @keyframes drawerIn {
-              0% { transform: translateX(20px); opacity: 0; }
-              100% { transform: translateX(0); opacity: 1; }
-            }
-            @keyframes drawerInBottom {
-              0% { transform: translateY(40px); opacity: 0; }
-              100% { transform: translateY(0); opacity: 1; }
-            }
-          `}</style>
-        </aside>
-      </>
+      </Drawer>
     );
   }
 
