@@ -3,7 +3,7 @@ import { useSession } from "next-auth/react";
 import { TOKENS } from "@/lib/tokens";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import type { HeatmapMetric, LiveRange, MacroKind, Mode, PatternKind, Subject } from "@/lib/types";
-import { BrandLogo } from "./BrandLogo";
+import { BrandLogo, GridIcon } from "./BrandLogo";
 import { BurgerMenu } from "./BurgerMenu";
 import { LiveStatus } from "./LiveStatus";
 import { MobileFiltersChip, MobileFiltersSheet } from "./MobileFilters";
@@ -546,21 +546,14 @@ export function Header({
         </Section>
 
         {/* Scale legend — sits directly after WHAT because it's the
-            colour key for whichever metric is selected. ScaleLegend
-            renders the LOW/MID/HIGH labels via position:absolute 17px
-            below the swatches; without padding-bottom they overflow
-            the header and bleed into the grid below. paddingBottom: 16
-            keeps them contained inside the header. */}
-        <div style={{ paddingBottom: 16 }}>
-          <ScaleLegend metric={metric} />
-        </div>
+            colour key for whichever metric is selected. */}
+        <ScaleLegend metric={metric} />
       </div>
 
-      {/* Brand mark — compact size for the single-row toolbar. Hero
-          size (60px icon) made sense for the old two-row layout where
-          it had to balance a tall left column; in the new ~44px
-          toolbar it dominated and pushed everything else into the
-          bottom edge via alignItems:flex-end. */}
+      {/* Brand mark — icon only (no wordmark / descriptor). The full
+          BrandLogo with "oralab POLYMARKET HEATMAP" text was visually
+          overwhelming inside the single-row toolbar; the V1a overhead
+          design uses just the 9-square mark, mirrored here. */}
       <div
         style={{
           color: TOKENS.text,
@@ -569,7 +562,7 @@ export function Header({
           flexShrink: 0,
         }}
       >
-        <BrandLogo size="compact" />
+        <GridIcon size={32} />
       </div>
     </div>
   );

@@ -43,7 +43,11 @@ const SIZES: Record<Size, {
   compact: { icon: 24, gap: 8,  oralabSize: 22, descriptorSize: 8,  rowGap: 2, oralabLetterSpacing: "-0.04em" },
 };
 
-function GridIcon({ size }: { size: number }) {
+/** The 9-square grid mark on its own — exported so places that need
+ *  just the icon (e.g. the toolbar chrome where the wordmark would be
+ *  redundant) can drop it in without going through BrandLogo's
+ *  flex-row container with the wordmark/descriptor stack. */
+export function GridIcon({ size }: { size: number }) {
   return (
     <svg
       viewBox="0 0 100 100"
