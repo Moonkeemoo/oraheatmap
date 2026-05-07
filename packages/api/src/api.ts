@@ -475,86 +475,90 @@ export function createApi(deps: ApiDeps) {
           query.whaleSet ?? "top",
         ].join("|");
         const ttlMs = heatmapTtlMs(mode, query.range);
+        const staleMs = ttlMs * 5;
         const ccHeader = cacheControlHeader(ttlMs);
-        const cached = heatmapCache.get(cacheKey);
-        if (cached !== undefined) {
-          set.headers["x-cache"] = "hit";
-          set.headers["cache-control"] = ccHeader;
-          return cached;
-        }
 
-        const now = new Date();
-        const dataSpan = await fetchDataSpan(deps.sql);
-        const trackedWhales = deps.whaleCount();
         const subject = query.subject ?? "trades";
+        const whaleSet = (query.whaleSet ?? "top") as "online" | "watchlist" | "top";
 
-        // subject === "whales" — pivot rows from categories to top-N
-        // whale addresses. All bucketing + assembly logic lives in
-        // whales-heatmap.ts; api.ts dispatches, caches, and (for
-        // watchlist mode) hydrates the user's pinned set from DB.
-        if (subject === "whales") {
-          const whaleSet = (query.whaleSet ?? "top") as "online" | "watchlist" | "top";
-          // Watchlist needs the authenticated user's pinned set. Anon
-          // users get an empty list → empty heatmap → frontend shows
-          // an empty-state CTA. Note: response cache key already
-          // includes whaleSet but NOT user_id, so two authed users
-          // hitting "watchlist" with different pins would see each
-          // other's data — bypass the cache entirely for watchlist.
+        // Watchlist responses are user-specific (cache key has no user_id),
+        // so they bypass the shared cache entirely. Anon users get the
+        // empty pinned set; the empty-state CTA is rendered client-side.
+        if (subject === "whales" && whaleSet === "watchlist") {
+          const user = await readAuthFromHeaders(request.headers);
           let watchlistAddrs: string[] = [];
-          if (whaleSet === "watchlist") {
-            const user = await readAuthFromHeaders(request.headers);
-            if (user?.id) {
-              const rows = await deps.sql<{ addrs: string[] }[]>`
-                SELECT addrs FROM user_whale_watchlist WHERE user_id = ${user.id}
-              `;
-              watchlistAddrs = rows[0]?.addrs ?? [];
-            }
+          if (user?.id) {
+            const rows = await deps.sql<{ addrs: string[] }[]>`
+              SELECT addrs FROM user_whale_watchlist WHERE user_id = ${user.id}
+            `;
+            watchlistAddrs = rows[0]?.addrs ?? [];
           }
           const whalesResponse = await handleWhalesSubject({
             sql: deps.sql,
             query: { range: query.range, macroKind: query.macroKind, kind: query.kind },
             mode: mode as "live" | "pattern" | "macro",
             metric,
-            trackedWhales,
-            dataSpan,
-            now,
+            trackedWhales: deps.whaleCount(),
+            dataSpan: await fetchDataSpan(deps.sql),
+            now: new Date(),
             whaleSet,
             watchlistAddrs,
           });
-          // Skip the shared cache for watchlist responses — payload is
-          // user-specific. ONLINE and TOP are public so they cache as
-          // before.
-          if (whaleSet !== "watchlist") {
-            heatmapCache.set(cacheKey, whalesResponse, ttlMs);
-          }
-          set.headers["x-cache"] = "miss";
-          set.headers["cache-control"] = whaleSet === "watchlist" ? "private, no-store" : ccHeader;
+          set.headers["x-cache"] = "bypass";
+          set.headers["cache-control"] = "private, no-store";
           return whalesResponse;
         }
 
-        // subject === "trades" — three branches by mode (live / pattern
-        // / macro). Drill vocabulary (L1 / L2 / L3) shared across all
-        // three. Logic lives in trades-heatmap.ts.
-        const tradesResponse = await handleTradesSubject({
-          sql: deps.sql,
-          query: {
-            range: query.range,
-            kind: query.kind,
-            macroKind: query.macroKind,
-            lookbackDays: query.lookbackDays,
-            category: query.category,
-            subcategory: query.subcategory,
-          },
-          mode: mode as "live" | "pattern" | "macro",
-          metric,
-          trackedWhales,
-          dataSpan,
-          now,
-        });
-        heatmapCache.set(cacheKey, tradesResponse, ttlMs);
-        set.headers["x-cache"] = "miss";
+        // Stale-while-revalidate: a cache miss for /api/heatmap can take
+        // 18-22s on macro 7d/12w windows (multiple full-`signals` scans),
+        // which under bun.serve's idleTimeout shows up as upstream EOF →
+        // Caddy 502 to the user. Serving the previous payload while the
+        // refresh runs in the background keeps responses snappy and
+        // collapses concurrent misses onto a single compute.
+        const compute = async (): Promise<unknown> => {
+          const now = new Date();
+          const dataSpan = await fetchDataSpan(deps.sql);
+          const trackedWhales = deps.whaleCount();
+          if (subject === "whales") {
+            return handleWhalesSubject({
+              sql: deps.sql,
+              query: { range: query.range, macroKind: query.macroKind, kind: query.kind },
+              mode: mode as "live" | "pattern" | "macro",
+              metric,
+              trackedWhales,
+              dataSpan,
+              now,
+              whaleSet,
+              watchlistAddrs: [],
+            });
+          }
+          return handleTradesSubject({
+            sql: deps.sql,
+            query: {
+              range: query.range,
+              kind: query.kind,
+              macroKind: query.macroKind,
+              lookbackDays: query.lookbackDays,
+              category: query.category,
+              subcategory: query.subcategory,
+            },
+            mode: mode as "live" | "pattern" | "macro",
+            metric,
+            trackedWhales,
+            dataSpan,
+            now,
+          });
+        };
+
+        const { value, status } = await heatmapCache.getOrRefresh(
+          cacheKey,
+          ttlMs,
+          staleMs,
+          compute,
+        );
+        set.headers["x-cache"] = status;
         set.headers["cache-control"] = ccHeader;
-        return tradesResponse;
+        return value;
       },
       {
         query: t.Object({
