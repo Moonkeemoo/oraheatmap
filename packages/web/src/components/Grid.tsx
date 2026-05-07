@@ -108,7 +108,12 @@ function makeRowMeta(
     const alias = meta?.alias ?? shortenAddress(cat);
     return {
       cat,
-      rowColor: "#252b33", // neutral panel-grey, no per-whale tint
+      // Per-address deterministic colour (whaleColor on the API). Drives
+      // the marker bar in the bare-pill row label so each whale stays
+      // visually distinguishable across the list, mirroring the way
+      // category rows pick up their hue. Falls back to the neutral
+      // panel grey only if the meta is missing.
+      rowColor: meta?.color ?? "#252b33",
       rowLabel: alias,
       rawLabel: alias,
       isResolved: false,
@@ -258,6 +263,7 @@ function RowLabelBadge({
   onRowClick,
   isMobile,
   hideAffordance,
+  isLive,
   dragListeners,
   dragAttributes,
 }: {
@@ -270,6 +276,11 @@ function RowLabelBadge({
    *  itself (opens the whale drawer) but there's no nested level for
    *  a drill arrow to point at. */
   hideAffordance?: boolean;
+  /** When true, render a green tick on the right of the pill — the
+   *  row had at least one signal in the most recent bucket, i.e.
+   *  "this whale is firing right now". Only meaningful on whales-
+   *  subject LIVE rows; trades-subject rows ignore it. */
+  isLive?: boolean;
   /** dnd-kit useSortable listeners — when present, the badge acts as
    *  the drag source. Mobile only: long-press on the badge starts a
    *  reorder drag (TouchSensor 250ms delay activation). Desktop drags
@@ -406,6 +417,25 @@ function RowLabelBadge({
       {rowLabel}
     </span>
   );
+  // Live tick — small green dot with halo on the right of the pill,
+  // signalling "this whale fired a trade in the most recent bucket".
+  // Only rendered when isLive is true. The halo (box-shadow glow) is
+  // what separates a "live now" indicator from a static colour swatch
+  // — the soft green bloom reads as "active heartbeat" at a glance.
+  const liveTick = isLive ? (
+    <span
+      aria-hidden="true"
+      title="Active right now"
+      style={{
+        flex: "0 0 auto",
+        width: 6,
+        height: 6,
+        borderRadius: 6,
+        background: "#22c55e",
+        boxShadow: "0 0 6px rgba(34,197,94,0.65)",
+      }}
+    />
+  ) : null;
   if (l3Url) {
     return (
       <a
@@ -421,6 +451,7 @@ function RowLabelBadge({
       >
         {marker}
         {labelEl}
+        {liveTick}
         {affordanceKind && <ClickAffordance kind={affordanceKind} />}
       </a>
     );
@@ -439,6 +470,7 @@ function RowLabelBadge({
     >
       {marker}
       {labelEl}
+      {liveTick}
       {affordanceKind && <ClickAffordance kind={affordanceKind} />}
     </button>
   );
@@ -831,6 +863,20 @@ export function Grid({
     // affordance is the row label itself, not a chevron pointing into
     // a deeper level.
     const hideAffordance = data.subject === "whales";
+    // "Active right now" indicator — only meaningful on whales-subject
+    // LIVE rows. Walk the last 2 buckets (so a whale that fired one
+    // trade ~5min ago still reads as live, smoothing out the "nothing
+    // in the very last 5min" gap that's noise more than signal). PATTERN
+    // and MACRO modes have no real-time semantics; trades-subject rows
+    // are categories, where "live" doesn't apply.
+    const cellsForRow = cellsByCat[cat] ?? [];
+    const isLive =
+      data.subject === "whales" &&
+      data.mode === "live" &&
+      cellsForRow.length > 0 &&
+      [cellsForRow.at(-1), cellsForRow.at(-2)].some(
+        (c) => c !== undefined && c.count > 0,
+      );
     // Hide the explicit drag-handle column on mobile — the 6-dot grip
     // is too small to tap reliably on touch. Mobile drags via long-
     // press on the colored badge itself (TouchSensor's 250ms delay
@@ -869,6 +915,7 @@ export function Grid({
               clickableRow={clickableRow}
               onRowClick={onRowClick}
               hideAffordance={hideAffordance}
+              isLive={isLive}
               dragListeners={badgeDragListeners}
               dragAttributes={badgeDragAttributes}
             />
@@ -981,7 +1028,15 @@ export function Grid({
           gridTemplateRows: isMacro
             ? `${(isMobile ? timeRowH : TIME_ROW_H) - 4}px repeat(${displayCategories.length}, minmax(36px, 1fr))`
             : `${timeRowH}px repeat(${displayCategories.length}, minmax(${minRowH}px, 1fr))`,
-          gap: isMacro ? 2 : 4,
+          // 4px column gap between cells stays — anything bigger
+          // breaks the "this row is a continuous strip of values"
+          // read. Vertical row gap bumped 4 → 6 so each row gets
+          // micro-air around it; tightly stacked badge borders read
+          // as a wall of bars ("наляпано"). Macro keeps tight 2px in
+          // both directions because dense matrices want to read as a
+          // continuous canvas, not a list.
+          rowGap: isMacro ? 2 : 6,
+          columnGap: isMacro ? 2 : 4,
           width: "100%",
           height: "100%",
           position: "relative",
