@@ -546,20 +546,29 @@ export function Header({
         </Section>
 
         {/* Scale legend — sits directly after WHAT because it's the
-            colour key for whichever metric is selected. */}
-        <ScaleLegend metric={metric} />
+            colour key for whichever metric is selected. alignSelf
+            centres it against the (label + pill) section block above
+            instead of bottom-aligning to the pill row, so the legend
+            visually balances with the WHO/HOW/WHEN/WHAT columns
+            rather than dangling below them. */}
+        <div style={{ alignSelf: "center" }}>
+          <ScaleLegend metric={metric} />
+        </div>
       </div>
 
       {/* Brand mark — icon only (no wordmark / descriptor). The full
           BrandLogo with "oralab POLYMARKET HEATMAP" text was visually
           overwhelming inside the single-row toolbar; the V1a overhead
-          design uses just the 9-square mark, mirrored here. */}
+          design uses just the 9-square mark, mirrored here.
+          alignSelf:center balances against the section columns same
+          as the legend. */}
       <div
         style={{
           color: TOKENS.text,
           display: "flex",
           alignItems: "center",
           flexShrink: 0,
+          alignSelf: "center",
         }}
       >
         <GridIcon size={32} />
