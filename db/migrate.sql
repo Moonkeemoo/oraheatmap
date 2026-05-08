@@ -111,12 +111,52 @@ SELECT add_continuous_aggregate_policy('signals_hourly',
   if_not_exists   => TRUE
 );
 
+-- ══════════════════════════════════════════
+-- Continuous aggregate: hourly buckets per whale
+-- ══════════════════════════════════════════
+--
+-- Powers the "per-whale" code paths (fetchTopWhale, fetchUniqueWhalesInWindow,
+-- queryWhalesAggRows for ≥2h ranges, queryWhalesMacroAggRows, the 90-day
+-- reputation scans). Each of those was scanning raw `signals` with a
+-- whale_addr predicate over multi-week windows — 5-7s per query at 12w.
+--
+-- One row per (whale_addr, hour) instead of one row per trade. With ~1500
+-- active whales × 24h × 90d ≈ 3.2M rows stored vs 7M+ raw signals, queries
+-- targeting whale aggregates over wide windows drop from "few seconds" to
+-- "few ms" because they read from a small ts/whale-indexed rollup.
+--
+-- Granularity NOTE: 1 hour. Whales-subject LIVE 1h still uses 5-min
+-- buckets so it keeps reading raw `signals` (1h window is cheap on raw).
+-- Everything ≥ 2h re-buckets from this view.
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS signals_hourly_by_whale
+WITH (timescaledb.continuous) AS
+SELECT
+  time_bucket('1 hour', ts)                                              AS bucket,
+  whale_addr,
+  COUNT(*)::bigint                                                       AS signal_count,
+  COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)             AS buy_volume_usd,
+  COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS realized_pnl_sum,
+  COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint                       AS win_count,
+  COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                       AS loss_count
+FROM signals
+GROUP BY bucket, whale_addr
+WITH NO DATA;
+
+SELECT add_continuous_aggregate_policy('signals_hourly_by_whale',
+  start_offset    => INTERVAL '95 days',
+  end_offset      => INTERVAL '1 minute',
+  schedule_interval => INTERVAL '5 minutes',
+  if_not_exists   => TRUE
+);
+
 -- Real-time aggregation: union materialized buckets with raw signals for the
 -- still-open current bucket. Without this, hourly buckets only appear in the
 -- view AFTER they end + end_offset → the LIVE 24h heatmap silently dropped
 -- the current hour (~5% of the window). Idempotent SET, fine to re-apply.
-ALTER MATERIALIZED VIEW signals_hourly SET (timescaledb.materialized_only = false);
-ALTER MATERIALIZED VIEW signals_5min   SET (timescaledb.materialized_only = false);
+ALTER MATERIALIZED VIEW signals_hourly             SET (timescaledb.materialized_only = false);
+ALTER MATERIALIZED VIEW signals_5min               SET (timescaledb.materialized_only = false);
+ALTER MATERIALIZED VIEW signals_hourly_by_whale    SET (timescaledb.materialized_only = false);
 
 -- ══════════════════════════════════════════
 -- Compression policy (compress chunks older than 7 days)

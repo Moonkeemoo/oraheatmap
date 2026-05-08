@@ -646,24 +646,48 @@ export async function queryWhalesAggRows(
   const addrs = topAddrs ?? (await queryTopWhalesByReputation(sql));
   if (addrs.length === 0) return { rows: [], topAddrs: addrs };
 
-  // Second pass — per (whale, bucket) aggregation, scoped to the
-  // top-N set so the cardinality stays bounded.
+  // Sub-hour buckets (LIVE 1h: 5-min) need raw-table granularity. The
+  // window is small (1h) so the raw scan is cheap — no CAGG win here.
+  if (cfg.bucketMinutes < 60) {
+    const rows = await sql<AggRow[]>`
+      SELECT
+        to_char(time_bucket(${bucketInterval}::interval, ts) AT TIME ZONE 'UTC',
+                'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
+        whale_addr                                                    AS category,
+        COUNT(*)::bigint                                              AS signal_count,
+        COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS buy_volume_usd,
+        COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS realized_pnl_sum,
+        COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS win_count,
+        COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS loss_count,
+        1::bigint                                                      AS unique_whales
+      FROM signals
+      WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
+        AND whale_addr = ANY(${addrs as string[]}::text[])
+      GROUP BY bucket, whale_addr
+      ORDER BY bucket
+    `;
+    return { rows, topAddrs: addrs };
+  }
+
+  // 2h+ buckets: re-bucket from the per-whale hourly CAGG. Drops the
+  // 12w whales scan from ~5s to ~50ms because we read a small rollup
+  // keyed on (whale_addr, bucket) instead of GROUP BY-ing 7M raw rows.
   const rows = await sql<AggRow[]>`
     SELECT
-      to_char(time_bucket(${bucketInterval}::interval, ts) AT TIME ZONE 'UTC',
+      to_char(time_bucket(${bucketInterval}::interval, bucket) AT TIME ZONE 'UTC',
               'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
-      whale_addr                                                    AS category,
-      COUNT(*)::bigint                                              AS signal_count,
-      COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS buy_volume_usd,
-      COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS realized_pnl_sum,
-      COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS win_count,
-      COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS loss_count,
-      1::bigint                                                      AS unique_whales
-    FROM signals
-    WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
+      whale_addr                                          AS category,
+      COALESCE(SUM(signal_count), 0)::bigint              AS signal_count,
+      COALESCE(SUM(buy_volume_usd), 0)                    AS buy_volume_usd,
+      COALESCE(SUM(realized_pnl_sum), 0)                  AS realized_pnl_sum,
+      COALESCE(SUM(win_count), 0)::bigint                 AS win_count,
+      COALESCE(SUM(loss_count), 0)::bigint                AS loss_count,
+      1::bigint                                            AS unique_whales
+    FROM signals_hourly_by_whale
+    WHERE bucket >= NOW() - (${windowInterval}::interval)
       AND whale_addr = ANY(${addrs as string[]}::text[])
-    GROUP BY bucket, whale_addr
-    ORDER BY bucket
+    GROUP BY 1, whale_addr
+    ORDER BY 1
   `;
   return { rows, topAddrs: addrs };
 }
@@ -684,22 +708,25 @@ export async function queryWhalesMacroAggRows(
   const cfg = MACRO_CONFIG[macroKind];
   const bucketInterval = `${cfg.bucketMinutes} minutes`;
   const windowInterval = `${cfg.windowMinutes} minutes`;
+  // Both macro variants bucket at ≥1h (hour-week=1h, day-12w=1d), so
+  // the per-whale hourly CAGG is the right source. Re-bucketing from
+  // hourly is a sub-second SUM over a couple thousand rollup rows.
   return sql<AggRow[]>`
     SELECT
-      to_char(time_bucket(${bucketInterval}::interval, ts) AT TIME ZONE 'UTC',
+      to_char(time_bucket(${bucketInterval}::interval, bucket) AT TIME ZONE 'UTC',
               'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
-      whale_addr                                                    AS category,
-      COUNT(*)::bigint                                              AS signal_count,
-      COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS buy_volume_usd,
-      COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS realized_pnl_sum,
-      COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS win_count,
-      COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS loss_count,
-      1::bigint                                                      AS unique_whales
-    FROM signals
-    WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
+      whale_addr                                          AS category,
+      COALESCE(SUM(signal_count), 0)::bigint              AS signal_count,
+      COALESCE(SUM(buy_volume_usd), 0)                    AS buy_volume_usd,
+      COALESCE(SUM(realized_pnl_sum), 0)                  AS realized_pnl_sum,
+      COALESCE(SUM(win_count), 0)::bigint                 AS win_count,
+      COALESCE(SUM(loss_count), 0)::bigint                AS loss_count,
+      1::bigint                                            AS unique_whales
+    FROM signals_hourly_by_whale
+    WHERE bucket >= NOW() - (${windowInterval}::interval)
       AND whale_addr = ANY(${topAddrs as string[]}::text[])
-    GROUP BY bucket, whale_addr
-    ORDER BY bucket
+    GROUP BY 1, whale_addr
+    ORDER BY 1
   `;
 }
 
@@ -1225,7 +1252,14 @@ export async function fetchResolvedMarkets(
   return new Set(rows.map((r) => r.condition_id));
 }
 
-/** Top whale across the whole window by total USD entered (BUY only). */
+/** Top whale across the whole window by total USD entered (BUY only).
+ *
+ *  Reads from `signals_hourly_by_whale` (per-whale CAGG, hourly bucket).
+ *  Used to take 5-7s on a 12-week window because it scanned raw `signals`
+ *  with a GROUP BY over millions of rows; now it scans a small rollup
+ *  keyed on (bucket, whale_addr) and returns in milliseconds. The CAGG
+ *  has materialized_only=false so the still-open current hour is unioned
+ *  in via realtime aggregation — no precision loss vs. the raw scan. */
 export async function fetchTopWhale(
   sql: Sql,
   windowMinutes: number,
@@ -1233,11 +1267,10 @@ export async function fetchTopWhale(
   const windowInterval = `${windowMinutes} minutes`;
   const rows = await sql<{ whale_addr: string }[]>`
     SELECT whale_addr
-    FROM signals
-    WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
-      AND side = 'BUY'
+    FROM signals_hourly_by_whale
+    WHERE bucket >= NOW() - (${windowInterval}::interval)
     GROUP BY whale_addr
-    ORDER BY COALESCE(SUM(size * price), 0) DESC
+    ORDER BY COALESCE(SUM(buy_volume_usd), 0) DESC
     LIMIT 1
   `;
   return rows[0]?.whale_addr ?? null;
@@ -1312,7 +1345,52 @@ export async function fetchDataSpan(
   };
 }
 
-/** DISTINCT whales seen in window (any trade kind). */
+/** Per-whale 90-day reputation aggregates for a bounded address set.
+ *
+ *  Used by /api/heatmap (trades-subject + whales-subject) to rank the
+ *  TOP WHALES popover by reputation score. Bounded to ~10 addresses by
+ *  the caller so cardinality is small, but the predicate still needs to
+ *  walk 90 days of data.
+ *
+ *  Reads from `signals_hourly_by_whale` — hourly rollup keyed on
+ *  (bucket, whale_addr). Even bounded by `whale_addr = ANY(...)`, the
+ *  raw scan touched 45 hypertable chunks so planning alone cost
+ *  hundreds of ms; the rollup table planner picks two indexed seeks
+ *  instead. */
+export type ReputationInputRow = {
+  whale_addr: string;
+  trades: number | string;
+  wins: number | string;
+  losses: number | string;
+  pnl: number | string | null;
+};
+
+export async function queryReputationInputs(
+  sql: Sql,
+  addrs: ReadonlyArray<string>,
+  lookbackDays = 90,
+): Promise<ReadonlyArray<ReputationInputRow>> {
+  if (addrs.length === 0) return [];
+  return sql<ReputationInputRow[]>`
+    SELECT
+      whale_addr,
+      COALESCE(SUM(signal_count), 0)::bigint           AS trades,
+      COALESCE(SUM(win_count), 0)::bigint              AS wins,
+      COALESCE(SUM(loss_count), 0)::bigint             AS losses,
+      COALESCE(SUM(realized_pnl_sum), 0)               AS pnl
+    FROM signals_hourly_by_whale
+    WHERE bucket >= NOW() - (${`${lookbackDays} days`}::interval)
+      AND whale_addr = ANY(${addrs as string[]}::text[])
+    GROUP BY whale_addr
+  `;
+}
+
+/** DISTINCT whales seen in window (any trade kind).
+ *
+ *  Same per-whale CAGG read as fetchTopWhale. COUNT(DISTINCT whale_addr)
+ *  over the rollup is exact: the CAGG groups by (bucket, whale_addr), so
+ *  each (whale, hour) cell is one row and a DISTINCT in the outer query
+ *  gives the correct cardinality. */
 export async function fetchUniqueWhalesInWindow(
   sql: Sql,
   windowMinutes: number,
@@ -1320,8 +1398,8 @@ export async function fetchUniqueWhalesInWindow(
   const windowInterval = `${windowMinutes} minutes`;
   const rows = await sql<{ n: string | number }[]>`
     SELECT COUNT(DISTINCT whale_addr) AS n
-    FROM signals
-    WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
+    FROM signals_hourly_by_whale
+    WHERE bucket >= NOW() - (${windowInterval}::interval)
   `;
   return num(rows[0]?.n);
 }

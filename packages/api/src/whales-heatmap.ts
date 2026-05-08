@@ -28,6 +28,7 @@ import {
   type HeatmapRange,
   MACRO_CONFIG,
   queryActiveWhalesInWindow,
+  queryReputationInputs,
   queryTopWhalesByReputation,
   queryWhalesAggRows,
   queryWhalesMacroAggRows,
@@ -187,30 +188,10 @@ export async function handleWhalesSubject(
   }
 
   // 90-day reputation inputs for the top addrs — same window and
-  // formula as the LVL badge in WhaleDrawer. Single batch query
-  // keyed on the top-N set, computed per-whale in JS so we can reuse
-  // the canonical computeReputation helper.
-  type ReputationRow = {
-    whale_addr: string;
-    trades: number | string;
-    wins: number | string;
-    losses: number | string;
-    pnl: number | string | null;
-  };
-  const repRows = topAddrs.length === 0
-    ? []
-    : await sql<ReputationRow[]>`
-        SELECT
-          whale_addr,
-          COUNT(*)::bigint                                              AS trades,
-          COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS wins,
-          COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS losses,
-          COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl
-        FROM signals
-        WHERE ts >= NOW() - INTERVAL '90 days'
-          AND whale_addr = ANY(${topAddrs as string[]}::text[])
-        GROUP BY whale_addr
-      `;
+  // formula as the LVL badge in WhaleDrawer. Reads the per-whale
+  // hourly CAGG so a 90d aggregate over 10 addrs is a couple of
+  // indexed point lookups instead of a full chunk-walk.
+  const repRows = await queryReputationInputs(sql, topAddrs);
   const repByAddr = new Map<string, number>();
   for (const r of repRows) {
     const trades = Number(r.trades);
