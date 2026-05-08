@@ -214,16 +214,18 @@ export async function fetchWhaleProfile(
     `,
     // 90-day reputation stats — independent of `range` so the score
     // reads "current form" the same way the balance-growth chart does.
+    // Reads the per-whale hourly CAGG so the 90d aggregate is two
+    // bounded index seeks instead of a chunk-walking GROUP BY.
     sql<StatsRow[]>`
       SELECT
-        COUNT(*)::bigint                                                       AS signals,
-        COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)             AS volume_usd,
-        COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd,
-        COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint                       AS win_count,
-        COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                       AS loss_count
-      FROM signals
+        COALESCE(SUM(signal_count), 0)::bigint           AS signals,
+        COALESCE(SUM(buy_volume_usd), 0)                 AS volume_usd,
+        COALESCE(SUM(realized_pnl_sum), 0)               AS pnl_usd,
+        COALESCE(SUM(win_count), 0)::bigint              AS win_count,
+        COALESCE(SUM(loss_count), 0)::bigint             AS loss_count
+      FROM signals_hourly_by_whale
       WHERE whale_addr = ${addr}
-        AND ts >= NOW() - (${`${PNL_HISTORY_DAYS} days`}::interval)
+        AND bucket >= NOW() - (${`${PNL_HISTORY_DAYS} days`}::interval)
     `,
     sql<CatRow[]>`
       SELECT
@@ -267,15 +269,16 @@ export async function fetchWhaleProfile(
       ORDER BY ts DESC
       LIMIT ${RECENT_TRADES_LIMIT}
     `,
+    // 90-day cumulative-PnL series. Aggregate the per-whale hourly
+    // CAGG into days, then take a running sum for the chart.
     sql<PnlRow[]>`
       WITH per_day AS (
         SELECT
-          DATE_TRUNC('day', ts AT TIME ZONE 'UTC') AS day,
-          COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS daily_pnl
-        FROM signals
+          DATE_TRUNC('day', bucket AT TIME ZONE 'UTC') AS day,
+          COALESCE(SUM(realized_pnl_sum), 0) AS daily_pnl
+        FROM signals_hourly_by_whale
         WHERE whale_addr = ${addr}
-          AND ts >= NOW() - (${`${PNL_HISTORY_DAYS} days`}::interval)
-          AND ts <= NOW()
+          AND bucket >= NOW() - (${`${PNL_HISTORY_DAYS} days`}::interval)
         GROUP BY day
       )
       SELECT

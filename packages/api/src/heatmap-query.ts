@@ -481,6 +481,29 @@ export async function queryHeatmapAggRows(
       return rows;
     }
     if (drillCategory !== null) {
+      // ≥1h buckets read the per-subcategory hourly CAGG. LIVE 1h
+      // (5-min buckets) keeps the raw scan because the rollup is too
+      // coarse — but a 1h window on raw is cheap so this is fine.
+      if (cfg.bucketMinutes >= 60) {
+        const rows = await sql<AggRow[]>`
+          SELECT
+            to_char(time_bucket(${bucketInterval}::interval, bucket) AT TIME ZONE 'UTC',
+                    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
+            subcategory                                          AS category,
+            COALESCE(SUM(signal_count), 0)::bigint               AS signal_count,
+            COALESCE(SUM(buy_volume_usd), 0)                     AS buy_volume_usd,
+            COALESCE(SUM(realized_pnl_sum), 0)                   AS realized_pnl_sum,
+            COALESCE(SUM(win_count), 0)::bigint                  AS win_count,
+            COALESCE(SUM(loss_count), 0)::bigint                 AS loss_count,
+            COALESCE(SUM(unique_whales), 0)::bigint              AS unique_whales
+          FROM signals_hourly_by_subcat
+          WHERE bucket >= NOW() - (${windowInterval}::interval)
+            AND category = ${drillCategory}
+          GROUP BY 1, subcategory
+          ORDER BY 1
+        `;
+        return rows;
+      }
       const rows = await sql<AggRow[]>`
         SELECT
           to_char(time_bucket(${bucketInterval}::interval, ts) AT TIME ZONE 'UTC',
@@ -884,25 +907,28 @@ export async function queryMacroAggRows(
     `;
     return rows;
   }
-  // L2 drill: per-subcategory.
+  // L2 drill: per-subcategory. Reads signals_hourly_by_subcat. Buckets
+  // there are hourly; both macro variants re-bucket from hourly (1h or
+  // 1d). DISTINCT whales summed across hours is approximate (may
+  // double-count cross-hour activity) — same trade-off the L1 macro
+  // path makes when summing signals_hourly.
   if (drillCategory !== null) {
     const rows = await sql<AggRow[]>`
       SELECT
-        to_char(time_bucket(${bucketInterval}::interval, ts) AT TIME ZONE 'UTC',
+        to_char(time_bucket(${bucketInterval}::interval, bucket) AT TIME ZONE 'UTC',
                 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
-        subcategory                                                   AS category,
-        COUNT(*)::bigint                                              AS signal_count,
-        COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)    AS buy_volume_usd,
-        COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS realized_pnl_sum,
-        COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint              AS win_count,
-        COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint              AS loss_count,
-        COUNT(DISTINCT whale_addr)::bigint                            AS unique_whales
-      FROM signals
-      WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
+        subcategory                                          AS category,
+        COALESCE(SUM(signal_count), 0)::bigint               AS signal_count,
+        COALESCE(SUM(buy_volume_usd), 0)                     AS buy_volume_usd,
+        COALESCE(SUM(realized_pnl_sum), 0)                   AS realized_pnl_sum,
+        COALESCE(SUM(win_count), 0)::bigint                  AS win_count,
+        COALESCE(SUM(loss_count), 0)::bigint                 AS loss_count,
+        COALESCE(SUM(unique_whales), 0)::bigint              AS unique_whales
+      FROM signals_hourly_by_subcat
+      WHERE bucket >= NOW() - (${windowInterval}::interval)
         AND category = ${drillCategory}
-        AND subcategory IS NOT NULL
-      GROUP BY bucket, subcategory
-      ORDER BY bucket
+      GROUP BY 1, subcategory
+      ORDER BY 1
     `;
     return rows;
   }

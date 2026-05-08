@@ -150,6 +150,39 @@ SELECT add_continuous_aggregate_policy('signals_hourly_by_whale',
   if_not_exists   => TRUE
 );
 
+-- ══════════════════════════════════════════
+-- Continuous aggregate: hourly buckets per (category, subcategory)
+-- ══════════════════════════════════════════
+--
+-- Powers L2 drills (subcategory granularity) on PATTERN + MACRO modes.
+-- Without this, L2 drills had to GROUP BY raw signals by subcategory
+-- over wide windows; now they sum a small rollup keyed on
+-- (bucket, category, subcategory).
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS signals_hourly_by_subcat
+WITH (timescaledb.continuous) AS
+SELECT
+  time_bucket('1 hour', ts)                                              AS bucket,
+  category,
+  subcategory,
+  COUNT(*)::bigint                                                       AS signal_count,
+  COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)             AS buy_volume_usd,
+  COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS realized_pnl_sum,
+  COUNT(*) FILTER (WHERE realized_pnl > 0)::bigint                       AS win_count,
+  COUNT(*) FILTER (WHERE realized_pnl < 0)::bigint                       AS loss_count,
+  COUNT(DISTINCT whale_addr)::bigint                                     AS unique_whales
+FROM signals
+WHERE subcategory IS NOT NULL
+GROUP BY bucket, category, subcategory
+WITH NO DATA;
+
+SELECT add_continuous_aggregate_policy('signals_hourly_by_subcat',
+  start_offset    => INTERVAL '95 days',
+  end_offset      => INTERVAL '1 minute',
+  schedule_interval => INTERVAL '5 minutes',
+  if_not_exists   => TRUE
+);
+
 -- Real-time aggregation: union materialized buckets with raw signals for the
 -- still-open current bucket. Without this, hourly buckets only appear in the
 -- view AFTER they end + end_offset → the LIVE 24h heatmap silently dropped
@@ -157,6 +190,7 @@ SELECT add_continuous_aggregate_policy('signals_hourly_by_whale',
 ALTER MATERIALIZED VIEW signals_hourly             SET (timescaledb.materialized_only = false);
 ALTER MATERIALIZED VIEW signals_5min               SET (timescaledb.materialized_only = false);
 ALTER MATERIALIZED VIEW signals_hourly_by_whale    SET (timescaledb.materialized_only = false);
+ALTER MATERIALIZED VIEW signals_hourly_by_subcat   SET (timescaledb.materialized_only = false);
 
 -- ══════════════════════════════════════════
 -- Compression policy (compress chunks older than 7 days)
