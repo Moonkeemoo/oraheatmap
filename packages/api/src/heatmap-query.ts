@@ -622,14 +622,16 @@ export async function queryActiveWhalesInWindow(
   limit: number = 50,
 ): Promise<ReadonlyArray<string>> {
   type AddrRow = { whale_addr: string };
+  // Reads the per-whale hourly CAGG. For windows that span 1+ hour
+  // (everywhere ONLINE is exposed in the UI: 1h+) the rollup gives the
+  // same ranking as a raw GROUP BY at a fraction of the cost.
   const rows = await sql<AddrRow[]>`
     SELECT whale_addr
-    FROM signals
-    WHERE ts >= NOW() - (${windowMinutes} * INTERVAL '1 minute')
-      AND ts <= NOW()
+    FROM signals_hourly_by_whale
+    WHERE bucket >= NOW() - (${windowMinutes} * INTERVAL '1 minute')
       AND whale_addr ~ '^0x[0-9a-f]{40}$'
     GROUP BY whale_addr
-    ORDER BY COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0) DESC
+    ORDER BY COALESCE(SUM(buy_volume_usd), 0) DESC
     LIMIT ${limit}
   `;
   return rows.map((r) => r.whale_addr);
@@ -1297,6 +1299,9 @@ export async function queryTopWhales(
   // (e.g. "0xADDR-TIMESTAMP" composites). Skip anything that isn't a
   // canonical 42-char 0x-prefixed lowercase hex so the popover stays clean.
   if (drillCategory !== null) {
+    // Drilled: per-category leaderboard. The per-whale CAGG doesn't carry
+    // category, so this stays on raw `signals` — the drill predicate is
+    // selective enough to keep the scan reasonable.
     return sql<TopWhaleRow[]>`
       SELECT whale_addr,
         COUNT(*)::bigint                                                       AS signals,
@@ -1311,13 +1316,17 @@ export async function queryTopWhales(
       LIMIT ${limit}
     `;
   }
+  // No-drill: read straight from the per-whale hourly CAGG. The hex
+  // regex stays in the WHERE so non-wallet `user` ids never make the
+  // popover. This was the dominant cost on /api/heatmap LIVE 12d/12w —
+  // ~19s on raw, sub-second on the rollup.
   return sql<TopWhaleRow[]>`
     SELECT whale_addr,
-      COUNT(*)::bigint                                                       AS signals,
-      COALESCE(SUM(size * price) FILTER (WHERE side = 'BUY'), 0)             AS volume_usd,
-      COALESCE(SUM(realized_pnl) FILTER (WHERE realized_pnl IS NOT NULL), 0) AS pnl_usd
-    FROM signals
-    WHERE ts >= NOW() - (${windowInterval}::interval) AND ts <= NOW()
+      COALESCE(SUM(signal_count), 0)::bigint     AS signals,
+      COALESCE(SUM(buy_volume_usd), 0)           AS volume_usd,
+      COALESCE(SUM(realized_pnl_sum), 0)         AS pnl_usd
+    FROM signals_hourly_by_whale
+    WHERE bucket >= NOW() - (${windowInterval}::interval)
       AND whale_addr ~ '^0x[0-9a-f]{40}$'
     GROUP BY whale_addr
     ORDER BY volume_usd DESC, signals DESC
