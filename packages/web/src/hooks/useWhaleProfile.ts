@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { fetchWhaleProfile } from "@/lib/api";
+import { fetchWhaleProfile, isAbortError } from "@/lib/api";
 import type { LiveRange, WhaleProfile } from "@/lib/types";
 
 const REFRESH_MS: Record<LiveRange, number> = {
@@ -39,23 +39,25 @@ export function useWhaleProfile(args: {
     }
     setData(null);
     setLoading(true);
+    const ac = new AbortController();
     const fetchOnce = async (): Promise<void> => {
       try {
-        const r = await fetchWhaleProfile({ addr: args.addr!, range: args.range });
-        if (cancelledRef.current) return;
+        const r = await fetchWhaleProfile({ addr: args.addr!, range: args.range }, ac.signal);
+        if (ac.signal.aborted) return;
         setData(r);
         setError(null);
       } catch (err) {
-        if (cancelledRef.current) return;
+        if (ac.signal.aborted || isAbortError(err)) return;
         setError((err as Error).message);
       } finally {
-        if (!cancelledRef.current) setLoading(false);
+        if (!ac.signal.aborted) setLoading(false);
       }
     };
     void fetchOnce();
     const id = setInterval(() => void fetchOnce(), REFRESH_MS[args.range]);
     return () => {
       cancelledRef.current = true;
+      ac.abort();
       clearInterval(id);
     };
   }, [args.addr, args.range]);

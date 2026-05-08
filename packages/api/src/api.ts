@@ -195,6 +195,35 @@ export function createApi(deps: ApiDeps) {
       const user = await readAuthFromHeaders(request.headers);
       return { user };
     })
+    // Bundled init endpoint: user + row-orders + watchlist in a single
+    // round-trip. Replaces the historical /api/me + /api/me/row-order +
+    // /api/me/watchlist trio that the dashboard fired in parallel on
+    // mount — same data, but one connection from the pool, one TLS round
+    // trip, one cookie verification. Anonymous users get the empty
+    // shape; the auth gate stays client-side.
+    .get("/api/me/init", async ({ request }) => {
+      const user = await readAuthFromHeaders(request.headers);
+      if (!user?.id) {
+        return { user: null, orders: {}, watchlist: [] as string[] };
+      }
+      const [orderRows, watchRows] = await Promise.all([
+        deps.sql<{ scope: string; ordered_keys: string[] }[]>`
+          SELECT scope, ordered_keys
+          FROM user_row_orders
+          WHERE user_id = ${user.id}
+        `,
+        deps.sql<{ addrs: string[] }[]>`
+          SELECT addrs FROM user_whale_watchlist WHERE user_id = ${user.id}
+        `,
+      ]);
+      const orders: Record<string, string[]> = {};
+      for (const r of orderRows) orders[r.scope] = r.ordered_keys;
+      return {
+        user,
+        orders,
+        watchlist: watchRows[0]?.addrs ?? [],
+      };
+    })
     // ── Per-user heatmap row order ──────────────────────────────────────
     // Read all scopes for the current user in a single round-trip — payload
     // is small (a few short string arrays per heatmap level the user touched)
@@ -880,8 +909,14 @@ export function createApi(deps: ApiDeps) {
         const cid = query.conditionId ?? null;
         // Pass timestamps as ISO strings, not Date objects — postgres-js
         // chokes on Date when interpolated through nested sql`` fragments.
-        const fromTs = query.fromTs ?? null;
+        // Floor `fromTs` at NOW()-30d when missing: an unbounded scan of
+        // `signals` (90d × ~7M rows) under highlights' GROUP BY tipped
+        // request times into the multi-second range and contributed to
+        // the perceived dashboard sluggishness.
         const toTs = query.toTs ?? new Date().toISOString();
+        const fromTs =
+          query.fromTs ??
+          new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
         const metric = query.metric as "pnl" | "volume" | "signals" | "whales";
 
         // Cache key: query-param tuple. Round timestamps to the nearest

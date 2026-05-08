@@ -25,17 +25,30 @@ export function apiBase(): string {
   return "http://localhost:3001";
 }
 
-export async function fetchHeatmap(args: {
-  mode: Mode;
-  subject: import("./types").Subject;
-  range?: LiveRange;
-  kind?: PatternKind;
-  macroKind?: import("./types").MacroKind;
-  lookbackDays?: number;
-  drillCategory?: Category | null;
-  drillSubcategory?: string | null;
-  whaleSet?: import("./types").WhaleSet;
-}): Promise<HeatmapResponse> {
+/** Treat any DOMException whose .name is "AbortError" (or the older string
+ *  message "The operation was aborted.") as an intentional cancellation —
+ *  hook callers swallow these silently rather than rendering an error. */
+export function isAbortError(err: unknown): boolean {
+  if (!err) return false;
+  const e = err as { name?: string; message?: string };
+  if (e.name === "AbortError") return true;
+  return typeof e.message === "string" && e.message.includes("aborted");
+}
+
+export async function fetchHeatmap(
+  args: {
+    mode: Mode;
+    subject: import("./types").Subject;
+    range?: LiveRange;
+    kind?: PatternKind;
+    macroKind?: import("./types").MacroKind;
+    lookbackDays?: number;
+    drillCategory?: Category | null;
+    drillSubcategory?: string | null;
+    whaleSet?: import("./types").WhaleSet;
+  },
+  signal?: AbortSignal,
+): Promise<HeatmapResponse> {
   const params = new URLSearchParams();
   params.set("mode", args.mode);
   if (args.subject === "whales") params.set("subject", "whales");
@@ -64,6 +77,7 @@ export async function fetchHeatmap(args: {
     // entirely; SSE keeps the visible grid current via optimistic
     // updates in heatmap-apply.
     credentials: "include",
+    signal,
   });
   if (!res.ok) {
     throw new Error(`heatmap fetch failed: ${res.status}`);
@@ -75,10 +89,13 @@ export function streamUrl(): string {
   return `${apiBase()}/api/stream`;
 }
 
-export async function fetchAllRowOrders(): Promise<Record<string, string[]>> {
+export async function fetchAllRowOrders(
+  signal?: AbortSignal,
+): Promise<Record<string, string[]>> {
   const res = await fetch(`${apiBase()}/api/me/row-order`, {
     cache: "no-store",
     credentials: "include",
+    signal,
   });
   if (res.status === 401) return {};
   if (!res.ok) throw new Error(`row-order fetch failed: ${res.status}`);
@@ -98,14 +115,15 @@ export async function saveRowOrder(scope: string, orderedKeys: string[]): Promis
   }
 }
 
-export async function fetchWhaleProfile(args: {
-  addr: string;
-  range: LiveRange;
-}): Promise<WhaleProfile> {
+export async function fetchWhaleProfile(
+  args: { addr: string; range: LiveRange },
+  signal?: AbortSignal,
+): Promise<WhaleProfile> {
   const params = new URLSearchParams({ addr: args.addr, range: args.range });
   const res = await fetch(`${apiBase()}/api/whale?${params.toString()}`, {
     cache: "no-store",
     credentials: "include",
+    signal,
   });
   if (!res.ok) {
     throw new Error(`whale profile fetch failed: ${res.status}`);

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, isAbortError } from "@/lib/api";
 
 export type ProbabilityPoint = { t: number; p: number };
 export type OutcomeSeries = {
@@ -45,32 +45,32 @@ export function useMarketHistory(
       setError(null);
       return;
     }
-    let cancelled = false;
+    const ac = new AbortController();
     setLoading(true);
     setError(null);
     fetch(
       `${apiBase()}/api/market-history?conditionId=${encodeURIComponent(conditionId)}&interval=${interval}`,
-      { cache: "no-store", credentials: "include" },
+      { cache: "no-store", credentials: "include", signal: ac.signal },
     )
       .then(async (r) => {
         if (!r.ok) throw new Error(`market-history ${r.status}`);
         return (await r.json()) as MarketHistory;
       })
       .then((body) => {
-        if (cancelled) return;
+        if (ac.signal.aborted) return;
         setData(body);
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (ac.signal.aborted || isAbortError(err)) return;
         setError((err as Error).message);
         setData(null);
       })
       .finally(() => {
-        if (cancelled) return;
+        if (ac.signal.aborted) return;
         setLoading(false);
       });
     return () => {
-      cancelled = true;
+      ac.abort();
     };
   }, [enabled, conditionId, interval]);
 

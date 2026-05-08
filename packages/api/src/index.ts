@@ -1,4 +1,5 @@
 import { createApi } from "./api";
+import { startCacheWarmer } from "./cache-warmer";
 import { createDb, createSignalBuffer } from "./db";
 import { loadEnv } from "./env";
 import { createGammaCache } from "./gamma-cache";
@@ -104,9 +105,14 @@ async function main(): Promise<void> {
   const server = api.listen({ port: env.PORT, hostname: env.HOST });
   log.info("api listening", { port: env.PORT, host: env.HOST });
 
+  // Background loopback warmer: keeps the heatmap SWR cache primed for
+  // the popular tab combos so even bigger time-frames open instantly.
+  const stopWarmer = startCacheWarmer({ port: env.PORT });
+
   const shutdown = async (signal: string): Promise<void> => {
     log.info("shutdown", { signal });
     clearInterval(statsTimer);
+    stopWarmer();
     // Order: stop accepting new HTTP first, then stop signal sources (ingestor
     // + resolution watcher), then drain the DB buffer + position state, then
     // close pg pool.

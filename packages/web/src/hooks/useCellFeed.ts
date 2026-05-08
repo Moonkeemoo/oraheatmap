@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, isAbortError } from "@/lib/api";
 import type { SignalEvent } from "@/lib/types";
 
 const MAX_FEED = 30;
@@ -46,7 +46,7 @@ export function useCellFeed({
       setError(null);
       return;
     }
-    let cancelled = false;
+    const ac = new AbortController();
     setLoading(true);
     setError(null);
     const params = new URLSearchParams({ category: scope.category, limit: "20" });
@@ -55,25 +55,26 @@ export function useCellFeed({
     fetch(`${apiBase()}/api/cell-feed?${params.toString()}`, {
       cache: "no-store",
       credentials: "include",
+      signal: ac.signal,
     })
       .then(async (r) => {
         if (!r.ok) throw new Error(`cell-feed ${r.status}`);
         return (await r.json()) as { signals: SignalEvent[] };
       })
       .then((body) => {
-        if (cancelled) return;
+        if (ac.signal.aborted) return;
         setEntries(body.signals.map((s) => ({ ...s, isFresh: false })));
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (ac.signal.aborted || isAbortError(err)) return;
         setError((err as Error).message);
       })
       .finally(() => {
-        if (cancelled) return;
+        if (ac.signal.aborted) return;
         setLoading(false);
       });
     return () => {
-      cancelled = true;
+      ac.abort();
     };
   }, [enabled, scope?.category, scope?.subcategory, scope?.conditionId]);
 

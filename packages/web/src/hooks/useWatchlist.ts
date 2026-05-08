@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 
 import { apiBase } from "@/lib/api";
+import { loadMeInit } from "@/lib/me-init";
 
 /**
  * Per-user pinned-whales set.
@@ -38,14 +39,16 @@ export type UseWatchlistResult = {
 };
 
 export function useWatchlist(): UseWatchlistResult {
-  const { status } = useSession();
+  const { status, data } = useSession();
   const isAuthed = status === "authenticated";
+  const userId = (data?.user as { id?: string } | undefined)?.id ?? null;
   const [addrs, setAddrs] = useState<ReadonlyArray<string>>([]);
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
 
-  // Fetch on auth load. Anon users skip the network call and just
-  // mark ready=true so callers can render their CTA.
+  // Read from the bundled /api/me/init loader. The first hook to call
+  // this (useRowOrder or this one) triggers the fetch; subsequent hooks
+  // share the in-flight promise — one round trip for the whole sidebar.
   useEffect(() => {
     if (!isAuthed) {
       setAddrs([]);
@@ -54,28 +57,16 @@ export function useWatchlist(): UseWatchlistResult {
     }
     let cancelled = false;
     setLoading(true);
-    void (async () => {
-      try {
-        const res = await fetch(`${apiBase()}/api/me/watchlist`, {
-          credentials: "include",
-        });
-        if (!res.ok) return;
-        const json = (await res.json()) as { addrs: string[] };
-        if (cancelled) return;
-        setAddrs(json.addrs ?? []);
-      } catch {
-        // Silent — empty list is the safe fallback.
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-          setReady(true);
-        }
-      }
-    })();
+    void loadMeInit(userId).then((init) => {
+      if (cancelled) return;
+      setAddrs(init.watchlist ?? []);
+      setLoading(false);
+      setReady(true);
+    });
     return () => {
       cancelled = true;
     };
-  }, [isAuthed]);
+  }, [isAuthed, userId]);
 
   const persist = useCallback(async (next: ReadonlyArray<string>) => {
     if (!isAuthed) return;

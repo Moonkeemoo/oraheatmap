@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, isAbortError } from "@/lib/api";
 import type { PatternKind } from "@/lib/types";
 
 export type RecurringWhale = {
@@ -80,7 +80,7 @@ export function useRecurringWhales({
       setError(null);
       return;
     }
-    let cancelled = false;
+    const ac = new AbortController();
     setLoading(true);
     setError(null);
     const params = new URLSearchParams({
@@ -93,25 +93,26 @@ export function useRecurringWhales({
     if (scope.conditionId) params.set("conditionId", scope.conditionId);
     fetch(`${apiBase()}/api/recurring-whales?${params.toString()}`, {
       credentials: "include",
+      signal: ac.signal,
     })
       .then(async (r) => {
         if (!r.ok) throw new Error(`recurring-whales ${r.status}`);
         return (await r.json()) as RecurringWhalesResult;
       })
       .then((body) => {
-        if (cancelled) return;
+        if (ac.signal.aborted) return;
         setData(body);
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (ac.signal.aborted || isAbortError(err)) return;
         setError((err as Error).message);
       })
       .finally(() => {
-        if (cancelled) return;
+        if (ac.signal.aborted) return;
         setLoading(false);
       });
     return () => {
-      cancelled = true;
+      ac.abort();
     };
   }, [
     enabled,

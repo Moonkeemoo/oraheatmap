@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { fetchHeatmap } from "@/lib/api";
+import { fetchHeatmap, isAbortError } from "@/lib/api";
 import type {
   Category,
   HeatmapResponse,
@@ -121,7 +121,7 @@ export function useHeatmap(args: {
       : REFRESH_MS_PATTERN;
 
   useEffect(() => {
-    let cancelled = false;
+    const ac = new AbortController();
     const key = cacheKeyFor(args);
 
     // Hydrate from cache synchronously if we have a stale snapshot
@@ -141,24 +141,24 @@ export function useHeatmap(args: {
 
     const doFetch = async (): Promise<void> => {
       try {
-        const r = await fetchHeatmap(args);
-        if (cancelled) return;
+        const r = await fetchHeatmap(args, ac.signal);
+        if (ac.signal.aborted) return;
         cachePut(key, r);
         setData(r);
         lastAppliedKeyRef.current = key;
         setError(null);
       } catch (err) {
-        if (cancelled) return;
+        if (ac.signal.aborted || isAbortError(err)) return;
         setError((err as Error).message);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!ac.signal.aborted) setLoading(false);
       }
     };
 
     void doFetch();
     const id = setInterval(() => void doFetch(), refreshMs);
     return () => {
-      cancelled = true;
+      ac.abort();
       clearInterval(id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 
-import { fetchAllRowOrders, saveRowOrder } from "@/lib/api";
+import { saveRowOrder } from "@/lib/api";
+import { loadMeInit } from "@/lib/me-init";
 
 /**
  * Per-user heatmap row ordering. The hook fetches ALL the user's saved
@@ -25,8 +26,9 @@ export type UseRowOrder = {
 const SAVE_DEBOUNCE_MS = 400;
 
 export function useRowOrder(): UseRowOrder {
-  const { status } = useSession();
+  const { status, data } = useSession();
   const isAuthed = status === "authenticated";
+  const userId = (data?.user as { id?: string } | undefined)?.id ?? null;
   const [orders, setOrders] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState<boolean>(false);
   // Debounce timers keyed by scope — independent so reordering scope A doesn't
@@ -40,12 +42,14 @@ export function useRowOrder(): UseRowOrder {
     }
     let cancelled = false;
     setLoading(true);
-    fetchAllRowOrders()
-      .then((map) => {
-        if (!cancelled) setOrders(map);
+    void loadMeInit(userId)
+      .then((init) => {
+        if (cancelled) return;
+        setOrders(init.orders ?? {});
       })
       .catch(() => {
-        if (!cancelled) setOrders({});
+        if (cancelled) return;
+        setOrders({});
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -53,7 +57,7 @@ export function useRowOrder(): UseRowOrder {
     return () => {
       cancelled = true;
     };
-  }, [isAuthed]);
+  }, [isAuthed, userId]);
 
   // Cancel any pending writes on unmount so we don't fire after teardown.
   useEffect(() => {
