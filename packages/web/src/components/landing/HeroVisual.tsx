@@ -46,10 +46,10 @@ const CATS: ReadonlyArray<string> = [
   "CLIMATE",
 ];
 
-const WEEK_LABELS: ReadonlyArray<string> = [
-  "Wk-11", "Wk-10", "Wk-9", "Wk-8", "Wk-7", "Wk-6",
-  "Wk-5", "Wk-4", "Wk-3", "Wk-2", "Wk-1", "Now",
-];
+// 12-week timeline header — labelless except for the rightmost "Now"
+// indicator. The week-labels were noisy and didn't add information
+// (the heatmap is the data; the header is just a temporal anchor).
+const WEEK_TICKS = 12;
 
 const WHALE_NAMES: ReadonlyArray<string> = [
   "Theo4", "0xAce…f7", "GammaGod", "@PrincessOfCo",
@@ -200,27 +200,14 @@ export function HeroVisual() {
     }
     setTapeHtml(items.join("") + items.join(""));
 
-    // Bail on reduced-motion. Seed a single static grid pattern so the
-    // hero still looks alive (just no movement). Cheaper than running
-    // the engine and forcing transitions to none.
-    const prefersReducedMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (prefersReducedMotion) {
-      cellsRef.current.forEach((cell, idx) => {
-        if (!cell.el) return;
-        const r = Math.floor(idx / COLS);
-        const c = idx % COLS;
-        // Deterministic checker-ish pattern, seeded so it reads as data.
-        const seed = Math.sin(r * 1.7 + c * 0.6) * 0.5 + Math.cos(c * 0.13) * 0.4;
-        cell.el.style.background = pnlBg(clamp(seed, -0.85, 0.85));
-        cell.el.style.transition = "none";
-      });
-      if (statPnlRef.current) statPnlRef.current.textContent = "+$184,400";
-      if (statWrRef.current) statWrRef.current.textContent = "68%";
-      if (statWhalesRef.current) statWhalesRef.current.textContent = "48";
-      return;
-    }
+    // Note: previously bailed on `prefers-reduced-motion` to a static
+    // grid. Removed because (a) the animation IS the marketing demo —
+    // a frozen heatmap defeats the hero — and (b) iOS in battery-saver
+    // / Telegram in-app browser silently flips this flag on for many
+    // users, which made the hero look broken on phone. If
+    // accessibility requires a fallback later, prefer toning down the
+    // most violent effects (screenFlash, sweep beams, scanline)
+    // instead of bailing entirely.
 
     // ── Engine ──────────────────────────────────────────────────────
     const events = buildEvents();
@@ -628,40 +615,57 @@ export function HeroVisual() {
           ))}
         </div>
 
-        <div style={{ display: "grid", gridTemplateRows: "20px 1fr", overflow: "hidden", minHeight: 0 }}>
-          <div style={{ display: "grid", gridTemplateColumns: `repeat(${WEEK_LABELS.length}, 1fr)`, gap: 1 }}>
-            {WEEK_LABELS.map((wl, i) => {
-              const isNow = i === WEEK_LABELS.length - 1;
+        <div style={{ display: "grid", gridTemplateRows: "16px 1fr", overflow: "hidden", minHeight: 0 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: `repeat(${WEEK_TICKS}, 1fr)`,
+              gap: 1,
+              alignItems: "end",
+            }}
+          >
+            {Array.from({ length: WEEK_TICKS }).map((_, i) => {
+              const isNow = i === WEEK_TICKS - 1;
               return (
                 <div
-                  key={wl}
+                  // eslint-disable-next-line react/no-array-index-key
+                  key={i}
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 8.5,
-                    letterSpacing: "0.18em",
-                    textTransform: "uppercase",
-                    color: isNow ? T.win : T.textDim,
-                    borderBottom: `1px solid ${isNow ? T.win : T.line}`,
+                    justifyContent: isNow ? "flex-end" : "center",
+                    paddingRight: isNow ? 4 : 0,
                     paddingBottom: 3,
-                    fontWeight: 500,
+                    borderBottom: `1px solid ${isNow ? T.win : T.line}`,
+                    height: "100%",
                   }}
                 >
                   {isNow && (
                     <span
                       style={{
-                        width: 5,
-                        height: 5,
-                        background: T.win,
-                        borderRadius: "50%",
-                        marginRight: 5,
-                        boxShadow: "0 0 6px rgba(63,185,80,0.7)",
-                        animation: "hvPulse 1.4s infinite",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        color: T.win,
+                        fontSize: 8,
+                        letterSpacing: "0.2em",
+                        textTransform: "uppercase",
+                        fontWeight: 600,
                       }}
-                    />
+                    >
+                      <span
+                        style={{
+                          width: 5,
+                          height: 5,
+                          background: T.win,
+                          borderRadius: "50%",
+                          boxShadow: "0 0 6px rgba(63,185,80,0.7)",
+                          animation: "hvPulse 1.4s infinite",
+                        }}
+                      />
+                      Now
+                    </span>
                   )}
-                  {wl}
                 </div>
               );
             })}
