@@ -1,983 +1,1000 @@
 "use client";
 
-import { useEffect, useReducer, useRef, useState } from "react";
-import { TOKENS } from "@/lib/tokens";
+import { useEffect, useRef, useState } from "react";
 
 /**
- * Animated heatmap mock for the hero. Designed to read as a real
- * screenshot of the product, not a generic "alive cells" loop:
+ * Hero visual — port of `marketing-assets/marketing-demo.html` into a
+ * React component. Self-contained 18s loop that tells the product story
+ * in 5 phases: wave fill (0–3s) → row sweeps (3–6s) → col sweeps + dense
+ * pulses (6–9s) → whale callouts with screen-flash (9–13.5s) → cooldown
+ * (13.5–18s). Composite alpha colour formula matches `lib/colors.ts`.
  *
- *   - Header chrome mirrors the actual app — mode tab (LIVE | PATTERN),
- *     range chips (1h | 24h | 12d | 12w), metric chips (PNL | VOLUME |
- *     SIGNALS | WHALES), live status pill on the right.
- *   - Category labels carry their real palette colour from
- *     lib/categories.ts so a viewer instantly recognises the shape.
- *   - Cells are seeded with cluster patterns (a "hot streak" in Crypto
- *     col 11-14, a sustained dip in Finance, an evening spike in
- *     Sports), not a single sine wave — looks like real PnL data.
- *   - Trades fly in from the left, land on a cell that flashes, and
- *     pop a richer mini-tooltip styled like the real cell drawer
- *     header (4-stat row + whale + market label).
- *   - Convergence: 4 trades hit the same cell in succession → "🐋×N
- *     converging" badge lights up.
- *   - Bottom time strip with hourly-ish ticks and a NOW marker on the
- *     right edge so the sliding-window narrative reads at a glance.
+ * Implementation: cells are imperative DOM (refs + classList) instead of
+ * React state, so 672 cells × ~60fps doesn't thrash reconciliation. Tape
+ * ticker is built on mount inside useEffect to dodge SSR/CSR hydration
+ * mismatch from Math.random.
  */
 
-type RowDef = { label: string; color: string; tilt: number };
+// Local marketing palette — slightly off the app TOKENS so the hero
+// reads as its own stylized artifact (deeper greens, brighter whites).
+const T = {
+  bg: "#0a0d12",
+  base: "#0e1218",
+  line: "#1a2030",
+  text: "#e6eef7",
+  textDim: "#6b7a8f",
+  textMid: "#9aa8bd",
+  win: "#3fb950",
+  winText: "#dcffe2",
+  loss: "#f85149",
+  lossText: "#ffe2e0",
+} as const;
 
-// Mirrors the categoryMeta palette in lib/categories.ts so the badge
-// strip on the left reads as the real product, not a generic mock.
-const ROWS: ReadonlyArray<RowDef> = [
-  { label: "POLITICS", color: "#1f6feb", tilt:  0.55 },
-  { label: "SPORTS",   color: "#f85149", tilt: -0.35 },
-  { label: "CRYPTO",   color: "#f0b429", tilt:  0.25 },
-  { label: "FINANCE",  color: "#39d2c0", tilt: -0.50 },
-  { label: "TECH",     color: "#3fb950", tilt:  0.15 },
-  { label: "WORLD",    color: "#58a6ff", tilt:  0.40 },
-  { label: "CULTURE",  color: "#a371f7", tilt: -0.20 },
-  { label: "CLIMATE",  color: "#768390", tilt:  0.05 },
+const COLS = 84;
+const ROWS = 8;
+const TODAY_COL_START = 77; // last week tinted (last 7 of 84 cols)
+const LOOP_MS = 18_000;
+
+const CATS: ReadonlyArray<string> = [
+  "POLITICS",
+  "SPORTS",
+  "CRYPTO",
+  "FINANCE",
+  "TECH",
+  "WORLD",
+  "CULTURE",
+  "CLIMATE",
 ];
-const COLS = 18;
 
-// Hot/cold cluster definitions per row. Each entry boosts a specific
-// span of columns by a signed amount — gives the heatmap a "real data"
-// shape (Politics rallying late, Sports dropping mid-window, Crypto
-// recent rip, Finance bleeding throughout).
-type Cluster = { from: number; to: number; boost: number };
-const ROW_CLUSTERS: ReadonlyArray<ReadonlyArray<Cluster>> = [
-  /* POLITICS */ [{ from: 8,  to: 17, boost:  0.55 }, { from: 14, to: 17, boost:  0.30 }],
-  /* SPORTS   */ [{ from: 2,  to:  9, boost: -0.50 }, { from: 12, to: 17, boost: -0.35 }],
-  /* CRYPTO   */ [{ from: 10, to: 15, boost:  0.50 }, { from: 16, to: 17, boost:  0.65 }],
-  /* FINANCE  */ [{ from: 0,  to: 17, boost: -0.40 }, { from: 5,  to:  9, boost: -0.30 }],
-  /* TECH     */ [{ from: 4,  to:  9, boost:  0.30 }, { from: 14, to: 17, boost: -0.40 }],
-  /* WORLD    */ [{ from: 0,  to:  6, boost:  0.40 }, { from: 11, to: 15, boost:  0.35 }],
-  /* CULTURE  */ [{ from: 6,  to: 13, boost: -0.45 }],
-  /* CLIMATE  */ [{ from: 2,  to:  5, boost: -0.30 }, { from: 9,  to: 12, boost:  0.40 }],
+const WEEK_LABELS: ReadonlyArray<string> = [
+  "Wk-11", "Wk-10", "Wk-9", "Wk-8", "Wk-7", "Wk-6",
+  "Wk-5", "Wk-4", "Wk-3", "Wk-2", "Wk-1", "Now",
 ];
 
-function seedSigned(row: number, col: number): number {
-  const tilt = ROWS[row]!.tilt;
-  // Soft phase noise — keeps neighbouring cells from being identical.
-  const phase = Math.sin(row * 1.7 + col * 0.6) * 0.18;
-  let signed = tilt * 0.5 + phase;
-  for (const cl of ROW_CLUSTERS[row] ?? []) {
-    if (col >= cl.from && col <= cl.to) {
-      // Smooth bell within the cluster span so the boost peaks in the middle.
-      const t = (col - cl.from) / Math.max(1, cl.to - cl.from);
-      const bell = 0.5 - 0.5 * Math.cos(t * Math.PI);
-      signed += cl.boost * (0.35 + 0.65 * bell);
+const WHALE_NAMES: ReadonlyArray<string> = [
+  "Theo4", "0xAce…f7", "GammaGod", "@PrincessOfCo",
+  "@BetMaker", "@EVMaxi", "RoenickFan", "0xWhale99",
+  "@SolEdge", "@DegenJury",
+];
+
+// Composite (R,G,B,a) over base #0e1218. Mirrors the alpha formula in
+// /lib/colors.ts so the heatmap hero reads in the same colour space as
+// the real product.
+function pnlBg(v: number): string {
+  const intensity = Math.abs(v);
+  if (intensity < 0.04) return "rgb(14,18,24)";
+  const isPos = v > 0;
+  const a = 0.08 + Math.pow(intensity, 0.7) * 0.77;
+  const baseR = 0x0e, baseG = 0x12, baseB = 0x18;
+  const colR = isPos ? 63 : 248;
+  const colG = isPos ? 185 : 81;
+  const colB = isPos ? 80 : 73;
+  const r = Math.round(colR * a + baseR * (1 - a));
+  const g = Math.round(colG * a + baseG * (1 - a));
+  const b = Math.round(colB * a + baseB * (1 - a));
+  return `rgb(${r},${g},${b})`;
+}
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const rand = (a: number, b: number) => a + Math.random() * (b - a);
+const irand = (n: number) => Math.floor(Math.random() * n);
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+type AnimEvent =
+  | { at: number; kind: "set"; r: number; c: number; value: number }
+  | { at: number; kind: "pulse"; r: number; c: number; soft?: boolean }
+  | { at: number; kind: "flicker"; r: number; c: number }
+  | { at: number; kind: "row-sweep"; r: number }
+  | { at: number; kind: "col-sweep"; c: number }
+  | { at: number; kind: "whale"; r: number; c: number; label: string; amount: number; loss: boolean };
+
+function buildEvents(): AnimEvent[] {
+  const out: AnimEvent[] = [];
+
+  // PHASE 1 (0–3s): wave fill — cols left → right
+  for (let c = 0; c < COLS; c++) {
+    const at = lerp(200, 3000, c / COLS);
+    for (let r = 0; r < ROWS; r++) {
+      if (Math.random() < 0.62) {
+        const isWin = Math.random() > 0.30;
+        const mag = rand(0.3, isWin ? 0.95 : 0.85);
+        out.push({ at: at + rand(0, 60), kind: "set", r, c, value: isWin ? mag : -mag });
+      }
     }
   }
-  return Math.max(-1, Math.min(1, signed));
-}
 
-function pnlColor(signed: number): { color: string; alpha: number } {
-  const a = Math.abs(signed);
-  if (a < 0.06) return { color: "#262d36", alpha: 0.55 };
-  return { color: signed > 0 ? "#3fb950" : "#f85149", alpha: 0.18 + a * 0.78 };
-}
-
-type Trade = {
-  id: number;
-  row: number;
-  col: number;
-  alias: string;
-  side: "BUY" | "SELL";
-  usd: string;
-  market: string;
-  /** ms since mount when trade was scheduled to land. */
-  landAt: number;
-};
-
-/** Whale presets paired with the category they typically trade in and a
- *  few representative markets. Reading two callouts in a row tells the
- *  story (different whale × side × market). cat indexes ROWS above. */
-const WHALE_POOL: ReadonlyArray<{ alias: string; cat: number; markets: ReadonlyArray<string> }> = [
-  { alias: "Theo4",         cat: 2, markets: ["BTC > $150k", "ETH ETF flows", "SOL > $300"] },
-  { alias: "@PrincessOfCo", cat: 0, markets: ["Trump 2028", "GOP Senate", "VP pick by July"] },
-  { alias: "0xAce…f7",      cat: 1, markets: ["Lakers vs Celtics", "Bills vs Eagles", "Yankees ML"] },
-  { alias: "@BetMaker",     cat: 3, markets: ["Fed rate cut Sep", "Oil > $90", "USDJPY > 155"] },
-  { alias: "GammaGod",      cat: 2, markets: ["BTC ATH by Q3", "ETH/BTC > 0.06", "XRP > $3"] },
-  { alias: "@EVMaxi",       cat: 4, markets: ["AI Bill passes", "OpenAI valuation", "TSMC > $200"] },
-  { alias: "RoenickFan",    cat: 1, markets: ["Chelsea wins EPL", "Real Madrid UCL", "Lakers conf"] },
-  { alias: "0xWhale99",     cat: 0, markets: ["Powell stays", "Election turnout > 70%", "SCOTUS ruling"] },
-  { alias: "@SolEdge",      cat: 2, markets: ["SOL flips ETH?", "Memecoin season", "DEX volume Q2"] },
-  { alias: "@DegenJury",    cat: 6, markets: ["Oscar Best Picture", "Grammy Album", "Eurovision"] },
-  { alias: "ClimateBro",    cat: 7, markets: ["NYC > 25°C Fri", "Hurricane landfall", "Arctic ice min"] },
-  { alias: "GeoWhale",      cat: 5, markets: ["UK election", "Brazil presidency", "EU summit deal"] },
-];
-
-const USD_OPTIONS = ["$8.4k", "$22k", "$48k", "$84k", "$120k", "$210k", "$310k", "$540k"];
-
-let nextId = 1;
-function newRandomTrade(now: number): Trade {
-  const sample = WHALE_POOL[Math.floor(Math.random() * WHALE_POOL.length)]!;
-  // Trades skew to recent columns — the "now" edge.
-  const col = COLS - 1 - Math.floor(Math.random() * 4);
-  return {
-    id: nextId++,
-    row: sample.cat,
-    col,
-    alias: sample.alias,
-    side: Math.random() > 0.35 ? "BUY" : "SELL",
-    usd: USD_OPTIONS[Math.floor(Math.random() * USD_OPTIONS.length)]!,
-    market: sample.markets[Math.floor(Math.random() * sample.markets.length)]!,
-    landAt: now + 1100, // 1.1s flight time
-  };
-}
-
-type State = {
-  inflight: ReadonlyArray<Trade>;
-  active: ReadonlyArray<{ row: number; col: number; until: number }>;
-  callout: {
-    row: number;
-    col: number;
-    alias: string;
-    side: "BUY" | "SELL";
-    usd: string;
-    market: string;
-    until: number;
-  } | null;
-  convergence: { row: number; col: number; count: number; until: number } | null;
-  counter: number;
-  /** Accumulated PnL-shift per cell driven by landed trades. Each BUY
-   *  bumps the cell signed by +SHIFT, each SELL by -SHIFT. Persists
-   *  for the lifetime of the mount so the heatmap visibly drifts as
-   *  trades flow in (just like the real product). Keyed "${row}:${col}". */
-  cellShift: Readonly<Record<string, number>>;
-};
-
-/** How much one trade nudges its target cell's signed value. BUY pulls
- *  toward green, SELL toward red. Combined with the seeded background
- *  via Math.max/Math.min(±1) in the renderer. */
-const TRADE_SHIFT = 0.22;
-
-type Action =
-  | { type: "schedule"; trade: Trade }
-  | { type: "land"; trade: Trade; now: number }
-  | { type: "convergeStart"; row: number; col: number; now: number }
-  | { type: "convergeBump"; now: number }
-  | { type: "convergeEnd"; until: number }
-  | { type: "tick"; now: number };
-
-function reduce(state: State, action: Action): State {
-  switch (action.type) {
-    case "schedule":
-      return { ...state, inflight: [...state.inflight, action.trade] };
-    case "land": {
-      const cellUntil = action.now + 1500;
-      const cellKey = `${action.trade.row}:${action.trade.col}`;
-      const delta = action.trade.side === "BUY" ? TRADE_SHIFT : -TRADE_SHIFT;
-      const prev = state.cellShift[cellKey] ?? 0;
-      const next = Math.max(-1, Math.min(1, prev + delta));
-      return {
-        ...state,
-        inflight: state.inflight.filter((t) => t.id !== action.trade.id),
-        active: [...state.active, { row: action.trade.row, col: action.trade.col, until: cellUntil }],
-        callout: {
-          row: action.trade.row,
-          col: action.trade.col,
-          alias: action.trade.alias,
-          side: action.trade.side,
-          usd: action.trade.usd,
-          market: action.trade.market,
-          until: action.now + 2400,
-        },
-        counter: state.counter + 1,
-        cellShift: { ...state.cellShift, [cellKey]: next },
-      };
-    }
-    case "convergeStart":
-      return { ...state, convergence: { row: action.row, col: action.col, count: 1, until: action.now + 9000 } };
-    case "convergeBump":
-      return state.convergence
-        ? { ...state, convergence: { ...state.convergence, count: state.convergence.count + 1, until: action.now + 9000 } }
-        : state;
-    case "convergeEnd":
-      return state.convergence ? { ...state, convergence: { ...state.convergence, until: action.until } } : state;
-    case "tick": {
-      const now = action.now;
-      return {
-        ...state,
-        active: state.active.filter((a) => a.until > now),
-        callout: state.callout && state.callout.until > now ? state.callout : null,
-        convergence: state.convergence && state.convergence.until > now ? state.convergence : null,
-      };
+  // PHASE 2 (3–6s): row sweeps top-to-bottom
+  for (let r = 0; r < ROWS; r++) {
+    out.push({ at: 3200 + r * 320, kind: "row-sweep", r });
+    for (let i = 0; i < 7; i++) {
+      out.push({
+        at: 3200 + r * 320 + rand(0, 320),
+        kind: "pulse",
+        r,
+        c: irand(COLS),
+      });
     }
   }
+
+  // PHASE 3 (6–9s): col sweeps + dense pulses
+  for (let i = 0; i < 9; i++) {
+    const c = 6 + i * 9 + irand(6);
+    if (c >= COLS) continue;
+    out.push({ at: 6000 + i * 320, kind: "col-sweep", c });
+  }
+  for (let i = 0; i < 80; i++) {
+    out.push({
+      at: lerp(6000, 9000, Math.random()),
+      kind: "pulse",
+      r: irand(ROWS),
+      c: irand(COLS),
+    });
+  }
+
+  // PHASE 4 (9–13.5s): whale callouts — 2 wins + 1 big loss
+  out.push({ at: 9300,  kind: "whale", r: 4, c: 76, label: WHALE_NAMES[0]!, amount:  48200, loss: false });
+  out.push({ at: 11000, kind: "whale", r: 6, c: 60, label: WHALE_NAMES[3]!, amount: -28400, loss: true });
+  out.push({ at: 12700, kind: "whale", r: 1, c: 48, label: WHALE_NAMES[2]!, amount:  31700, loss: false });
+  for (let i = 0; i < 60; i++) {
+    out.push({
+      at: lerp(9000, 13500, Math.random()),
+      kind: "pulse",
+      r: irand(ROWS),
+      c: irand(COLS),
+    });
+  }
+
+  // PHASE 5 (13.5–18s): cooldown — soft pulses + flickers
+  for (let i = 0; i < 24; i++) {
+    out.push({
+      at: lerp(13500, 17500, Math.random()),
+      kind: "pulse",
+      soft: true,
+      r: irand(ROWS),
+      c: irand(COLS),
+    });
+  }
+  for (let i = 0; i < 18; i++) {
+    out.push({
+      at: lerp(13500, 17500, Math.random()),
+      kind: "flicker",
+      r: irand(ROWS),
+      c: irand(COLS),
+    });
+  }
+
+  out.sort((a, b) => a.at - b.at);
+  return out;
 }
 
 export function HeroVisual() {
-  const [state, dispatch] = useReducer(reduce, {
-    inflight: [],
-    active: [],
-    callout: null,
-    convergence: null,
-    counter: 0,
-    cellShift: {},
-  });
-  const [tick, setTick] = useState(0);
-  const startedAt = useRef<number>(0);
-  if (startedAt.current === 0) startedAt.current = typeof window !== "undefined" ? Date.now() : 0;
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const cellsRef = useRef<Array<{ el: HTMLDivElement | null; value: number }>>(
+    Array.from({ length: ROWS * COLS }, () => ({ el: null, value: 0 })),
+  );
+  const labelsRef = useRef<Array<HTMLDivElement | null>>(
+    Array.from({ length: ROWS }, () => null),
+  );
+  const gridWrapRef = useRef<HTMLDivElement | null>(null);
+  const screenFlashRef = useRef<HTMLDivElement | null>(null);
+  const statPnlRef = useRef<HTMLDivElement | null>(null);
+  const statWrRef = useRef<HTMLDivElement | null>(null);
+  const statWhalesRef = useRef<HTMLDivElement | null>(null);
 
-  // Frame-ish tick — drives cell pulse + GC of expired animations.
+  // Tape generated client-only to dodge SSR/CSR hydration mismatch.
+  const [tapeHtml, setTapeHtml] = useState("");
+
   useEffect(() => {
-    const id = setInterval(() => {
-      setTick((t) => (t + 1) % 10000);
-      dispatch({ type: "tick", now: Date.now() });
-    }, 250);
-    return () => clearInterval(id);
-  }, []);
-
-  // Scheduler — kicks off random trades and the occasional convergence event.
-  useEffect(() => {
-    let cancelled = false;
-    let idleTimer: ReturnType<typeof setTimeout> | null = null;
-    let convergeTimer: ReturnType<typeof setTimeout> | null = null;
-
-    function scheduleNextTrade() {
-      if (cancelled) return;
-      const t = newRandomTrade(Date.now());
-      dispatch({ type: "schedule", trade: t });
-      // Land after flight time.
-      setTimeout(() => {
-        if (cancelled) return;
-        dispatch({ type: "land", trade: t, now: Date.now() });
-      }, 1100);
-      const gap = 900 + Math.random() * 1700;
-      idleTimer = setTimeout(scheduleNextTrade, gap);
-    }
-
-    function scheduleConvergence() {
-      if (cancelled) return;
-      // Pick a target cell; fire 4 trades into it in quick succession.
-      const row = Math.floor(Math.random() * ROWS.length);
-      const col = COLS - 1 - Math.floor(Math.random() * 3);
-      dispatch({ type: "convergeStart", row, col, now: Date.now() });
-      // Pick a single market the convergence forms around — bumps the
-      // "they're piling into THIS" reading.
-      const seedWhale = WHALE_POOL.find((w) => w.cat === row) ?? WHALE_POOL[0]!;
-      const market = seedWhale.markets[Math.floor(Math.random() * seedWhale.markets.length)]!;
-      const aliases: ReadonlyArray<string> = ["Theo4", "@PrincessOfCo", "GammaGod", "0xWhale99"];
-      aliases.forEach((alias, i) => {
-        setTimeout(() => {
-          if (cancelled) return;
-          const trade: Trade = {
-            id: nextId++,
-            row,
-            col,
-            alias,
-            side: "BUY",
-            usd: USD_OPTIONS[2 + (i % 3)]!,
-            market,
-            landAt: Date.now() + 1100,
-          };
-          dispatch({ type: "schedule", trade });
-          setTimeout(() => {
-            if (cancelled) return;
-            dispatch({ type: "land", trade, now: Date.now() });
-            dispatch({ type: "convergeBump", now: Date.now() });
-          }, 1100);
-        }, i * 700);
+    // Bail on reduced-motion. Seed a single static grid pattern so the
+    // hero still looks alive (just no movement). Cheaper than running
+    // the engine and forcing transitions to none.
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReducedMotion) {
+      cellsRef.current.forEach((cell, idx) => {
+        if (!cell.el) return;
+        const r = Math.floor(idx / COLS);
+        const c = idx % COLS;
+        // Deterministic checker-ish pattern, seeded so it reads as data.
+        const seed = Math.sin(r * 1.7 + c * 0.6) * 0.5 + Math.cos(c * 0.13) * 0.4;
+        cell.el.style.background = pnlBg(clamp(seed, -0.85, 0.85));
+        cell.el.style.transition = "none";
       });
-      // Re-trigger every 14–18s.
-      convergeTimer = setTimeout(scheduleConvergence, 14000 + Math.random() * 4000);
+      if (statPnlRef.current) statPnlRef.current.textContent = "+$184,400";
+      if (statWrRef.current) statWrRef.current.textContent = "68%";
+      if (statWhalesRef.current) statWhalesRef.current.textContent = "48";
+      return;
     }
 
-    // Stagger initial start so the page has a quiet half-second after load.
-    idleTimer = setTimeout(scheduleNextTrade, 700);
-    convergeTimer = setTimeout(scheduleConvergence, 6000);
+    // ── Tape build ──────────────────────────────────────────────────
+    const items: string[] = [];
+    for (let i = 0; i < 26; i++) {
+      const w = WHALE_NAMES[irand(WHALE_NAMES.length)]!;
+      const isWin = Math.random() > 0.32;
+      const amt = Math.floor(rand(180, 48000));
+      const cat = CATS[irand(CATS.length)]!;
+      items.push(
+        `<span class="hv-ev"><span class="hv-who">${w}</span><span class="hv-amt ${
+          isWin ? "hv-win" : "hv-loss"
+        }">${isWin ? "+" : "−"}$${amt.toLocaleString()}</span><span class="hv-cat">${cat}</span></span>`,
+      );
+    }
+    setTapeHtml(items.join("") + items.join(""));
+
+    // ── Engine ──────────────────────────────────────────────────────
+    const events = buildEvents();
+    let lastEventIdx = 0;
+    let lastT = 0;
+    let activeCallouts: Array<{ el: HTMLDivElement; removeAt: number }> = [];
+    let lastPnl = 0;
+    let lastPnlText = "";
+    let lastWrText = "";
+    let lastWhalesText = "";
+    const t0 = performance.now();
+    let raf = 0;
+    let visible = true;
+
+    // Pause the engine when the hero is scrolled out of view. requestAnimationFrame
+    // already pauses on hidden tabs; this handles same-tab scroll-past which is
+    // the common case (user reads landing → scrolls to FAQ → still burning CPU
+    // otherwise). Threshold 0 fires the moment any pixel re-enters / exits.
+    const io =
+      typeof IntersectionObserver !== "undefined" && rootRef.current
+        ? new IntersectionObserver(
+            (entries) => {
+              for (const e of entries) visible = e.isIntersecting;
+            },
+            { threshold: 0 },
+          )
+        : null;
+    if (io && rootRef.current) io.observe(rootRef.current);
+
+    const setCell = (idx: number, v: number): void => {
+      const c = cellsRef.current[idx];
+      if (!c || !c.el) return;
+      c.value = clamp(v, -1, 1);
+      c.el.style.background = pnlBg(c.value);
+    };
+
+    const flashBright = (idx: number, ms = 320, isLoss = false): void => {
+      const c = cellsRef.current[idx];
+      if (!c || !c.el) return;
+      const cls = isLoss ? "hv-flash-loss" : "hv-flash-bright";
+      c.el.classList.add(cls);
+      const el = c.el;
+      setTimeout(() => el.classList.remove(cls), ms);
+    };
+
+    const pulseCell = (idx: number, soft = false): void => {
+      const c = cellsRef.current[idx];
+      if (!c) return;
+      let v = c.value;
+      if (Math.abs(v) < 0.05) {
+        const isWin = Math.random() > 0.30;
+        v = (isWin ? 1 : -1) * rand(0.45, soft ? 0.7 : 1);
+      } else {
+        const sign = v >= 0 ? 1 : -1;
+        v = sign * Math.min(1, Math.abs(v) + rand(0.18, soft ? 0.28 : 0.5));
+      }
+      setCell(idx, v);
+      flashBright(idx, soft ? 220 : 360, v < 0);
+    };
+
+    const flickerCell = (idx: number): void => {
+      const c = cellsRef.current[idx];
+      if (!c || !c.el) return;
+      c.el.classList.add("hv-flicker");
+      const el = c.el;
+      setTimeout(() => el.classList.remove("hv-flicker"), 1700);
+    };
+
+    const spawnRowBeam = (r: number): void => {
+      if (!gridWrapRef.current) return;
+      const beam = document.createElement("div");
+      beam.className = "hv-beam hv-beam-row";
+      beam.style.top = `calc(${r} * (100% / ${ROWS}))`;
+      beam.style.left = "-2%";
+      gridWrapRef.current.appendChild(beam);
+      requestAnimationFrame(() => {
+        beam.style.transition = "left 1100ms cubic-bezier(.3,.0,.7,1)";
+        beam.style.left = "102%";
+      });
+      setTimeout(() => beam.remove(), 1300);
+    };
+    const spawnColBeam = (c: number): void => {
+      if (!gridWrapRef.current) return;
+      const beam = document.createElement("div");
+      beam.className = "hv-beam hv-beam-col";
+      beam.style.left = `calc(${c} * (100% / ${COLS}))`;
+      beam.style.top = "-4%";
+      gridWrapRef.current.appendChild(beam);
+      requestAnimationFrame(() => {
+        beam.style.transition = "top 750ms cubic-bezier(.3,.0,.7,1)";
+        beam.style.top = "104%";
+      });
+      setTimeout(() => beam.remove(), 900);
+    };
+
+    const rowSweep = (r: number): void => {
+      spawnRowBeam(r);
+      for (let c = 0; c < COLS; c++) {
+        const idx = r * COLS + c;
+        setTimeout(() => {
+          const cell = cellsRef.current[idx];
+          if (!cell || !cell.el) return;
+          cell.el.classList.add("hv-row-sweep");
+          const el = cell.el;
+          setTimeout(() => el.classList.remove("hv-row-sweep"), 280);
+        }, c * 6);
+      }
+      const lbl = labelsRef.current[r];
+      if (lbl) {
+        lbl.classList.add("hv-hot");
+        setTimeout(() => lbl.classList.remove("hv-hot"), 1200);
+      }
+    };
+
+    const colSweep = (c: number): void => {
+      spawnColBeam(c);
+      for (let r = 0; r < ROWS; r++) {
+        const idx = r * COLS + c;
+        setTimeout(() => {
+          const cell = cellsRef.current[idx];
+          if (!cell || !cell.el) return;
+          cell.el.classList.add("hv-col-sweep");
+          if (Math.abs(cell.value) > 0.05) {
+            const sign = cell.value >= 0 ? 1 : -1;
+            setCell(idx, sign * Math.min(1, Math.abs(cell.value) + 0.22));
+          }
+          const el = cell.el;
+          setTimeout(() => el.classList.remove("hv-col-sweep"), 320);
+        }, r * 22);
+      }
+    };
+
+    const ripple = (cr: number, cc: number, radius = 4): void => {
+      for (let ring = 1; ring <= radius; ring++) {
+        setTimeout(() => {
+          for (let dr = -ring; dr <= ring; dr++) {
+            for (let dc = -ring; dc <= ring; dc++) {
+              if (Math.max(Math.abs(dr), Math.abs(dc)) !== ring) continue;
+              const nr = cr + dr;
+              const nc = cc + dc;
+              if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
+              const idx = nr * COLS + nc;
+              const cell = cellsRef.current[idx];
+              if (!cell || !cell.el) continue;
+              cell.el.classList.add("hv-ripple");
+              const el = cell.el;
+              setTimeout(() => el.classList.remove("hv-ripple"), 320);
+              if (Math.abs(cell.value) > 0.05 && Math.random() < 0.6) {
+                const sign = cell.value >= 0 ? 1 : -1;
+                setCell(idx, sign * Math.min(1, Math.abs(cell.value) + 0.15));
+              }
+            }
+          }
+        }, ring * 100);
+      }
+    };
+
+    const screenFlash = (isLoss = false): void => {
+      const sf = screenFlashRef.current;
+      if (!sf) return;
+      sf.classList.remove("hv-sf-show", "hv-sf-loss");
+      void sf.offsetWidth;
+      if (isLoss) sf.classList.add("hv-sf-loss");
+      sf.classList.add("hv-sf-show");
+    };
+
+    const showCallout = (
+      idx: number,
+      mainText: string,
+      subText: string,
+      isLoss = false,
+    ): void => {
+      const cell = cellsRef.current[idx];
+      if (!cell || !cell.el) return;
+      const el = document.createElement("div");
+      el.className = "hv-callout" + (isLoss ? " hv-loss" : "");
+      el.innerHTML = `<div class="hv-clbl">${subText}</div><div class="hv-cval">${mainText}</div>`;
+      cell.el.appendChild(el);
+      requestAnimationFrame(() => el.classList.add("hv-show"));
+      activeCallouts.push({ el, removeAt: performance.now() + 2000 });
+    };
+
+    const whaleEvent = (e: Extract<AnimEvent, { kind: "whale" }>): void => {
+      const sign = e.loss ? -1 : 1;
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          const nr = e.r + dr;
+          const nc = e.c + dc;
+          if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
+          const idx = nr * COLS + nc;
+          setCell(idx, sign * (dr === 0 && dc === 0 ? 1 : 0.85));
+          flashBright(idx, 520, e.loss);
+        }
+      }
+      const subText = `${e.loss ? "Big loss" : "Big trade"} · ${e.label}`;
+      const mainText = `${e.loss ? "−" : "+"}$${Math.abs(e.amount).toLocaleString()}`;
+      showCallout(e.r * COLS + e.c, mainText, subText, e.loss);
+      ripple(e.r, e.c, 4);
+      screenFlash(e.loss);
+    };
+
+    const resetLoop = (): void => {
+      cellsRef.current.forEach((cell, idx) => {
+        if (!cell.el) return;
+        cell.el.classList.remove(
+          "hv-flash-bright", "hv-flash-loss", "hv-ripple",
+          "hv-row-sweep", "hv-col-sweep", "hv-flicker",
+        );
+        setCell(idx, 0);
+      });
+      activeCallouts.forEach((c) => c.el.remove());
+      activeCallouts = [];
+      gridWrapRef.current?.querySelectorAll(".hv-beam").forEach((b) => b.remove());
+      labelsRef.current.forEach((l) => l && l.classList.remove("hv-hot", "hv-cold"));
+      lastEventIdx = 0;
+    };
+
+    const tick = (): void => {
+      // Skip all work when the hero isn't on screen — saves CPU/battery
+      // for users who scrolled past. RAF stays scheduled so we resume
+      // smoothly when they scroll back up.
+      if (!visible) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+      const now = performance.now();
+      const t = (now - t0) % LOOP_MS;
+      if (t < lastT) resetLoop();
+      lastT = t;
+
+      while (lastEventIdx < events.length && events[lastEventIdx]!.at <= t) {
+        const e = events[lastEventIdx++]!;
+        if (e.kind === "set") setCell(e.r * COLS + e.c, e.value);
+        else if (e.kind === "pulse") pulseCell(e.r * COLS + e.c, e.soft);
+        else if (e.kind === "flicker") flickerCell(e.r * COLS + e.c);
+        else if (e.kind === "row-sweep") rowSweep(e.r);
+        else if (e.kind === "col-sweep") colSweep(e.c);
+        else if (e.kind === "whale") whaleEvent(e);
+      }
+
+      activeCallouts = activeCallouts.filter((c) => {
+        if (now > c.removeAt) {
+          c.el.classList.remove("hv-show");
+          setTimeout(() => c.el.remove(), 280);
+          return false;
+        }
+        return true;
+      });
+
+      // counters — phase01 ramps up during wave fill then idles
+      const phase01 = Math.min(1, t / 3000);
+      let pnl = Math.floor(
+        8200 + phase01 * 176200 + Math.sin(t / 380) * 90 + Math.sin(t / 1700) * 1800,
+      );
+      // Dip during the loss whale (around t=11s)
+      if (t > 11000 && t < 13500) {
+        pnl -= Math.floor(28400 * Math.min(1, (t - 11000) / 800));
+      }
+      const wr = Math.floor(54 + phase01 * 14 + Math.sin(t / 1100) * 1.5);
+      const whales = Math.floor(12 + phase01 * 36 + Math.sin(t / 2400) * 3);
+
+      // Only touch the DOM when the visible text actually changes. The
+      // raw pnl drifts every frame from the sin terms but the rounded,
+      // formatted string is stable for ~10-20 frames at a time, so this
+      // skips ~85% of the textContent writes.
+      if (statPnlRef.current) {
+        const pnlRounded = Math.round(pnl / 50) * 50;
+        const pnlText = (pnlRounded >= 0 ? "+$" : "−$") + Math.abs(pnlRounded).toLocaleString();
+        if (pnlText !== lastPnlText) {
+          if (Math.abs(pnl - lastPnl) > 200) {
+            statPnlRef.current.classList.remove("hv-bump");
+            void statPnlRef.current.offsetWidth;
+            statPnlRef.current.classList.add("hv-bump");
+          }
+          lastPnl = pnl;
+          statPnlRef.current.classList.toggle("hv-loss", pnl < 0);
+          statPnlRef.current.classList.toggle("hv-win", pnl >= 0);
+          statPnlRef.current.textContent = pnlText;
+          lastPnlText = pnlText;
+        }
+      }
+      if (statWrRef.current) {
+        const wrText = wr + "%";
+        if (wrText !== lastWrText) {
+          statWrRef.current.textContent = wrText;
+          lastWrText = wrText;
+        }
+      }
+      if (statWhalesRef.current) {
+        const whalesText = String(whales);
+        if (whalesText !== lastWhalesText) {
+          statWhalesRef.current.textContent = whalesText;
+          lastWhalesText = whalesText;
+        }
+      }
+
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
     return () => {
-      cancelled = true;
-      if (idleTimer) clearTimeout(idleTimer);
-      if (convergeTimer) clearTimeout(convergeTimer);
+      cancelAnimationFrame(raf);
+      io?.disconnect();
     };
   }, []);
 
-  const activeMap = new Map<string, number>();
-  state.active.forEach((a) => activeMap.set(`${a.row}:${a.col}`, a.until));
-
   return (
     <div
+      ref={rootRef}
       aria-hidden="true"
       style={{
         position: "relative",
-        background: "linear-gradient(180deg, #14181d 0%, #0d1117 100%)",
-        border: `1px solid ${TOKENS.borderHi}`,
+        background: `radial-gradient(ellipse at top, #0d1219 0%, ${T.bg} 60%)`,
+        color: T.text,
+        fontSize: 12,
+        letterSpacing: "0.02em",
+        border: "1px solid rgba(48,54,61,0.7)",
         borderRadius: 14,
-        padding: "12px 14px 16px",
+        padding: "16px 18px 14px",
         boxShadow:
-          "0 30px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(240, 180, 41, 0.06), inset 0 1px 0 rgba(255,255,255,0.02)",
-        // Intentionally NOT clipping: the cell-tooltip callout pops above
-        // the top row when a trade lands in row 0 / 1, and clipping would
-        // chop it visually (see screenshot dated 2026-05-05). The flying
-        // dots start at opacity 0 from outside the box so removing the
-        // clip doesn't expose any pre-flight ghosts.
-        overflow: "visible",
+          "0 30px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(240,180,41,0.06), inset 0 1px 0 rgba(255,255,255,0.02)",
+        overflow: "hidden",
+        display: "grid",
+        gridTemplateRows: "auto 1fr auto",
+        gap: 12,
+        aspectRatio: "1.18 / 1",
+        minHeight: 420,
       }}
     >
-      {/* App-chrome header — traffic-light dots, mode tabs, status pill. */}
-      <AppChrome counter={state.counter} />
-
-      {/* Tab strip — looks like the real app's range/metric controls. */}
-      <TabStrip />
-
-      {/* heatmap grid — wraps in a positioning container so dots / callouts can overlay */}
-      <div style={{ position: "relative", marginTop: 10 }}>
-        <Grid activeMap={activeMap} tick={tick} cellShift={state.cellShift} />
-        <NowLine />
-        <Inflight trades={state.inflight} />
-        <Callout callout={state.callout} />
-        <Convergence convergence={state.convergence} />
-      </div>
-
-      {/* Bottom time-strip — anchors the sliding-window narrative. */}
-      <TimeStrip />
-
-      <style>{`
-        @keyframes heroPulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50%      { opacity: 0.45; transform: scale(0.85); }
-        }
-        @keyframes cellFlash {
-          0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(63,185,80,0.55); }
-          40%  { transform: scale(1.16); box-shadow: 0 0 0 6px rgba(63,185,80,0.0); }
-          100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(63,185,80,0); }
-        }
-        @keyframes tipIn {
-          from { opacity: 0; transform: translate(-50%, calc(-100% - 14px)) scale(0.96); }
-          to   { opacity: 1; transform: translate(-50%, calc(-100% - 4px))  scale(1);    }
-        }
-        @keyframes flyIn {
-          from { left: -8%;  opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
-          5%   { opacity: 1;  transform: translate(-50%, -50%) scale(1); }
-          95%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-          to   { opacity: 0;  transform: translate(-50%, -50%) scale(1.25); }
-        }
-        @keyframes convergePulse {
-          0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(240,180,41,0.45); }
-          50%      { transform: scale(1.04); box-shadow: 0 0 0 8px rgba(240,180,41,0); }
-        }
-        @keyframes nowLinePulse {
-          0%, 100% { opacity: 0.65; }
-          50%      { opacity: 0.95; }
-        }
-      `}</style>
-    </div>
-  );
-}
-
-// ─── Sub-components ──────────────────────────────────────────────────────
-
-function AppChrome({ counter }: { counter: number }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        marginBottom: 10,
-        paddingBottom: 10,
-        borderBottom: `1px solid ${TOKENS.border}`,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <div style={{ display: "flex", gap: 6 }}>
-          {[TOKENS.neg, TOKENS.accent, TOKENS.pos].map((c) => (
-            <span
-              key={c}
-              style={{ width: 9, height: 9, borderRadius: 9, background: c, opacity: 0.55 }}
-            />
-          ))}
-        </div>
-        {/* "App-style" mode toggle — LIVE active. */}
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 6 }}>
-          <span
+      <header style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", alignItems: "center", gap: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
+          <div style={{ display: "flex", gap: 4 }}>
+            {[T.loss, "#f0b429", T.win].map((c) => (
+              <span key={c} style={{ width: 7, height: 7, borderRadius: 7, background: c, opacity: 0.55 }} />
+            ))}
+          </div>
+          <div
             style={{
               fontSize: 9,
-              padding: "3px 8px",
-              borderRadius: 4,
-              background: TOKENS.panel2,
-              border: `1px solid ${TOKENS.borderHi}`,
-              color: TOKENS.text,
-              fontFamily: TOKENS.mono,
-              fontWeight: 700,
-              letterSpacing: 0.5,
+              color: T.textDim,
+              letterSpacing: "0.22em",
               textTransform: "uppercase",
+              borderLeft: `1px solid ${T.line}`,
+              paddingLeft: 11,
+              lineHeight: 1.4,
+            }}
+          >
+            pnl heatmap
+            <br />
+            who's actually winning
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center" }}>
+          <span
+            style={{
               display: "inline-flex",
               alignItems: "center",
-              gap: 5,
+              gap: 6,
+              padding: "4px 9px",
+              background: "rgba(63,185,80,0.07)",
+              border: "1px solid rgba(63,185,80,0.22)",
+              borderRadius: 3,
+              color: T.win,
+              fontSize: 9.5,
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+              fontWeight: 500,
+            }}
+          >
+            macro · 1d × 12w · 84
+          </span>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              color: T.win,
+              fontSize: 9.5,
+              letterSpacing: "0.2em",
+              textTransform: "uppercase",
+              fontWeight: 500,
             }}
           >
             <span
               style={{
                 width: 6,
                 height: 6,
-                borderRadius: 6,
-                background: TOKENS.pos,
-                boxShadow: `0 0 6px ${TOKENS.pos}`,
+                borderRadius: "50%",
+                background: T.win,
+                animation: "hvPulse 1.4s infinite",
+                boxShadow: "0 0 8px rgba(63,185,80,0.7)",
               }}
             />
-            LIVE
-          </span>
-          <span
-            style={{
-              fontSize: 9,
-              padding: "3px 8px",
-              borderRadius: 4,
-              background: "transparent",
-              color: TOKENS.textMuted,
-              fontFamily: TOKENS.mono,
-              fontWeight: 700,
-              letterSpacing: 0.5,
-              textTransform: "uppercase",
-            }}
-          >
-            PATTERN
+            live
           </span>
         </div>
+
+        <div style={{ display: "flex", gap: 12 }}>
+          <Stat label="Net PnL 24h">
+            <div ref={statPnlRef} className="hv-stat-val hv-win">$0</div>
+          </Stat>
+          <Stat label="Win rate">
+            <div ref={statWrRef} className="hv-stat-val">0%</div>
+          </Stat>
+          <Stat label="Active">
+            <div ref={statWhalesRef} className="hv-stat-val">0</div>
+          </Stat>
+        </div>
+      </header>
+
+      <div style={{ display: "grid", gridTemplateColumns: "76px 1fr", gap: 10, overflow: "hidden", minHeight: 0 }}>
+        <div style={{ display: "grid", gridAutoRows: "1fr", gap: 2, paddingTop: 22 }}>
+          {CATS.map((c, r) => (
+            <div
+              key={c}
+              ref={(el) => {
+                labelsRef.current[r] = el;
+              }}
+              className="hv-cat-label"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                fontSize: 9,
+                color: T.textMid,
+                letterSpacing: "0.16em",
+                textTransform: "uppercase",
+                fontWeight: 500,
+                transition: "color 220ms, text-shadow 220ms",
+              }}
+            >
+              {c}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateRows: "20px 1fr", overflow: "hidden", minHeight: 0 }}>
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${WEEK_LABELS.length}, 1fr)`, gap: 1 }}>
+            {WEEK_LABELS.map((wl, i) => {
+              const isNow = i === WEEK_LABELS.length - 1;
+              return (
+                <div
+                  key={wl}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 8.5,
+                    letterSpacing: "0.18em",
+                    textTransform: "uppercase",
+                    color: isNow ? T.win : T.textDim,
+                    borderBottom: `1px solid ${isNow ? T.win : T.line}`,
+                    paddingBottom: 3,
+                    fontWeight: 500,
+                  }}
+                >
+                  {isNow && (
+                    <span
+                      style={{
+                        width: 5,
+                        height: 5,
+                        background: T.win,
+                        borderRadius: "50%",
+                        marginRight: 5,
+                        boxShadow: "0 0 6px rgba(63,185,80,0.7)",
+                        animation: "hvPulse 1.4s infinite",
+                      }}
+                    />
+                  )}
+                  {wl}
+                </div>
+              );
+            })}
+          </div>
+          <div ref={gridWrapRef} style={{ position: "relative", overflow: "hidden", minHeight: 0 }}>
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                bottom: 0,
+                left: `calc(${TODAY_COL_START} / ${COLS} * 100%)`,
+                width: `calc(${COLS - TODAY_COL_START} / ${COLS} * 100%)`,
+                background: "linear-gradient(180deg, rgba(63,185,80,0.06), rgba(63,185,80,0.02))",
+                pointerEvents: "none",
+                borderLeft: "1px dashed rgba(63,185,80,0.20)",
+              }}
+            />
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(${COLS}, 1fr)`,
+                gridAutoRows: "1fr",
+                gap: 1,
+                height: "100%",
+              }}
+            >
+              {Array.from({ length: ROWS * COLS }).map((_, idx) => (
+                <div
+                  // eslint-disable-next-line react/no-array-index-key
+                  key={idx}
+                  ref={(el) => {
+                    const slot = cellsRef.current[idx];
+                    if (slot) slot.el = el;
+                  }}
+                  className="hv-cell"
+                  style={{
+                    background: T.base,
+                    borderRadius: 1,
+                    position: "relative",
+                    transition: "background 200ms ease, transform 100ms",
+                  }}
+                />
+              ))}
+            </div>
+            <div ref={screenFlashRef} className="hv-screen-flash" />
+          </div>
+        </div>
       </div>
-      <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+
+      <footer
+        style={{
+          borderTop: `1px solid ${T.line}`,
+          paddingTop: 8,
+          display: "grid",
+          gridTemplateColumns: "auto 1fr auto",
+          gap: 14,
+          alignItems: "center",
+        }}
+      >
         <span
           style={{
-            fontSize: 9,
-            color: TOKENS.textMuted,
-            fontFamily: TOKENS.mono,
-            letterSpacing: 0.5,
+            fontSize: 8.5,
+            color: T.textDim,
+            letterSpacing: "0.24em",
             textTransform: "uppercase",
+            fontWeight: 500,
           }}
         >
-          signals streamed{" "}
-          <strong
-            style={{
-              color: TOKENS.text,
-              fontVariantNumeric: "tabular-nums",
-              marginLeft: 4,
-              fontSize: 11,
-            }}
-          >
-            {counter}
-          </strong>
+          PnL Tape
         </span>
+        <div
+          style={{
+            overflow: "hidden",
+            mask: "linear-gradient(90deg, transparent 0, #000 4%, #000 96%, transparent 100%)",
+            WebkitMask: "linear-gradient(90deg, transparent 0, #000 4%, #000 96%, transparent 100%)",
+          }}
+        >
+          {/* Tape content is internally generated, sandbox-safe (string literals only). */}
+          <div className="hv-tape-row" dangerouslySetInnerHTML={{ __html: tapeHtml }} />
+        </div>
         <span
           style={{
-            width: 8,
-            height: 8,
-            borderRadius: 8,
-            background: TOKENS.pos,
-            boxShadow: `0 0 12px ${TOKENS.pos}`,
-            animation: "heroPulse 1.6s ease-in-out infinite",
+            fontSize: 8.5,
+            color: T.textDim,
+            letterSpacing: "0.24em",
+            textTransform: "uppercase",
+            fontWeight: 500,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
           }}
-        />
-      </div>
+        >
+          <span style={{ color: T.win }}>▸</span>
+          10,426 wallets
+        </span>
+      </footer>
+
+      <div className="hv-scanline" />
+
+      <style>{`
+        @keyframes hvPulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.4; transform: scale(0.85); }
+        }
+        @keyframes hvFlicker {
+          0%, 100% { filter: brightness(1); }
+          18% { filter: brightness(1.8); }
+          32% { filter: brightness(0.85); }
+          52% { filter: brightness(1.6); }
+          72% { filter: brightness(0.95); }
+        }
+        @keyframes hvScanline {
+          0%, 100% { opacity: 0; }
+          50% { opacity: 0.04; }
+        }
+        @keyframes hvBump {
+          0% { transform: translateY(0) scale(1); }
+          35% { transform: translateY(-3px) scale(1.04); }
+          100% { transform: translateY(0) scale(1); }
+        }
+        @keyframes hvScreenFlash {
+          0% { opacity: 0; }
+          20% { opacity: 1; }
+          100% { opacity: 0; }
+        }
+        @keyframes hvScroll {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        .hv-cat-label.hv-hot { color: ${T.win}; text-shadow: 0 0 12px rgba(63,185,80,0.6); }
+        .hv-cat-label.hv-cold { color: ${T.loss}; text-shadow: 0 0 12px rgba(248,81,73,0.6); }
+
+        .hv-cell.hv-flash-bright {
+          filter: brightness(2.1) saturate(1.3);
+          transform: scaleY(1.3) scaleX(1.05);
+          z-index: 4;
+          box-shadow: 0 0 14px rgba(255,255,255,0.45);
+        }
+        .hv-cell.hv-flash-loss {
+          filter: brightness(2) saturate(1.3);
+          transform: scaleY(1.3) scaleX(1.05);
+          z-index: 4;
+          box-shadow: 0 0 14px rgba(248,81,73,0.55);
+        }
+        .hv-cell.hv-ripple {
+          filter: brightness(1.55) saturate(1.15);
+          z-index: 2;
+          box-shadow: 0 0 8px rgba(255,255,255,0.2);
+        }
+        .hv-cell.hv-row-sweep {
+          filter: brightness(1.85) saturate(1.2);
+          transform: scaleY(1.18);
+          z-index: 3;
+        }
+        .hv-cell.hv-col-sweep {
+          filter: brightness(1.7) saturate(1.15);
+          transform: scaleY(1.12);
+          z-index: 3;
+        }
+        .hv-cell.hv-flicker { animation: hvFlicker 1.6s ease-in-out; }
+
+        .hv-beam {
+          position: absolute;
+          pointer-events: none;
+          z-index: 5;
+        }
+        .hv-beam-row {
+          height: calc(100% / ${ROWS});
+          width: 12px;
+          background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.85) 50%, transparent 100%);
+          filter: blur(2px);
+          mix-blend-mode: screen;
+        }
+        .hv-beam-col {
+          width: calc(100% / ${COLS});
+          height: 100%;
+          background: linear-gradient(180deg, transparent 0%, rgba(255,255,255,0.85) 50%, transparent 100%);
+          filter: blur(2px);
+          mix-blend-mode: screen;
+        }
+
+        .hv-callout {
+          position: absolute;
+          background: rgba(8,11,16,0.96);
+          border: 1px solid ${T.win};
+          padding: 7px 10px;
+          font-size: 10px;
+          color: ${T.text};
+          box-shadow: 0 8px 30px rgba(0,0,0,0.7), 0 0 24px rgba(63,185,80,0.4);
+          pointer-events: none;
+          transform: translate(-50%, -130%) scale(0.92);
+          border-radius: 3px;
+          white-space: nowrap;
+          z-index: 10;
+          opacity: 0;
+          transition: opacity 220ms, transform 260ms cubic-bezier(.2,1.4,.4,1);
+        }
+        .hv-callout.hv-loss {
+          border-color: ${T.loss};
+          box-shadow: 0 8px 30px rgba(0,0,0,0.7), 0 0 24px rgba(248,81,73,0.4);
+        }
+        .hv-callout.hv-show { opacity: 1; transform: translate(-50%, -150%) scale(1); }
+        .hv-callout .hv-clbl {
+          font-size: 8px;
+          color: ${T.textDim};
+          letter-spacing: 0.22em;
+          text-transform: uppercase;
+          font-weight: 500;
+        }
+        .hv-callout .hv-cval {
+          font-weight: 700;
+          color: ${T.winText};
+          font-size: 13px;
+          margin-top: 3px;
+          font-variant-numeric: tabular-nums;
+        }
+        .hv-callout.hv-loss .hv-cval { color: ${T.lossText}; }
+        .hv-callout::after {
+          content: '';
+          position: absolute;
+          left: 50%;
+          bottom: -6px;
+          transform: translateX(-50%);
+          border: 6px solid transparent;
+          border-top-color: ${T.win};
+        }
+        .hv-callout.hv-loss::after { border-top-color: ${T.loss}; }
+
+        .hv-screen-flash {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          z-index: 50;
+          background: radial-gradient(ellipse at center, rgba(63,185,80,0.18) 0%, transparent 60%);
+          opacity: 0;
+        }
+        .hv-screen-flash.hv-sf-show { animation: hvScreenFlash 700ms ease-out; }
+        .hv-screen-flash.hv-sf-loss {
+          background: radial-gradient(ellipse at center, rgba(248,81,73,0.22) 0%, transparent 60%);
+        }
+
+        .hv-scanline {
+          position: absolute;
+          inset: 0;
+          background: repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 3px);
+          pointer-events: none;
+          animation: hvScanline 4s ease-in-out infinite;
+          z-index: 100;
+          border-radius: inherit;
+        }
+
+        .hv-stat-val {
+          font-size: 16px;
+          font-weight: 600;
+          color: ${T.text};
+          font-variant-numeric: tabular-nums;
+          transition: color 200ms;
+        }
+        .hv-stat-val.hv-win { color: ${T.winText}; }
+        .hv-stat-val.hv-loss { color: ${T.lossText}; }
+        .hv-stat-val.hv-bump { animation: hvBump 320ms ease-out; }
+
+        .hv-tape-row {
+          display: flex;
+          gap: 22px;
+          white-space: nowrap;
+          animation: hvScroll 28s linear infinite;
+          font-size: 10.5px;
+          font-variant-numeric: tabular-nums;
+          width: max-content;
+        }
+        .hv-ev { display: inline-flex; gap: 7px; align-items: baseline; }
+        .hv-who { color: ${T.textDim}; font-size: 9.5px; }
+        .hv-amt { font-weight: 600; }
+        .hv-amt.hv-win { color: ${T.winText}; }
+        .hv-amt.hv-loss { color: ${T.lossText}; }
+        .hv-cat { color: ${T.textMid}; font-size: 8.5px; letter-spacing: 0.16em; text-transform: uppercase; }
+      `}</style>
     </div>
   );
 }
 
-function TabStrip() {
+function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div
       style={{
         display: "flex",
-        alignItems: "center",
-        gap: 14,
-        fontSize: 9,
-        fontFamily: TOKENS.mono,
-        letterSpacing: 0.5,
-        textTransform: "uppercase",
-        fontWeight: 700,
+        flexDirection: "column",
+        borderLeft: `1px solid ${T.line}`,
+        paddingLeft: 9,
+        minWidth: 60,
       }}
     >
-      <ChipGroup items={["1H", "24H", "12D", "12W"]} active="24H" />
-      <span style={{ width: 1, height: 14, background: TOKENS.border }} />
-      <ChipGroup items={["PNL", "VOLUME", "SIGNALS", "WHALES"]} active="PNL" />
-    </div>
-  );
-}
-
-function ChipGroup({ items, active }: { items: ReadonlyArray<string>; active: string }) {
-  return (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
-      {items.map((label) => {
-        const isActive = label === active;
-        return (
-          <span
-            key={label}
-            style={{
-              padding: "3px 7px",
-              borderRadius: 4,
-              background: isActive ? TOKENS.panel2 : "transparent",
-              color: isActive ? TOKENS.text : TOKENS.textMuted,
-              border: isActive ? `1px solid ${TOKENS.border}` : "1px solid transparent",
-            }}
-          >
-            {label}
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
-function Grid({
-  activeMap,
-  tick,
-  cellShift,
-}: {
-  activeMap: Map<string, number>;
-  tick: number;
-  cellShift: Readonly<Record<string, number>>;
-}) {
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: `78px repeat(${COLS}, 1fr)`, gap: 3 }}>
-      {ROWS.map((row, r) => (
-        <Row key={row.label} row={r} tick={tick} activeMap={activeMap} cellShift={cellShift} />
-      ))}
-    </div>
-  );
-}
-
-function Row({
-  row,
-  tick,
-  activeMap,
-  cellShift,
-}: {
-  row: number;
-  tick: number;
-  activeMap: Map<string, number>;
-  cellShift: Readonly<Record<string, number>>;
-}) {
-  const r = ROWS[row]!;
-  return (
-    <>
-      {/* Category badge — coloured square + label. Mirrors the real app. */}
       <div
         style={{
-          background: TOKENS.panel2,
-          border: `1px solid ${TOKENS.border}`,
-          color: TOKENS.textSec,
-          fontSize: 9,
-          fontWeight: 700,
-          letterSpacing: 0.6,
-          padding: "0 8px",
-          borderRadius: 4,
-          display: "flex",
-          alignItems: "center",
-          gap: 7,
-          height: 26,
-          fontFamily: TOKENS.font,
-        }}
-      >
-        <span
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: 2,
-            background: r.color,
-            boxShadow: `0 0 5px ${r.color}66`,
-            flexShrink: 0,
-          }}
-        />
-        <span style={{ color: TOKENS.text }}>{r.label}</span>
-      </div>
-      {Array.from({ length: COLS }).map((_, c) => {
-        const cellKey = `${row}:${c}`;
-        // Apply landed-trade nudges on top of the seeded baseline so
-        // the cell's actual colour shifts as BUYs/SELLs come in. Clamp
-        // to [-1, 1] — trade shifts can otherwise stack past the
-        // saturation point of the colour ramp.
-        const baseline = seedSigned(row, c);
-        const shift = cellShift[cellKey] ?? 0;
-        const signed = Math.max(-1, Math.min(1, baseline + shift));
-        const mag = Math.abs(signed);
-        const pulse = (Math.sin((tick + row * 3 + c * 5) * 0.7) + 1) / 2;
-        const { color, alpha } = pnlColor(signed);
-        const adjusted = Math.min(1, alpha + pulse * mag * 0.1);
-        const isActive = activeMap.has(cellKey);
-        return (
-          <div
-            key={c}
-            data-cell={cellKey}
-            style={{
-              height: 26,
-              borderRadius: 3,
-              background: color,
-              opacity: isActive ? Math.min(1, alpha + 0.4) : adjusted,
-              // Slight delay on the colour transition so the user can
-              // perceive "trade landed → cell flashed → cell shifted
-              // hue" as three distinct beats rather than one blur.
-              transition: "background .55s ease-out, opacity .35s ease-out",
-              animation: isActive ? "cellFlash 1.1s ease-out" : undefined,
-              outline: isActive ? `1.5px solid ${TOKENS.pos}` : undefined,
-              outlineOffset: -1,
-              position: "relative",
-              zIndex: isActive ? 2 : 0,
-            }}
-          />
-        );
-      })}
-    </>
-  );
-}
-
-function NowLine() {
-  // Vertical accent line on the rightmost column edge — communicates
-  // "this is the NOW boundary, the grid scrolls left as time advances".
-  return (
-    <div
-      aria-hidden="true"
-      style={{
-        position: "absolute",
-        top: -2,
-        bottom: -2,
-        right: `calc((100% - 78px - 3px) / ${COLS} / 2)`,
-        transform: "translateX(50%)",
-        width: 1.5,
-        background: `linear-gradient(180deg, transparent 0%, ${TOKENS.accent} 25%, ${TOKENS.accent} 75%, transparent 100%)`,
-        opacity: 0.65,
-        pointerEvents: "none",
-        animation: "nowLinePulse 2s ease-in-out infinite",
-        boxShadow: `0 0 6px ${TOKENS.accent}88`,
-      }}
-    />
-  );
-}
-
-function TimeStrip() {
-  // Time anchors along the bottom — sparser than the column grid so
-  // they don't crowd. "now" sits on the right edge, accent-coloured.
-  // Positions are computed off the same column geometry as the grid.
-  const ticks: ReadonlyArray<{ col: number; label: string }> = [
-    { col: 0,  label: "−21h" },
-    { col: 5,  label: "−16h" },
-    { col: 9,  label: "−10h" },
-    { col: 13, label: "−4h" },
-    { col: 17, label: "now" },
-  ];
-  return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: `78px repeat(${COLS}, 1fr)`,
-        gap: 3,
-        marginTop: 8,
-        fontSize: 8,
-        fontFamily: TOKENS.mono,
-        color: TOKENS.textMuted,
-        letterSpacing: 0.5,
-      }}
-    >
-      <span />
-      {Array.from({ length: COLS }).map((_, c) => {
-        const tick = ticks.find((t) => t.col === c);
-        if (!tick) return <span key={c} />;
-        return (
-          <span
-            key={c}
-            style={{
-              textAlign: "center",
-              color: tick.label === "now" ? TOKENS.accent : TOKENS.textMuted,
-              fontWeight: tick.label === "now" ? 700 : 500,
-            }}
-          >
-            {tick.label}
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
-/** % position of a cell's CENTER within the inner content area (label col + data cells). */
-function cellLeftPct(col: number): number {
-  // 78px label col is small relative to total; approximate as 0.10 of width.
-  const labelFrac = 78 / (78 + COLS * 60); // rough
-  const dataFrac = 1 - labelFrac;
-  const colFrac = (col + 0.5) / COLS;
-  return (labelFrac + dataFrac * colFrac) * 100;
-}
-function cellTopPct(row: number): number {
-  // Rows: 26px height + 3px gap; we have ROWS.length rows.
-  const total = ROWS.length;
-  return ((row + 0.5) / total) * 100;
-}
-
-function Inflight({ trades }: { trades: ReadonlyArray<Trade> }) {
-  return (
-    <>
-      {trades.map((t) => {
-        const left = cellLeftPct(t.col);
-        const top = cellTopPct(t.row);
-        const accent = t.side === "BUY" ? TOKENS.pos : TOKENS.neg;
-        return (
-          <div
-            key={t.id}
-            style={{
-              position: "absolute",
-              left: `${left}%`,
-              top: `${top}%`,
-              width: 11,
-              height: 11,
-              borderRadius: 11,
-              background: accent,
-              boxShadow: `0 0 14px ${accent}, 0 0 4px ${accent}`,
-              transform: "translate(-50%, -50%)",
-              animation: "flyIn 1.1s linear forwards",
-              pointerEvents: "none",
-              zIndex: 3,
-            }}
-          />
-        );
-      })}
-    </>
-  );
-}
-
-function Callout({
-  callout,
-}: {
-  callout: State["callout"];
-}) {
-  if (!callout) return null;
-  const left = cellLeftPct(callout.col);
-  const top = cellTopPct(callout.row);
-  const accent = callout.side === "BUY" ? TOKENS.pos : TOKENS.neg;
-  const row = ROWS[callout.row]!;
-  // Synthetic stat values for the mini grid — not real, but consistent
-  // shape (4 cells: TRADES, PNL, VOLUME, WIN%) that mirrors the actual
-  // app's cell-tooltip header.
-  const fakeStats = synthCellStats(callout.row, callout.col, callout.side, callout.usd);
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: `${left}%`,
-        top: `${top}%`,
-        transform: "translate(-50%, calc(-100% - 4px))",
-        background: TOKENS.panel,
-        border: `1px solid ${accent}`,
-        borderRadius: 10,
-        padding: "8px 12px 10px",
-        boxShadow: "0 18px 36px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,0,0,0.4)",
-        whiteSpace: "nowrap",
-        animation: "tipIn .25s ease-out forwards",
-        pointerEvents: "none",
-        zIndex: 4,
-        minWidth: 220,
-      }}
-      key={`${callout.row}-${callout.col}-${callout.alias}-${callout.until}`}
-    >
-      {/* Header strip — category chip + side badge + USD + slot label. */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          paddingBottom: 6,
-          borderBottom: `1px solid ${TOKENS.border}`,
-          marginBottom: 6,
-        }}
-      >
-        <span
-          style={{
-            background: row.color,
-            color: "#fff",
-            fontSize: 8,
-            fontWeight: 700,
-            letterSpacing: 0.4,
-            padding: "2px 6px",
-            borderRadius: 3,
-            textTransform: "uppercase",
-            fontFamily: TOKENS.mono,
-          }}
-        >
-          {row.label}
-        </span>
-        <span
-          style={{
-            fontSize: 9,
-            color: accent,
-            fontWeight: 800,
-            letterSpacing: 0.5,
-            textTransform: "uppercase",
-            fontFamily: TOKENS.mono,
-          }}
-        >
-          {callout.side}
-        </span>
-        <span style={{ fontSize: 11, color: TOKENS.text, fontWeight: 700, fontFamily: TOKENS.mono }}>
-          {callout.usd}
-        </span>
-        <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 9, color: TOKENS.textMuted, fontFamily: TOKENS.mono }}>now</span>
-      </div>
-      {/* 4-stat micro-grid — looks like the real cell-tooltip header. */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
-          gap: 6,
-          marginBottom: 6,
-        }}
-      >
-        <MicroStat label="TRADES" value={fakeStats.trades} />
-        <MicroStat
-          label="PNL"
-          value={fakeStats.pnl}
-          color={fakeStats.pnlPositive ? TOKENS.pos : TOKENS.neg}
-        />
-        <MicroStat label="VOL" value={fakeStats.vol} />
-        <MicroStat
-          label="WIN"
-          value={fakeStats.win}
-          color={fakeStats.winRate >= 0.5 ? TOKENS.pos : TOKENS.neg}
-        />
-      </div>
-      {/* Whale line + market label. */}
-      <div style={{ fontSize: 11, color: TOKENS.text, fontWeight: 700, marginBottom: 1 }}>
-        {callout.alias}
-      </div>
-      <div
-        style={{
-          fontSize: 10,
-          color: TOKENS.textSec,
-          fontFamily: TOKENS.mono,
-          maxWidth: 240,
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-        }}
-        title={callout.market}
-      >
-        {callout.market}
-      </div>
-      {/* tail */}
-      <div
-        style={{
-          position: "absolute",
-          left: "50%",
-          bottom: -5,
-          transform: "translateX(-50%) rotate(45deg)",
-          width: 8,
-          height: 8,
-          background: TOKENS.panel,
-          border: `1px solid ${accent}`,
-          borderTop: "none",
-          borderLeft: "none",
-        }}
-      />
-    </div>
-  );
-}
-
-function MicroStat({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: string;
-  color?: string;
-}) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-      <span
-        style={{
-          fontSize: 7.5,
-          fontFamily: TOKENS.mono,
-          color: TOKENS.textMuted,
-          letterSpacing: 0.5,
-          fontWeight: 700,
+          fontSize: 8,
+          color: T.textDim,
+          letterSpacing: "0.22em",
+          textTransform: "uppercase",
+          marginBottom: 3,
         }}
       >
         {label}
-      </span>
-      <span
-        style={{
-          fontSize: 11,
-          fontFamily: TOKENS.mono,
-          color: color ?? TOKENS.text,
-          fontWeight: 700,
-          fontVariantNumeric: "tabular-nums",
-        }}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-/** Synthesised stat values for the callout's micro-grid. Deterministic
- *  per (row, col, side, usd) so consecutive frames don't shimmer. Not
- *  real data — purpose-built to look credible alongside the cell that
- *  just flashed. */
-function synthCellStats(
-  row: number,
-  col: number,
-  side: "BUY" | "SELL",
-  usd: string,
-): {
-  trades: string;
-  pnl: string;
-  pnlPositive: boolean;
-  vol: string;
-  win: string;
-  winRate: number;
-} {
-  const seed = row * 17 + col * 31 + side.charCodeAt(0);
-  const tradeCount = 18 + (seed % 80);
-  // PnL leans positive on BUY-led cells, negative on SELL-led.
-  const pnlSigned = (side === "BUY" ? 1 : -1) * (12 + (seed % 70)) * 1000;
-  const pnlPositive = pnlSigned > 0;
-  const volume = 180 + (seed % 320);
-  const winCount = 8 + (seed % 12);
-  const lossCount = 3 + (seed % 7);
-  const winRate = winCount / (winCount + lossCount);
-  return {
-    trades: String(tradeCount),
-    pnl: `${pnlSigned >= 0 ? "+" : "−"}$${(Math.abs(pnlSigned) / 1000).toFixed(0)}k`,
-    pnlPositive,
-    vol: `$${volume}k`,
-    win: `${Math.round(winRate * 100)}%`,
-    winRate,
-  };
-}
-
-function Convergence({
-  convergence,
-}: {
-  convergence: State["convergence"];
-}) {
-  if (!convergence) return null;
-  const left = cellLeftPct(convergence.col);
-  const top = cellTopPct(convergence.row);
-  if (convergence.count < 2) return null; // wait until we have at least 2 hits
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: `${left}%`,
-        top: `${top}%`,
-        transform: "translate(-50%, calc(100% + 6px))",
-        background: TOKENS.accent,
-        color: "#1a1410",
-        borderRadius: 999,
-        padding: "4px 10px",
-        fontSize: 10,
-        fontWeight: 800,
-        fontFamily: TOKENS.mono,
-        letterSpacing: 0.6,
-        textTransform: "uppercase",
-        boxShadow: "0 6px 18px rgba(240,180,41,0.45)",
-        animation: "convergePulse 1.2s ease-in-out infinite",
-        pointerEvents: "none",
-        zIndex: 4,
-        whiteSpace: "nowrap",
-      }}
-    >
-      🐋×{convergence.count} converging
+      </div>
+      {children}
     </div>
   );
 }
