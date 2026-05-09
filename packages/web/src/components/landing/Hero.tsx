@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { track } from "@/lib/analytics";
 import { TOKENS } from "@/lib/tokens";
 import { HeroVisual } from "./HeroVisual";
 
@@ -130,6 +131,7 @@ export function Hero() {
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
             <Link
               href="/app"
+              onClick={() => track.heroCtaClicked("heatmap")}
               style={{
                 background: TOKENS.accent,
                 color: "#1a1410",
@@ -158,40 +160,9 @@ export function Hero() {
               Open the heatmap
               <span aria-hidden="true">→</span>
             </Link>
-            <a
-              href="https://t.me/Oralab_bot"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                background: "transparent",
-                color: TOKENS.text,
-                fontWeight: 700,
-                fontSize: 14,
-                letterSpacing: 0.4,
-                textTransform: "uppercase",
-                padding: "16px 22px",
-                borderRadius: 10,
-                textDecoration: "none",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                border: `1px solid ${TOKENS.borderHi}`,
-                transition: "background .12s, transform .12s",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.background = "rgba(88,166,255,0.08)";
-                (e.currentTarget as HTMLAnchorElement).style.transform = "translateY(-1px)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.background = "transparent";
-                (e.currentTarget as HTMLAnchorElement).style.transform = "translateY(0)";
-              }}
-            >
-              Open in Telegram
-              <span aria-hidden="true">↗</span>
-            </a>
             <Link
               href="#how"
+              onClick={() => track.heroCtaClicked("how_it_works")}
               style={{
                 color: TOKENS.text,
                 background: "transparent",
@@ -224,10 +195,33 @@ export function Hero() {
               display: "flex",
               alignItems: "center",
               gap: 8,
+              flexWrap: "wrap",
             }}
           >
             <span style={{ opacity: 0.7 }}>✓</span>
-            No signup needed for the basic view · Free forever
+            <span>No signup needed for the basic view · Free forever</span>
+            <span aria-hidden="true" style={{ opacity: 0.4 }}>·</span>
+            <a
+              href="https://t.me/Oralab_bot"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => track.heroCtaClicked("telegram")}
+              style={{
+                color: TOKENS.textSec,
+                textDecoration: "none",
+                borderBottom: `1px dotted ${TOKENS.textMuted}`,
+                paddingBottom: 1,
+                transition: "color .12s",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLAnchorElement).style.color = TOKENS.text;
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLAnchorElement).style.color = TOKENS.textSec;
+              }}
+            >
+              Or open in Telegram ↗
+            </a>
           </div>
         </div>
 

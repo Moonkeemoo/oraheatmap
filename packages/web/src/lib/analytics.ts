@@ -71,6 +71,9 @@ type EventPayload = {
   };
   external_click: { target: "polymarket" | "twitter" | "discord" | "github" | "telegram" };
 
+  /** Landing CTA clicks — the funnel split between heatmap / TG / scroll-to-explainer */
+  hero_cta_clicked: { target: "heatmap" | "telegram" | "how_it_works" };
+
   /** Auth funnel */
   signin_modal_opened: {
     /** What the user was trying to do when sign-in popped. */
@@ -309,6 +312,8 @@ export const track = {
   ) => push("market_link_click", { level, category, marketSlug }),
   externalClick: (target: EventPayload["external_click"]["target"]) =>
     push("external_click", { target }),
+  heroCtaClicked: (target: EventPayload["hero_cta_clicked"]["target"]) =>
+    push("hero_cta_clicked", { target }),
   signinModalOpened: (
     triggerSource: EventPayload["signin_modal_opened"]["triggerSource"],
   ) => push("signin_modal_opened", { triggerSource }),

@@ -56,6 +56,7 @@ const ALLOWED_EVENT_NAMES = new Set<string>([
   // Outbound (the strongest value moment)
   "market_link_click",
   "external_click",
+  "hero_cta_clicked",
   // Auth funnel
   "signin_modal_opened",
   "signin_modal_closed",
