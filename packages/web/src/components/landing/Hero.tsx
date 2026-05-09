@@ -46,11 +46,11 @@ export function Hero() {
 
       <div
         style={{
-          maxWidth: 1200,
+          maxWidth: 1320,
           margin: "0 auto",
           display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.05fr)",
-          gap: 56,
+          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.35fr)",
+          gap: 48,
           alignItems: "center",
           position: "relative",
         }}

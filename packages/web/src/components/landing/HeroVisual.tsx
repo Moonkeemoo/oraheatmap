@@ -841,10 +841,13 @@ export function HeroVisual() {
           white-space: nowrap;
         }
 
-        /* ── Mobile: collapse 3-col header → 2 rows, drop decorative
-              brand+sub + mode chip, stretch stats across the full
-              width with min-width:0 so labels can ellipsize. ───── */
-        @media (max-width: 600px) {
+        /* ── Narrow container: collapse 3-col header → 2 rows, drop
+              decorative brand+sub + mode chip, stretch stats across
+              the full width with min-width:0 so labels can ellipsize.
+              Triggers at <1100px because the awkward 2-col desktop
+              zone (980-1280px viewport) gives HeroVisual <550px of
+              width — same crampedness as mobile. ─────────────────── */
+        @media (max-width: 1100px) {
           .hv-header {
             grid-template-columns: 1fr auto;
             grid-template-rows: auto auto;
