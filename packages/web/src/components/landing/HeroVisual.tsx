@@ -185,6 +185,21 @@ export function HeroVisual() {
   const [tapeHtml, setTapeHtml] = useState("");
 
   useEffect(() => {
+    // ── Tape build (always — independent of motion preference) ──────
+    const items: string[] = [];
+    for (let i = 0; i < 26; i++) {
+      const w = WHALE_NAMES[irand(WHALE_NAMES.length)]!;
+      const isWin = Math.random() > 0.32;
+      const amt = Math.floor(rand(180, 48000));
+      const cat = CATS[irand(CATS.length)]!;
+      items.push(
+        `<span class="hv-ev"><span class="hv-who">${w}</span><span class="hv-amt ${
+          isWin ? "hv-win" : "hv-loss"
+        }">${isWin ? "+" : "−"}$${amt.toLocaleString()}</span><span class="hv-cat">${cat}</span></span>`,
+      );
+    }
+    setTapeHtml(items.join("") + items.join(""));
+
     // Bail on reduced-motion. Seed a single static grid pattern so the
     // hero still looks alive (just no movement). Cheaper than running
     // the engine and forcing transitions to none.
@@ -206,21 +221,6 @@ export function HeroVisual() {
       if (statWhalesRef.current) statWhalesRef.current.textContent = "48";
       return;
     }
-
-    // ── Tape build ──────────────────────────────────────────────────
-    const items: string[] = [];
-    for (let i = 0; i < 26; i++) {
-      const w = WHALE_NAMES[irand(WHALE_NAMES.length)]!;
-      const isWin = Math.random() > 0.32;
-      const amt = Math.floor(rand(180, 48000));
-      const cat = CATS[irand(CATS.length)]!;
-      items.push(
-        `<span class="hv-ev"><span class="hv-who">${w}</span><span class="hv-amt ${
-          isWin ? "hv-win" : "hv-loss"
-        }">${isWin ? "+" : "−"}$${amt.toLocaleString()}</span><span class="hv-cat">${cat}</span></span>`,
-      );
-    }
-    setTapeHtml(items.join("") + items.join(""));
 
     // ── Engine ──────────────────────────────────────────────────────
     const events = buildEvents();
@@ -549,8 +549,8 @@ export function HeroVisual() {
         minHeight: 420,
       }}
     >
-      <header style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", alignItems: "center", gap: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
+      <header className="hv-header">
+        <div className="hv-brand-block">
           <div style={{ display: "flex", gap: 4 }}>
             {[T.loss, "#f0b429", T.win].map((c) => (
               <span key={c} style={{ width: 7, height: 7, borderRadius: 7, background: c, opacity: 0.55 }} />
@@ -573,37 +573,9 @@ export function HeroVisual() {
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center" }}>
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "4px 9px",
-              background: "rgba(63,185,80,0.07)",
-              border: "1px solid rgba(63,185,80,0.22)",
-              borderRadius: 3,
-              color: T.win,
-              fontSize: 9.5,
-              letterSpacing: "0.18em",
-              textTransform: "uppercase",
-              fontWeight: 500,
-            }}
-          >
-            macro · 1d × 12w · 84
-          </span>
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              color: T.win,
-              fontSize: 9.5,
-              letterSpacing: "0.2em",
-              textTransform: "uppercase",
-              fontWeight: 500,
-            }}
-          >
+        <div className="hv-mode-block">
+          <span className="hv-mode-chip">macro · 1d × 12w · 84</span>
+          <span className="hv-live-pill">
             <span
               style={{
                 width: 6,
@@ -618,7 +590,7 @@ export function HeroVisual() {
           </span>
         </div>
 
-        <div style={{ display: "flex", gap: 12 }}>
+        <div className="hv-stats">
           <Stat label="Net PnL 24h">
             <div ref={statPnlRef} className="hv-stat-val hv-win">$0</div>
           </Stat>
@@ -739,28 +711,10 @@ export function HeroVisual() {
         </div>
       </div>
 
-      <footer
-        style={{
-          borderTop: `1px solid ${T.line}`,
-          paddingTop: 8,
-          display: "grid",
-          gridTemplateColumns: "auto 1fr auto",
-          gap: 14,
-          alignItems: "center",
-        }}
-      >
-        <span
-          style={{
-            fontSize: 8.5,
-            color: T.textDim,
-            letterSpacing: "0.24em",
-            textTransform: "uppercase",
-            fontWeight: 500,
-          }}
-        >
-          PnL Tape
-        </span>
+      <footer className="hv-footer">
+        <span className="hv-footer-label">PnL Tape</span>
         <div
+          className="hv-tape-mask"
           style={{
             overflow: "hidden",
             mask: "linear-gradient(90deg, transparent 0, #000 4%, #000 96%, transparent 100%)",
@@ -770,18 +724,7 @@ export function HeroVisual() {
           {/* Tape content is internally generated, sandbox-safe (string literals only). */}
           <div className="hv-tape-row" dangerouslySetInnerHTML={{ __html: tapeHtml }} />
         </div>
-        <span
-          style={{
-            fontSize: 8.5,
-            color: T.textDim,
-            letterSpacing: "0.24em",
-            textTransform: "uppercase",
-            fontWeight: 500,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-          }}
-        >
+        <span className="hv-footer-label hv-footer-label-right">
           <span style={{ color: T.win }}>▸</span>
           10,426 wallets
         </span>
@@ -819,6 +762,118 @@ export function HeroVisual() {
           0% { transform: translateX(0); }
           100% { transform: translateX(-50%); }
         }
+        /* ── Header layout ─────────────────────────────────────── */
+        .hv-header {
+          display: grid;
+          grid-template-columns: auto 1fr auto;
+          align-items: center;
+          gap: 14px;
+          min-width: 0;
+        }
+        .hv-brand-block {
+          display: flex;
+          align-items: center;
+          gap: 11px;
+          min-width: 0;
+        }
+        .hv-mode-block {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+          justify-content: center;
+          min-width: 0;
+        }
+        .hv-mode-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 9px;
+          background: rgba(63,185,80,0.07);
+          border: 1px solid rgba(63,185,80,0.22);
+          border-radius: 3px;
+          color: ${T.win};
+          font-size: 9.5px;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+          font-weight: 500;
+          white-space: nowrap;
+        }
+        .hv-live-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          color: ${T.win};
+          font-size: 9.5px;
+          letter-spacing: 0.2em;
+          text-transform: uppercase;
+          font-weight: 500;
+        }
+        .hv-stats {
+          display: flex;
+          gap: 12px;
+          min-width: 0;
+        }
+
+        /* ── Footer layout ─────────────────────────────────────── */
+        .hv-footer {
+          border-top: 1px solid ${T.line};
+          padding-top: 8px;
+          display: grid;
+          grid-template-columns: auto 1fr auto;
+          gap: 14px;
+          align-items: center;
+        }
+        .hv-footer-label {
+          font-size: 8.5px;
+          color: ${T.textDim};
+          letter-spacing: 0.24em;
+          text-transform: uppercase;
+          font-weight: 500;
+        }
+        .hv-footer-label-right {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          white-space: nowrap;
+        }
+
+        /* ── Mobile: collapse 3-col header → 2 rows, drop decorative
+              brand+sub + mode chip, stretch stats across the full
+              width with min-width:0 so labels can ellipsize. ───── */
+        @media (max-width: 600px) {
+          .hv-header {
+            grid-template-columns: 1fr auto;
+            grid-template-rows: auto auto;
+            gap: 10px 8px;
+          }
+          .hv-brand-block { display: none; }
+          .hv-mode-block {
+            grid-column: 1 / 2;
+            grid-row: 1;
+            justify-content: flex-start;
+          }
+          .hv-mode-chip { display: none; }
+          .hv-stats {
+            grid-column: 1 / -1;
+            grid-row: 2;
+            justify-content: space-between;
+            gap: 6px;
+          }
+          .hv-stat-val { font-size: 13px; }
+          .hv-stat-block {
+            padding-left: 7px;
+            min-width: 0;
+            flex: 1 1 0;
+          }
+          .hv-stat-block:first-child { padding-left: 0; border-left: 0; }
+          .hv-stat-label { font-size: 7.5px; letter-spacing: 0.16em; }
+          .hv-footer {
+            grid-template-columns: auto 1fr;
+            gap: 10px;
+          }
+          .hv-footer-label-right { display: none; }
+        }
+
         .hv-cat-label.hv-hot { color: ${T.win}; text-shadow: 0 0 12px rgba(63,185,80,0.6); }
         .hv-cat-label.hv-cold { color: ${T.loss}; text-shadow: 0 0 12px rgba(248,81,73,0.6); }
 
@@ -975,6 +1030,7 @@ export function HeroVisual() {
 function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div
+      className="hv-stat-block"
       style={{
         display: "flex",
         flexDirection: "column",
@@ -984,12 +1040,14 @@ function Stat({ label, children }: { label: string; children: React.ReactNode })
       }}
     >
       <div
+        className="hv-stat-label"
         style={{
           fontSize: 8,
           color: T.textDim,
           letterSpacing: "0.22em",
           textTransform: "uppercase",
           marginBottom: 3,
+          whiteSpace: "nowrap",
         }}
       >
         {label}
