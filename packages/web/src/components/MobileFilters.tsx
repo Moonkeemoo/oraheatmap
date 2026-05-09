@@ -329,7 +329,10 @@ export function MobileFiltersSheet({
                 key={s.id}
                 active={subject === s.id}
                 color={s.color}
-                onClick={() => setSubject(s.id)}
+                locked={!isAuthed && s.id !== "trades"}
+                onClick={() =>
+                  !isAuthed && s.id !== "trades" ? onRequestLogin() : setSubject(s.id)
+                }
               >
                 {s.label}
               </Pill>

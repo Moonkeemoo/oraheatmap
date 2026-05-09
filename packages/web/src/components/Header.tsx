@@ -449,7 +449,8 @@ export function Header({
         <Section label="WHO">
           <SubjectToggle
             subject={subject}
-            setSubject={setSubject}
+            setSubject={(s) => (isAuthed || s === "trades" ? setSubject(s) : onRequestLogin())}
+            locked={!isAuthed}
           />
         </Section>
 
