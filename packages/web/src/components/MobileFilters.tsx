@@ -247,12 +247,11 @@ export function MobileFiltersSheet({
         ? TOKENS.accent
         : TOKENS.link;
 
-  // Unauth users get LIVE/1h/volume free; everything else opens login.
-  // Same gating logic as the desktop Header — keep it explicit so the
-  // sheet doesn't silently let unauth users into Pro features.
+  // WHO (subject) and WHAT (metric) are free for everyone. Mode/range/
+  // pattern/macro stay gated so unauth users get a stable LIVE/1h frame
+  // while still being able to ask "show me PNL across whales".
   const lockedMode = (id: Mode): boolean => !isAuthed && id !== "live";
   const lockedRange = (r: LiveRange): boolean => !isAuthed && r !== "1h";
-  const lockedMetric = (id: HeatmapMetric): boolean => !isAuthed && id !== "volume";
 
   return (
     <Drawer
@@ -330,10 +329,7 @@ export function MobileFiltersSheet({
                 key={s.id}
                 active={subject === s.id}
                 color={s.color}
-                locked={!isAuthed && s.id !== "trades"}
-                onClick={() =>
-                  !isAuthed && s.id !== "trades" ? onRequestLogin() : setSubject(s.id)
-                }
+                onClick={() => setSubject(s.id)}
               >
                 {s.label}
               </Pill>
@@ -440,10 +436,7 @@ export function MobileFiltersSheet({
                 key={mt.id}
                 active={metric === mt.id}
                 color={TOKENS.accent}
-                locked={lockedMetric(mt.id)}
-                onClick={() =>
-                  lockedMetric(mt.id) ? onRequestLogin() : setMetric(mt.id)
-                }
+                onClick={() => setMetric(mt.id)}
               >
                 {mt.label}
               </Pill>

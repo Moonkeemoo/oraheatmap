@@ -449,8 +449,7 @@ export function Header({
         <Section label="WHO">
           <SubjectToggle
             subject={subject}
-            setSubject={(s) => (isAuthed || s === "trades" ? setSubject(s) : onRequestLogin())}
-            locked={!isAuthed}
+            setSubject={setSubject}
           />
         </Section>
 
@@ -527,21 +526,15 @@ export function Header({
               // whale. Drop it from the desktop tab strip in the same
               // way mobile filter sheet does.
               (mt) => !(subject === "whales" && mt.id === "whales"),
-            ).map((m) => {
-              const isActive = metric === m.id;
-              const locked = !isAuthed && !isActive;
-              return (
-                <MetricTab
-                  key={m.id}
-                  active={isActive}
-                  onClick={() => (isAuthed ? setMetric(m.id) : onRequestLogin())}
-                  title={isAuthed ? undefined : "Sign in to switch metric"}
-                >
-                  {m.label}
-                  {locked && <span style={{ marginLeft: 4, opacity: 0.6 }}>🔒</span>}
-                </MetricTab>
-              );
-            })}
+            ).map((m) => (
+              <MetricTab
+                key={m.id}
+                active={metric === m.id}
+                onClick={() => setMetric(m.id)}
+              >
+                {m.label}
+              </MetricTab>
+            ))}
           </div>
         </Section>
 
