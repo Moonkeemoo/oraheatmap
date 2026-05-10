@@ -142,9 +142,28 @@ const RULES: Readonly<Record<Category, ReadonlyArray<SubcategoryRule>>> = Object
     { slug: "oceania",        label: "Oceania",        questionRe: /\b(Sydney|Melbourne|Auckland|Wellington|Brisbane|Perth|Australia|New Zealand)\b/i },
     { slug: "global",         label: "Global",         questionRe: /\b(global|worldwide|hottest year|coldest year|sea level)\b/i },
   ],
-  // Other has no canonical subs — it's the catch-all bucket. Drill-down on
-  // it returns an empty list; the UI hides the drill affordance for Other.
-  Other: [],
+  // Other started as a catch-all but has grown to ~110K signals/12d as of
+  // 2026-05-10 (mostly stocks + commodities + war markets that don't fit
+  // upstream categories). Subcategorize via question text patterns so L2
+  // drill-down isn't an empty wall.
+  Other: [
+    // Stocks (~33% of Other) — match common ticker symbols + the word
+    // "stock". Order matters: tickers are short and noisy, list them
+    // exhaustively to avoid them sneaking through.
+    { slug: "stocks",       label: "Stocks",       questionRe: /\b(NVDA|TSLA|AAPL|MSFT|GOOG|GOOGL|AMZN|META|NFLX|SPY|QQQ|S&P|SPX|NASDAQ|DOW|ABNB|UBER|RBLX|HOOD|PLTR|RIVN|RKLB|OPEN|COIN|FLUT|DIS|TRIP|WMB|MCHP|F|GM|RBLX|stock|stocks)\b/i },
+    // Commodities (~30%) — silver/gold/oil/copper/gas etc.
+    { slug: "commodities",  label: "Commodities",  questionRe: /\b(silver|gold|oil|copper|XAGUSD|XAUUSD|brent|wti|natural gas)\b/i },
+    // Russia-Ukraine war (~11%) — territorial captures + cities.
+    { slug: "ru-ua-war",    label: "RU/UA War",    questionRe: /\b(russia|ukraine|kyiv|moscow|kursk|donbas|crimea|capture|serhiivka|donetsk|kharkiv|kherson|lviv|odesa|odessa)\b/i },
+    // Middle East (~6%) — Israel/Iran/Gaza + Strait of Hormuz markets.
+    { slug: "middle-east",  label: "Middle East",  questionRe: /\b(israel|iran|palestin|gaza|hamas|hezbollah|abbas|netanyahu|tehran|jerusalem|hormuz)\b/i },
+    // Earnings calls — distinct vertical worth its own bucket.
+    { slug: "earnings",     label: "Earnings",     questionRe: /\bearnings\b/i },
+    // IPOs.
+    { slug: "ipos",         label: "IPOs",         questionRe: /\bIPO\b/i },
+    // Forex.
+    { slug: "forex",        label: "Forex",        questionRe: /\b(EUR\/USD|USD\/|GBP\/|JPY|forex)\b/i },
+  ],
 });
 
 export function subcategoriesOf(bucket: Category): ReadonlyArray<SubcategoryRule> {
