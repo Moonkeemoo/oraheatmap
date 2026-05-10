@@ -1018,12 +1018,14 @@ export async function queryTopMarketsPerCell(
   drillCategory: Category | null = null,
 ): Promise<ReadonlyArray<MarketRow>> {
   const cfg = RANGE_CONFIG[range];
-  // Always scan raw signals (the hourly continuous aggregate doesn't carry
-  // condition_id). For top-level views we cap at 24h — 12d/12w would mean
-  // multi-million-row scans per request. Drill mode keeps it on for all
-  // ranges since the WHERE category=X filter narrows the scan substantially.
+  // Always scan raw signals here (the per-condition CAGG carries the metrics
+  // but not market_question/slug/icon labels). For 12d/12w we skip entirely:
+  // top-level scans millions of rows; drill-mode 12d also scans 1.5M+ rows
+  // per high-volume subcat, which makes the request take 14-22s. The tooltip
+  // gracefully degrades to aggregate metrics without the per-market top-N
+  // — better than a 20s spinner.
   const heavy = range === "12d" || range === "12w";
-  if (heavy && drillCategory === null) return [];
+  if (heavy) return [];
 
   const bucketInterval = `${cfg.bucketMinutes} minutes`;
   const windowInterval = `${cfg.windowMinutes} minutes`;
