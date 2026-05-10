@@ -459,6 +459,32 @@ export async function queryHeatmapAggRows(
     // The row key is condition_id; the API layer turns those into labels via
     // the freshest known market_question for each one.
     if (drillCategory !== null && drillSubcategory !== null) {
+      // ≥1h buckets read the per-condition_id CAGG (signals_hourly_by_condition,
+      // added 2026-05-10). Without it, 12d L3 on Sports/Crypto scanned ~1.5M
+      // raw rows in 14-22s. With it, it's a few hundred pre-aggregated rows
+      // in <100ms. LIVE 1h (5-min buckets) keeps the raw scan because the
+      // hourly rollup is too coarse — but a 1h window on raw is cheap.
+      if (cfg.bucketMinutes >= 60) {
+        const rows = await sql<AggRow[]>`
+          SELECT
+            to_char(time_bucket(${bucketInterval}::interval, bucket) AT TIME ZONE 'UTC',
+                    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS bucket,
+            condition_id                                         AS category,
+            COALESCE(SUM(signal_count), 0)::bigint               AS signal_count,
+            COALESCE(SUM(buy_volume_usd), 0)                     AS buy_volume_usd,
+            COALESCE(SUM(realized_pnl_sum), 0)                   AS realized_pnl_sum,
+            COALESCE(SUM(win_count), 0)::bigint                  AS win_count,
+            COALESCE(SUM(loss_count), 0)::bigint                 AS loss_count,
+            COALESCE(SUM(unique_whales), 0)::bigint              AS unique_whales
+          FROM signals_hourly_by_condition
+          WHERE bucket >= NOW() - (${windowInterval}::interval)
+            AND category = ${drillCategory}
+            AND subcategory = ${drillSubcategory}
+          GROUP BY 1, condition_id
+          ORDER BY 1
+        `;
+        return rows;
+      }
       const rows = await sql<AggRow[]>`
         SELECT
           to_char(time_bucket(${bucketInterval}::interval, ts) AT TIME ZONE 'UTC',
