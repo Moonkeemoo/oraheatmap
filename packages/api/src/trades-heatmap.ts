@@ -182,15 +182,18 @@ export async function handleTradesSubject(
     if (isDrillL3) {
       // L3 — top markets in the (category, subcategory). Pull the
       // densest by signal count, capped at MAX_MARKETS_IN_DRILL.
+      // Reads from signals_hourly_by_condition (per-market hourly CAGG, added
+      // 2026-05-10). Without it, this scans 1.5M+ raw rows for high-volume
+      // 12d L3 (Sports/nba etc.) and dominates request latency. The CAGG
+      // makes this <100ms.
       const topMarketsRows = await sql<
         { condition_id: string; signals: number | string }[]
       >`
-        SELECT condition_id, COUNT(*)::bigint AS signals
-        FROM signals
-        WHERE ts >= NOW() - (${macroCfg.windowMinutes} * INTERVAL '1 minute')
+        SELECT condition_id, SUM(signal_count)::bigint AS signals
+        FROM signals_hourly_by_condition
+        WHERE bucket >= NOW() - (${macroCfg.windowMinutes} * INTERVAL '1 minute')
           AND category = ${drillCategory}
           AND subcategory = ${drillSubcategory}
-          AND condition_id IS NOT NULL
         GROUP BY condition_id
         ORDER BY signals DESC
         LIMIT ${MAX_MARKETS_IN_DRILL}
