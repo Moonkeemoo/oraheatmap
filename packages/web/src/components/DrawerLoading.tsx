@@ -5,16 +5,19 @@ import { TOKENS } from "@/lib/tokens";
 /**
  * Loading placeholder for the right-side drawer panels.
  *
- * Plain shimmer-skeleton plates — same gradient sweep
- * (skeletonShimmer keyframe in globals.css) used by HeatmapSkeleton
- * and StatsBarSkeleton, kept neutral on purpose so the loading state
- * doesn't fight the rest of the dark UI for attention.
+ * Each variant pairs an animated spinner with a shimmer-skeleton plate
+ * (same `skeletonShimmer` sweep as HeatmapSkeleton / StatsBarSkeleton).
+ * The spinner makes "loading" obvious at a glance — the shimmer plates
+ * by themselves are too subtle to read as motion on the dark panel
+ * (user feedback, 2026-05-10). The shimmer still owns layout so the
+ * drawer doesn't jump when data lands.
  *
  * Variants:
- *   - "inline" — a small 60×9 plate sized to fit inside a header row
- *   - "block"  — a wider 120×18 plate used as a section placeholder
- *   - "rows"   — N skeleton rows (avatar / label / value triple) for
- *                list sections (recurring whales, top markets, etc.)
+ *   - "inline" — small spinner + 60×9 plate, fits inside a header row
+ *   - "block"  — spinner + 120×18 plate, section placeholder
+ *   - "rows"   — spinner banner above N skeleton rows (avatar / label
+ *                / value triple) for list sections (recurring whales,
+ *                top markets, etc.)
  */
 
 export function DrawerLoading({
@@ -29,6 +32,22 @@ export function DrawerLoading({
     const n = rows ?? 3;
     return (
       <div style={{ padding: "4px 0" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "2px 4px 6px",
+            color: TOKENS.textMuted,
+            fontSize: 10,
+            letterSpacing: 0.4,
+            textTransform: "uppercase",
+            fontWeight: 600,
+          }}
+        >
+          <Spinner size={11} />
+          <span>Loading</span>
+        </div>
         {Array.from({ length: n }).map((_, i) => (
           <div
             key={i}
@@ -60,6 +79,7 @@ export function DrawerLoading({
             />
           </div>
         ))}
+        <SpinnerKeyframes />
       </div>
     );
   }
@@ -70,12 +90,57 @@ export function DrawerLoading({
       role="status"
       aria-label="Loading"
       style={{
-        width: w,
-        height: h,
-        borderRadius: 3,
-        ...shimmer(0),
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: variant === "inline" ? 0 : "4px 0",
+      }}
+    >
+      <Spinner size={variant === "inline" ? 10 : 12} />
+      <span
+        style={{
+          width: w,
+          height: h,
+          borderRadius: 3,
+          ...shimmer(0),
+        }}
+      />
+      <SpinnerKeyframes />
+    </div>
+  );
+}
+
+/** Small ring-spinner. Border-based so it survives in any nested
+ *  layout without needing an SVG file or external icon. */
+function Spinner({ size = 12 }: { size?: number }) {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        display: "inline-block",
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        border: `1.5px solid ${TOKENS.border}`,
+        borderTopColor: TOKENS.textMuted,
+        animation: "drawerSpinner 0.8s linear infinite",
+        flexShrink: 0,
       }}
     />
+  );
+}
+
+/** Inline keyframes so we don't need to plumb anything into globals.css.
+ *  Idempotent — multiple Spinners on screen reuse the same `@keyframes
+ *  drawerSpinner` definition. */
+function SpinnerKeyframes() {
+  return (
+    <style>{`
+      @keyframes drawerSpinner {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(360deg); }
+      }
+    `}</style>
   );
 }
 

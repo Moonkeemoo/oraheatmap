@@ -51,14 +51,21 @@ export function CycleHistogram({
   height?: number;
 }) {
   if (samples.length === 0) return null;
+  // Defensive: NaN / Infinity / null in `vals` would propagate to bar
+  // height = NaN, and Chrome renders NaN-height SVG rects as huge bars
+  // that overflow the viewBox (caused the 2026-05-10 "vertical line"
+  // regression on PNL cycles when one cycle had a malformed value).
+  // Coerce non-finite numbers to 0 here so the histogram is bounded.
   const vals = samples.map((s) => {
+    let v: number;
     switch (metric) {
-      case "signals": return s.count;
-      case "volume":  return s.volume;
-      case "pnl":     return s.pnl;
-      case "winrate": return s.winRate ?? 0;
-      case "whales":  return s.count; // proxy — whales not in pattern aggregate
+      case "signals": v = s.count; break;
+      case "volume":  v = s.volume; break;
+      case "pnl":     v = s.pnl; break;
+      case "winrate": v = s.winRate ?? 0; break;
+      case "whales":  v = s.count; break; // proxy — whales not in pattern aggregate
     }
+    return Number.isFinite(v) ? v : 0;
   });
   const isPnl = metric === "pnl";
   const maxAbs = Math.max(...vals.map(Math.abs), 1);
@@ -76,11 +83,14 @@ export function CycleHistogram({
       height={height}
       viewBox={`0 0 ${n * slot} ${height}`}
       preserveAspectRatio="none"
-      style={{ display: "block" }}
+      style={{ display: "block", overflow: "hidden" }}
     >
       {vals.map((v, i) => {
-        const ratio = Math.min(1, Math.abs(v) / maxAbs);
-        const barH = isPnl ? (height / 2) * ratio : (height - 2) * ratio;
+        const ratio = Math.min(1, Math.max(0, Math.abs(v) / maxAbs));
+        const barH = Math.max(0, Math.min(
+          isPnl ? height / 2 : height - 2,
+          (isPnl ? height / 2 : height - 2) * ratio,
+        ));
         const y = isPnl
           ? v >= 0 ? height / 2 - barH : height / 2
           : height - 1 - barH;

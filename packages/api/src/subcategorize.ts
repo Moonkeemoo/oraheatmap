@@ -66,6 +66,12 @@ const RULES: Readonly<Record<Category, ReadonlyArray<SubcategoryRule>>> = Object
     { slug: "trump-cabinet",  label: "Trump Cabinet",  tagSlug: "trump-cabinet" },
     { slug: "indian-elections", label: "India Elec",   tagSlug: "indian-elections" },
     { slug: "global-elections", label: "Global Elec",  tagSlug: "global-elections" },
+    // War / geopolitics — moved here from Other on 2026-05-10 (per user
+    // call: war markets read as politics, not "other"). Question-text
+    // regex rather than tagSlug because Polymarket tags ceasefire markets
+    // inconsistently (some `politics`, some only `russia`/`ukraine`).
+    { slug: "ru-ua-war",      label: "RU/UA War",      questionRe: /\b(russia|ukraine|kyiv|moscow|kursk|donbas|crimea|donetsk|kharkiv|kherson|lviv|odesa|odessa|serhiivka)\b/i },
+    { slug: "middle-east",    label: "Middle East",    questionRe: /\b(israel|iran|palestin|gaza|hamas|hezbollah|abbas|netanyahu|tehran|jerusalem|hormuz)\b/i },
     { slug: "china",          label: "China",          tagSlug: "china" },
     { slug: "japan",          label: "Japan",          tagSlug: "japan" },
     { slug: "korea",          label: "Korea",          tagSlug: "south-korea" },
@@ -153,10 +159,8 @@ const RULES: Readonly<Record<Category, ReadonlyArray<SubcategoryRule>>> = Object
     { slug: "stocks",       label: "Stocks",       questionRe: /\b(NVDA|TSLA|AAPL|MSFT|GOOG|GOOGL|AMZN|META|NFLX|SPY|QQQ|S&P|SPX|NASDAQ|DOW|ABNB|UBER|RBLX|HOOD|PLTR|RIVN|RKLB|OPEN|COIN|FLUT|DIS|TRIP|WMB|MCHP|F|GM|RBLX|stock|stocks)\b/i },
     // Commodities (~30%) — silver/gold/oil/copper/gas etc.
     { slug: "commodities",  label: "Commodities",  questionRe: /\b(silver|gold|oil|copper|XAGUSD|XAUUSD|brent|wti|natural gas)\b/i },
-    // Russia-Ukraine war (~11%) — territorial captures + cities.
-    { slug: "ru-ua-war",    label: "RU/UA War",    questionRe: /\b(russia|ukraine|kyiv|moscow|kursk|donbas|crimea|capture|serhiivka|donetsk|kharkiv|kherson|lviv|odesa|odessa)\b/i },
-    // Middle East (~6%) — Israel/Iran/Gaza + Strait of Hormuz markets.
-    { slug: "middle-east",  label: "Middle East",  questionRe: /\b(israel|iran|palestin|gaza|hamas|hezbollah|abbas|netanyahu|tehran|jerusalem|hormuz)\b/i },
+    // (RU/UA war + Middle East previously lived here; promoted to
+    // Politics 2026-05-10 because they read as politics not "other".)
     // Earnings calls — distinct vertical worth its own bucket.
     { slug: "earnings",     label: "Earnings",     questionRe: /\bearnings\b/i },
     // IPOs.

@@ -26,10 +26,28 @@ export function SlotCharacterSkeleton() {
           textTransform: "uppercase",
           marginBottom: 8,
           fontWeight: 600,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 7,
         }}
       >
-        Slot character
+        <span
+          aria-hidden="true"
+          style={{
+            display: "inline-block",
+            width: 11,
+            height: 11,
+            borderRadius: "50%",
+            border: `1.5px solid ${TOKENS.border}`,
+            borderTopColor: TOKENS.textMuted,
+            animation: "drawerSpinner 0.8s linear infinite",
+          }}
+        />
+        Slot character · loading
       </div>
+      <style>{`
+        @keyframes drawerSpinner { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      `}</style>
       {[0, 1, 2].map((i) => (
         <div
           key={i}

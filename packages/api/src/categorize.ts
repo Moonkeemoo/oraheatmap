@@ -34,6 +34,21 @@ const SLUG_TO_CATEGORY: Readonly<Record<string, Category>> = Object.freeze({
   // Politics absorbs Elections (subset)
   politics: "Politics",
   elections: "Politics",
+  // Geopolitics + war markets — used to leak into Other when Polymarket
+  // omitted a `politics` tag and only carried country-specific tags
+  // (russia/ukraine/israel/iran). Mapped here per user call 2026-05-10:
+  // war/conflict markets read more "politics" than "world news".
+  geopolitics:    "Politics",
+  russia:         "Politics",
+  ukraine:        "Politics",
+  "russia-ukraine": "Politics",
+  israel:         "Politics",
+  iran:           "Politics",
+  "israel-hamas": "Politics",
+  gaza:           "Politics",
+  palestine:      "Politics",
+  "middle-east":  "Politics",
+  yemen:          "Politics",
 
   // Crypto — kept alone
   crypto: "Crypto",
