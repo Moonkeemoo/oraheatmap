@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>oralab · live convergence</title>
+<style>
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-300.ttf') format('truetype'); font-weight: 300; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-400.ttf') format('truetype'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-500.ttf') format('truetype'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-600.ttf') format('truetype'); font-weight: 600; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-700.ttf') format('truetype'); font-weight: 700; font-display: swap; }
+
+:root {
+  --bg:        #0a0d12;
+  --line:      #1a2030;
+  --text:      #e6edf3;
+  --text-dim:  #6b7a8f;
+  --text-mid:  #9aa8bd;
+  --win:       #3fb950;
+  --win-deep:  #238636;
+  --win-text:  #dcffe2;
+  --gold:      #f0b429;
+  --loss:      #f85149;
+  --loss-text: #ffe2e0;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 1080px; height: 1080px;
+  background: var(--bg); color: var(--text);
+  font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px; letter-spacing: 0.01em; overflow: hidden;
+}
+body {
+  background:
+    radial-gradient(ellipse 700px 700px at 35% 65%, rgba(63,185,80,0.10) 0%, transparent 70%),
+    radial-gradient(ellipse at top, #0d1219 0%, var(--bg) 60%);
+  padding: 56px 64px 50px;
+  display: grid; grid-template-rows: auto auto auto 1fr auto; gap: 28px;
+  position: relative;
+}
+body::before {
+  content: ''; position: absolute; inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 3px);
+  pointer-events: none; z-index: 100; animation: scanline 4s ease-in-out infinite;
+}
+
+header { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 24px; }
+.brand img { height: 38px; width: auto; display: block; }
+.live { display: inline-flex; align-items: center; gap: 9px; color: var(--win); font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase; font-weight: 500; }
+.live .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--win); box-shadow: 0 0 9px rgba(63,185,80,0.7); animation: pulse 1.4s infinite; }
+
+.pill { display: inline-flex; align-items: center; gap: 9px; padding: 7px 16px; border-radius: 999px; border: 1px solid rgba(63,185,80,0.4); background: rgba(63,185,80,0.07); color: var(--win); font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase; font-weight: 600; width: fit-content; }
+.pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--win); box-shadow: 0 0 8px rgba(63,185,80,0.7); animation: pulse 1.4s infinite; }
+
+.hero h1 { font-size: 84px; font-weight: 700; letter-spacing: -0.025em; line-height: 1.0; color: var(--text); }
+.hero h1 .accent { color: var(--win-text); }
+.hero p { margin-top: 16px; color: var(--text-mid); font-size: 19px; font-weight: 400; line-height: 1.45; max-width: 920px; }
+.hero p strong { color: var(--text); font-weight: 600; }
+
+/* CONVERGENCE — vertical BUY vs SELL columns */
+.viz {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 22px;
+  align-self: stretch;
+}
+
+.cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: end;
+  height: 100%;
+  position: relative;
+}
+
+.col {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 12px;
+  padding: 22px 24px;
+  display: flex; flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+}
+.col.buy {
+  border-color: rgba(63,185,80,0.4);
+  background: linear-gradient(180deg, rgba(63,185,80,0.05) 0%, rgba(63,185,80,0.012) 100%);
+}
+.col.sell {
+  border-color: rgba(248,81,73,0.32);
+  background: linear-gradient(180deg, rgba(248,81,73,0.04) 0%, rgba(248,81,73,0.008) 100%);
+}
+
+.col .clbl {
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin-bottom: 8px;
+  z-index: 2;
+  position: relative;
+}
+.col.buy .clbl { color: var(--win); }
+.col.sell .clbl { color: var(--loss); }
+.col .clbl .side {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 4px;
+  margin-right: 8px;
+  font-weight: 800;
+}
+.col.buy .clbl .side { background: rgba(63,185,80,0.15); color: var(--win-text); }
+.col.sell .clbl .side { background: rgba(248,81,73,0.15); color: var(--loss-text); }
+
+.col .num {
+  font-size: 96px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.025em;
+  line-height: 1;
+  z-index: 2;
+  position: relative;
+}
+.col.buy .num { color: var(--win-text); text-shadow: 0 0 28px rgba(63,185,80,0.4); }
+.col.sell .num { color: var(--loss-text); }
+
+.col .nlbl {
+  margin-top: 6px;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  font-weight: 500;
+  z-index: 2;
+  position: relative;
+}
+
+.col .fill {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 0;
+  transition: height 1.6s cubic-bezier(0.18, 1.0, 0.32, 1);
+  z-index: 1;
+}
+.col.buy .fill {
+  background: linear-gradient(180deg, rgba(63,185,80,0.18) 0%, rgba(63,185,80,0.04) 100%);
+}
+.col.sell .fill {
+  background: linear-gradient(180deg, rgba(248,81,73,0.16) 0%, rgba(248,81,73,0.04) 100%);
+}
+
+/* center-piece convergence ratio */
+.ratio {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  text-align: center;
+  background: rgba(10,13,18,0.92);
+  border: 1px solid rgba(63,185,80,0.45);
+  border-radius: 14px;
+  padding: 20px 30px;
+  box-shadow: 0 0 60px rgba(63,185,80,0.3);
+  opacity: 0;
+  transition: opacity 480ms;
+}
+.ratio.in { opacity: 1; }
+.ratio .rlbl {
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--win);
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.ratio .rval {
+  font-size: 42px;
+  font-weight: 700;
+  color: var(--win-text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.ratio .rsub {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-mid);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.market-strip {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 24px;
+  padding: 14px 20px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 8px;
+}
+.market-strip .label {
+  font-size: 10.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.market-strip .market {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+.market-strip .stat {
+  font-size: 16px;
+  color: var(--text-mid);
+  font-variant-numeric: tabular-nums;
+}
+.market-strip .stat strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+footer {
+  display: grid; grid-template-columns: 1fr auto; align-items: center;
+  border-top: 1px solid var(--line); padding-top: 14px;
+  color: var(--text-dim); font-size: 12px; letter-spacing: 0.22em;
+  text-transform: uppercase; font-weight: 500;
+}
+footer .url { color: var(--win); font-weight: 600; }
+
+@keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } }
+@keyframes scanline { 0%,100% { opacity: 0; } 50% { opacity: 0.04; } }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand"><img src="fonts/logo-full-dark.svg" alt="oralab"></div>
+    <div></div>
+    <div class="live"><span class="dot"></span>Live · 10,426 wallets</div>
+  </header>
+
+  <div class="pill"><span class="dot"></span>Highlight · live convergence detected</div>
+
+  <div class="hero">
+    <h1>169 whales just took<br><span class="accent">the same side.</span></h1>
+    <p>Knicks vs 76ers · last 24 hours · 8,396 trades. Smart money is piling in one direction. We see it as it happens — that's a convergence cell on the heatmap, glowing right now.</p>
+  </div>
+
+  <div class="viz">
+    <div class="cols">
+      <div class="col buy" id="colBuy">
+        <div class="clbl"><span class="side">BUY</span>Whale signals</div>
+        <div class="num" data-target="7331">0</div>
+        <div class="nlbl">Trades · last 24h</div>
+        <div class="fill" data-h="100"></div>
+      </div>
+      <div class="col sell" id="colSell">
+        <div class="clbl"><span class="side">SELL</span>Whale signals</div>
+        <div class="num" data-target="1064">0</div>
+        <div class="nlbl">Trades · last 24h</div>
+        <div class="fill" data-h="14.5"></div>
+      </div>
+
+      <div class="ratio" id="ratio">
+        <div class="rlbl">Conviction ratio</div>
+        <div class="rval">6.9 : 1</div>
+        <div class="rsub">Buys per sell</div>
+      </div>
+    </div>
+
+    <div class="market-strip">
+      <div>
+        <div class="label">Market</div>
+        <div class="market">Knicks vs 76ers · NBA Playoffs</div>
+      </div>
+      <div class="stat"><strong>169</strong> distinct whales</div>
+      <div class="stat"><strong>$8.2M</strong> volume</div>
+    </div>
+  </div>
+
+  <footer>
+    <div>24 hours · live convergence detected · NBA playoff cell</div>
+    <div class="url">oralab.xyz</div>
+  </footer>
+
+<script>
+(() => {
+  const colBuy = document.getElementById('colBuy');
+  const colSell = document.getElementById('colSell');
+  const buyNum = colBuy.querySelector('[data-target]');
+  const sellNum = colSell.querySelector('[data-target]');
+  const buyFill = colBuy.querySelector('.fill');
+  const sellFill = colSell.querySelector('.fill');
+  const ratio = document.getElementById('ratio');
+  const LOOP_MS = 8000;
+
+  function tick(el, target, dur) {
+    const t0 = performance.now();
+    function step(now) {
+      const t = Math.min(1, (now - t0) / dur);
+      const eased = 1 - Math.pow(1 - t, 3);
+      el.textContent = Math.floor(target * eased).toLocaleString();
+      if (t < 1) requestAnimationFrame(step);
+      else el.textContent = target.toLocaleString();
+    }
+    requestAnimationFrame(step);
+  }
+
+  function reset() {
+    buyNum.textContent = '0';
+    sellNum.textContent = '0';
+    buyFill.style.height = '0';
+    sellFill.style.height = '0';
+    ratio.classList.remove('in');
+  }
+
+  function runLoop() {
+    reset();
+    setTimeout(() => {
+      const buyTarget = parseInt(buyNum.dataset.target, 10);
+      buyFill.style.height = buyFill.dataset.h + '%';
+      tick(buyNum, buyTarget, 1700);
+    }, 400);
+    setTimeout(() => {
+      const sellTarget = parseInt(sellNum.dataset.target, 10);
+      sellFill.style.height = sellFill.dataset.h + '%';
+      tick(sellNum, sellTarget, 1500);
+    }, 700);
+    setTimeout(() => ratio.classList.add('in'), 2300);
+  }
+
+  runLoop();
+  if (!new URLSearchParams(location.search).has('once')) {
+    setInterval(runLoop, LOOP_MS);
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>oralab · crypto is noise</title>
+<style>
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-300.ttf') format('truetype'); font-weight: 300; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-400.ttf') format('truetype'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-500.ttf') format('truetype'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-600.ttf') format('truetype'); font-weight: 600; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-700.ttf') format('truetype'); font-weight: 700; font-display: swap; }
+
+:root {
+  --bg:        #0a0d12;
+  --base:      #0e1218;
+  --line:      #1a2030;
+  --panel:     #161b22;
+  --border:    #21262d;
+  --text:      #e6edf3;
+  --text-dim:  #6b7a8f;
+  --text-mid:  #9aa8bd;
+  --win:       #3fb950;
+  --win-deep:  #238636;
+  --win-text:  #dcffe2;
+  --gold:      #f0b429;
+  --loss:      #f85149;
+  --loss-text: #ffe2e0;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 1080px; height: 1080px;
+  background: var(--bg); color: var(--text);
+  font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px; letter-spacing: 0.01em; overflow: hidden;
+}
+body {
+  background: radial-gradient(ellipse at top, #0d1219 0%, var(--bg) 60%);
+  padding: 56px 64px 50px;
+  display: grid; grid-template-rows: auto auto auto 1fr auto; gap: 32px;
+  position: relative;
+}
+body::before {
+  content: ''; position: absolute; inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 3px);
+  pointer-events: none; z-index: 100; animation: scanline 4s ease-in-out infinite;
+}
+
+header { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 24px; }
+.brand img { height: 38px; width: auto; display: block; }
+.live { display: inline-flex; align-items: center; gap: 9px; color: var(--win); font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase; font-weight: 500; }
+.live .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--win); box-shadow: 0 0 9px rgba(63,185,80,0.7); animation: pulse 1.4s infinite; }
+
+.pill { display: inline-flex; align-items: center; gap: 9px; padding: 7px 16px; border-radius: 999px; border: 1px solid rgba(248,81,73,0.32); background: rgba(248,81,73,0.08); color: var(--loss); font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase; font-weight: 600; width: fit-content; }
+.pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--loss); box-shadow: 0 0 7px rgba(248,81,73,0.7); }
+
+.hero h1 { font-size: 86px; font-weight: 700; letter-spacing: -0.025em; line-height: 1.0; color: var(--text); }
+.hero h1 .accent { color: var(--win-text); }
+.hero h1 .strike { color: var(--text-dim); text-decoration: line-through; text-decoration-thickness: 4px; text-decoration-color: rgba(248,81,73,0.7); }
+.hero p { margin-top: 18px; color: var(--text-mid); font-size: 19px; font-weight: 400; line-height: 1.45; max-width: 920px; }
+.hero p strong { color: var(--text); font-weight: 600; }
+
+/* === SPLIT VIZ: trades counter (left) + win-rate gauge (right) === */
+.viz {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 28px;
+  align-content: center;
+}
+.card {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 12px;
+  padding: 32px 36px;
+  display: flex; flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+.card .lbl {
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  font-weight: 600;
+  margin-bottom: 18px;
+}
+
+/* trade counter card */
+.tradesCard .num {
+  font-size: 96px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.tradesCard .sub {
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--text-mid);
+  letter-spacing: 0.04em;
+}
+.tradesCard .sub strong { color: var(--text); font-weight: 600; }
+.tradesCard::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--win-deep), var(--win), var(--win-text));
+  transform-origin: left;
+  transform: scaleX(0);
+  transition: transform 1.8s cubic-bezier(0.18, 1.0, 0.32, 1);
+}
+.tradesCard.in::after { transform: scaleX(1); }
+
+/* win rate gauge card */
+.gaugeCard { align-items: center; text-align: center; padding: 28px 24px; }
+.gaugeCard .lbl { align-self: flex-start; }
+.gauge {
+  width: 280px; height: 280px;
+  position: relative;
+  margin: 6px auto 0;
+}
+.gauge svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.gauge .gtrack { fill: none; stroke: rgba(255,255,255,0.06); stroke-width: 14; }
+.gauge .gfill {
+  fill: none;
+  stroke: url(#gaugeGrad);
+  stroke-width: 14;
+  stroke-linecap: round;
+  stroke-dasharray: 0 1000;
+  transition: stroke-dasharray 1.8s cubic-bezier(0.18, 1.0, 0.32, 1);
+}
+.gauge .gthresh {
+  fill: none;
+  stroke: var(--text-dim);
+  stroke-width: 2;
+  stroke-dasharray: 4 4;
+}
+.gauge .ginner {
+  position: absolute;
+  inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+}
+.gauge .gval {
+  font-size: 64px; font-weight: 700; color: var(--text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.gauge .glbl {
+  font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--text-dim); font-weight: 500; margin-top: 4px;
+}
+.gauge .gthreshLbl {
+  font-size: 9.5px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--text-dim); font-weight: 500;
+  position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%);
+}
+
+footer {
+  display: grid; grid-template-columns: 1fr auto; align-items: center;
+  border-top: 1px solid var(--line); padding-top: 18px;
+  color: var(--text-dim); font-size: 12px; letter-spacing: 0.22em;
+  text-transform: uppercase; font-weight: 500;
+}
+footer .url { color: var(--win); font-weight: 600; }
+
+@keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } }
+@keyframes scanline { 0%,100% { opacity: 0; } 50% { opacity: 0.04; } }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand"><img src="fonts/logo-full-dark.svg" alt="oralab"></div>
+    <div></div>
+    <div class="live"><span class="dot"></span>Live · 10,426 wallets</div>
+  </header>
+
+  <div class="pill"><span class="dot"></span>Insight #2 · 7-day signal noise</div>
+
+  <div class="hero">
+    <h1><span class="strike">Crypto looks hot.</span><br><span class="accent">It's just busy.</span></h1>
+    <p>5.56M trades in Crypto markets last week — top-whale win rate <strong>52.3%</strong>. A coin flip. Crypto cells light up the heatmap because of activity, not edge.</p>
+  </div>
+
+  <div class="viz">
+    <div class="card tradesCard" id="tradesCard">
+      <div class="lbl">Crypto trades — 7 days</div>
+      <div class="num" id="tradeNum">0</div>
+      <div class="sub"><strong>4×</strong> the volume of Sports — for <strong>1.8%</strong> of the PnL.</div>
+    </div>
+    <div class="card gaugeCard">
+      <div class="lbl">Top-whale win rate</div>
+      <div class="gauge">
+        <svg viewBox="0 0 200 200">
+          <defs>
+            <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#f85149"/>
+              <stop offset="55%" stop-color="#f0b429"/>
+              <stop offset="100%" stop-color="#3fb950"/>
+            </linearGradient>
+          </defs>
+          <circle class="gtrack" cx="100" cy="100" r="80"/>
+          <circle class="gfill"  cx="100" cy="100" r="80" id="gFill"/>
+          <!-- 50% threshold tick (dashed mid-line) -->
+        </svg>
+        <div class="ginner">
+          <div class="gval" id="gVal">0%</div>
+          <div class="glbl">Win rate</div>
+        </div>
+        <div class="gthreshLbl">50% · Coin flip line</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div>7 days · 8.7M signals · 2,595 active whales</div>
+    <div class="url">oralab.xyz</div>
+  </footer>
+
+<script>
+(() => {
+  const TRADES_TARGET = 5563851;
+  const WR_TARGET = 52.3;
+  const CIRCUMFERENCE = 2 * Math.PI * 80; // r=80
+
+  const tradeNum = document.getElementById('tradeNum');
+  const tradesCard = document.getElementById('tradesCard');
+  const gFill = document.getElementById('gFill');
+  const gVal = document.getElementById('gVal');
+
+  function reset() {
+    tradeNum.textContent = '0';
+    tradesCard.classList.remove('in');
+    gFill.style.strokeDasharray = '0 1000';
+    gVal.textContent = '0%';
+  }
+
+  function tickCounter(el, target, dur) {
+    const t0 = performance.now();
+    function step(now) {
+      const t = Math.min(1, (now - t0) / dur);
+      const eased = 1 - Math.pow(1 - t, 3);
+      el.textContent = Math.floor(target * eased).toLocaleString();
+      if (t < 1) requestAnimationFrame(step);
+      else el.textContent = target.toLocaleString();
+    }
+    requestAnimationFrame(step);
+  }
+
+  function tickPct(el, target, dur) {
+    const t0 = performance.now();
+    function step(now) {
+      const t = Math.min(1, (now - t0) / dur);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const v = (target * eased).toFixed(1);
+      el.textContent = v + '%';
+      if (t < 1) requestAnimationFrame(step);
+      else el.textContent = target.toFixed(1) + '%';
+    }
+    requestAnimationFrame(step);
+  }
+
+  function runLoop() {
+    reset();
+    setTimeout(() => {
+      tradesCard.classList.add('in');
+      tickCounter(tradeNum, TRADES_TARGET, 1800);
+    }, 300);
+    setTimeout(() => {
+      const dash = (WR_TARGET / 100) * CIRCUMFERENCE;
+      gFill.style.strokeDasharray = `${dash} 1000`;
+      tickPct(gVal, WR_TARGET, 1800);
+    }, 600);
+  }
+
+  runLoop();
+  if (!new URLSearchParams(location.search).has('once')) {
+    setInterval(runLoop, 7800);
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>oralab · $13.7M on Russia-Ukraine ceasefire</title>
+<style>
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-300.ttf') format('truetype'); font-weight: 300; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-400.ttf') format('truetype'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-500.ttf') format('truetype'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-600.ttf') format('truetype'); font-weight: 600; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-700.ttf') format('truetype'); font-weight: 700; font-display: swap; }
+
+:root {
+  --bg:        #0a0d12;
+  --line:      #1a2030;
+  --text:      #e6edf3;
+  --text-dim:  #6b7a8f;
+  --text-mid:  #9aa8bd;
+  --win:       #3fb950;
+  --win-deep:  #238636;
+  --win-text:  #dcffe2;
+  --gold:      #f0b429;
+  --gold-text: #ffe89e;
+  --loss:      #f85149;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 1080px; height: 1080px;
+  background: var(--bg); color: var(--text);
+  font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px; letter-spacing: 0.01em; overflow: hidden;
+}
+body {
+  background:
+    radial-gradient(ellipse 800px 600px at 50% 50%, rgba(63,185,80,0.08) 0%, transparent 70%),
+    radial-gradient(ellipse at top, #0d1219 0%, var(--bg) 60%);
+  padding: 50px 60px 46px;
+  display: grid; grid-template-rows: auto auto auto auto auto auto; gap: 22px;
+  position: relative;
+}
+body::before {
+  content: ''; position: absolute; inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 3px);
+  pointer-events: none; z-index: 100; animation: scanline 4s ease-in-out infinite;
+}
+
+header { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 24px; }
+.brand img { height: 36px; width: auto; display: block; }
+.live { display: inline-flex; align-items: center; gap: 9px; color: var(--win); font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase; font-weight: 500; }
+.live .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--win); box-shadow: 0 0 9px rgba(63,185,80,0.7); animation: pulse 1.4s infinite; }
+
+.pill { display: inline-flex; align-items: center; gap: 9px; padding: 7px 16px; border-radius: 999px; border: 1px solid rgba(63,185,80,0.4); background: rgba(63,185,80,0.07); color: var(--win); font-size: 11.5px; letter-spacing: 0.22em; text-transform: uppercase; font-weight: 600; width: fit-content; }
+.pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--win); box-shadow: 0 0 8px rgba(63,185,80,0.7); animation: pulse 1.4s infinite; }
+
+.hero h1 { font-size: 64px; font-weight: 700; letter-spacing: -0.025em; line-height: 1.04; color: var(--text); }
+.hero h1 .accent { color: var(--win-text); }
+.hero p { margin-top: 10px; color: var(--text-mid); font-size: 17px; font-weight: 400; line-height: 1.45; max-width: 920px; }
+.hero p strong { color: var(--text); font-weight: 600; }
+
+/* === CHART === */
+.chartCard {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(63,185,80,0.2);
+  border-radius: 12px;
+  padding: 18px 22px 14px;
+  position: relative;
+  overflow: hidden;
+}
+.chartHdr {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 10px;
+}
+.chartHdr .lbl {
+  font-size: 10.5px;
+  letter-spacing: 0.24em; text-transform: uppercase;
+  color: var(--text-dim); font-weight: 600;
+}
+.chartHdr .last {
+  font-size: 12px;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--win); font-weight: 600;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.chartHdr .last .price {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 16px;
+  color: var(--win-text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.chartSvg { width: 100%; height: 280px; display: block; }
+
+/* === TOP WHALE CARDS === */
+.whales {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px;
+}
+.wcard {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 10px;
+  padding: 16px 18px;
+  display: flex; flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 360ms, transform 360ms;
+}
+.wcard.in { opacity: 1; transform: translateY(0); }
+.wcard:nth-child(1) {
+  border-color: rgba(240,180,41,0.4);
+  background: linear-gradient(180deg, rgba(240,180,41,0.06) 0%, rgba(240,180,41,0.012) 100%);
+}
+.wcard:nth-child(1).in { animation: glowGold 2.2s ease-out 1; }
+@keyframes glowGold {
+  0%   { box-shadow: 0 0 0 rgba(240,180,41,0); }
+  35%  { box-shadow: 0 0 50px rgba(240,180,41,0.4); }
+  100% { box-shadow: 0 0 18px rgba(240,180,41,0.15); }
+}
+.wcard .rank {
+  position: absolute;
+  top: 10px; right: 14px;
+  font-size: 36px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.06);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  pointer-events: none;
+}
+.wcard:nth-child(1) .rank { color: rgba(240,180,41,0.18); }
+.wcard .lbl {
+  font-size: 9.5px;
+  letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--text-dim); font-weight: 600;
+  margin-bottom: 6px;
+}
+.wcard:nth-child(1) .lbl { color: var(--gold); }
+.wcard .addr {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-mid);
+  letter-spacing: 0.02em;
+  margin-bottom: 12px;
+  word-break: break-all;
+  line-height: 1.35;
+}
+.wcard .pnl {
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--win-text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.025em;
+  line-height: 1;
+}
+.wcard:nth-child(1) .pnl { color: var(--gold-text); text-shadow: 0 0 18px rgba(240,180,41,0.32); }
+.wcard .meta {
+  margin-top: 6px;
+  font-size: 10.5px;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--text-dim); font-weight: 500;
+}
+
+/* === STATS STRIP === */
+.statsStrip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.sstat {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.sstat .lbl {
+  font-size: 9.5px;
+  letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--text-dim); font-weight: 600;
+  margin-bottom: 4px;
+}
+.sstat .val {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.sstat.lead .val { color: var(--win-text); }
+
+footer {
+  display: grid; grid-template-columns: 1fr auto; align-items: center;
+  border-top: 1px solid var(--line); padding-top: 12px;
+  color: var(--text-dim); font-size: 11.5px; letter-spacing: 0.22em;
+  text-transform: uppercase; font-weight: 500;
+}
+footer .url { color: var(--win); font-weight: 600; }
+
+@keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } }
+@keyframes scanline { 0%,100% { opacity: 0; } 50% { opacity: 0.04; } }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand"><img src="fonts/logo-full-dark.svg" alt="oralab"></div>
+    <div></div>
+    <div class="live"><span class="dot"></span>Live · 10,426 wallets</div>
+  </header>
+
+  <div class="pill"><span class="dot"></span>Live bet · russia × ukraine ceasefire by may 31, 2026</div>
+
+  <div class="hero">
+    <h1><span class="accent">$13.7M</span> just bet "yes"<br>on a Russia-Ukraine ceasefire.</h1>
+    <p>289 whales · 8,322 trades · the market climbed from <strong>$0.50</strong> to <strong>$0.999</strong> in 48 hours. <strong>92%</strong> of dollar volume hit the BUY side.</p>
+  </div>
+
+  <div class="chartCard">
+    <div class="chartHdr">
+      <div class="lbl">Implied probability · last 22 hours</div>
+      <div class="last">
+        Now
+        <span class="price" id="priceLive">$0.999</span>
+      </div>
+    </div>
+    <svg class="chartSvg" viewBox="0 0 1000 280" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#3fb950" stop-opacity="0.5"/>
+          <stop offset="60%" stop-color="#3fb950"/>
+          <stop offset="100%" stop-color="#dcffe2"/>
+        </linearGradient>
+        <linearGradient id="areaGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#3fb950" stop-opacity="0.32"/>
+          <stop offset="100%" stop-color="#3fb950" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+
+      <!-- gridlines for 0.25 / 0.50 / 0.75 -->
+      <line x1="0" y1="55" x2="1000" y2="55"  stroke="rgba(255,255,255,0.05)" stroke-dasharray="3 5"/>
+      <line x1="0" y1="110" x2="1000" y2="110" stroke="rgba(255,255,255,0.06)" stroke-dasharray="3 5"/>
+      <line x1="0" y1="165" x2="1000" y2="165" stroke="rgba(255,255,255,0.05)" stroke-dasharray="3 5"/>
+      <text x="6" y="50" fill="rgba(255,255,255,0.18)" font-size="10" font-family="Space Grotesk" letter-spacing="0.15em">0.75</text>
+      <text x="6" y="105" fill="rgba(255,255,255,0.22)" font-size="10" font-family="Space Grotesk" letter-spacing="0.15em">0.50</text>
+      <text x="6" y="160" fill="rgba(255,255,255,0.18)" font-size="10" font-family="Space Grotesk" letter-spacing="0.15em">0.25</text>
+
+      <!-- volume bars (bottom 60px reserved) -->
+      <g id="volBars"></g>
+      <line x1="0" y1="220" x2="1000" y2="220" stroke="rgba(255,255,255,0.08)"/>
+
+      <!-- price line + area -->
+      <path id="areaPath" d="" fill="url(#areaGrad)" stroke="none" opacity="0"/>
+      <path id="linePath" d="" fill="none" stroke="url(#lineGrad)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+            stroke-dasharray="2400" stroke-dashoffset="2400" style="transition: stroke-dashoffset 2.4s cubic-bezier(0.18, 1.0, 0.32, 1);"/>
+
+      <!-- final-point dot -->
+      <circle id="endDot" cx="0" cy="0" r="0" fill="#dcffe2" stroke="#3fb950" stroke-width="2" opacity="0"/>
+    </svg>
+  </div>
+
+  <div class="whales">
+    <div class="wcard" data-target="3470380">
+      <span class="rank">01</span>
+      <div class="lbl">Top BUY · all-in YES</div>
+      <div class="addr">0xd99f3bec8e060ada0aef0c4057695dd5bc22fcdc</div>
+      <div class="pnl" data-c>+$0</div>
+      <div class="meta">$3.47M bought · 0 sold · 99 trades</div>
+    </div>
+    <div class="wcard" data-target="2687520">
+      <span class="rank">02</span>
+      <div class="lbl">2nd BUY · 99% held</div>
+      <div class="addr">0x2785e7022dc20757108204b13c08cea8613b70ae</div>
+      <div class="pnl" data-c>+$0</div>
+      <div class="meta">$2.69M bought · $35K sold · 68 trades</div>
+    </div>
+    <div class="wcard" data-target="2334480">
+      <span class="rank">03</span>
+      <div class="lbl">3rd BUY · all-in YES</div>
+      <div class="addr">0x02e7f29f3e612a95a9ccca7131ce7dd5d56b59e5</div>
+      <div class="pnl" data-c>+$0</div>
+      <div class="meta">$2.33M bought · 0 sold · 130 trades</div>
+    </div>
+  </div>
+
+  <div class="statsStrip">
+    <div class="sstat">
+      <div class="lbl">Whales</div>
+      <div class="val">289</div>
+    </div>
+    <div class="sstat lead">
+      <div class="lbl">Dollar volume</div>
+      <div class="val">$14.9M</div>
+    </div>
+    <div class="sstat lead">
+      <div class="lbl">Buy-side</div>
+      <div class="val">92%</div>
+    </div>
+    <div class="sstat">
+      <div class="lbl">Trades</div>
+      <div class="val">8,322</div>
+    </div>
+  </div>
+
+  <footer>
+    <div>Live convergence · 6 days of data · streaming</div>
+    <div class="url">oralab.xyz</div>
+  </footer>
+
+<script>
+(() => {
+  // [hourLabel, price, dollarVolUSD] — filtered to high-volume hours, 22-hour active window
+  const PTS = [
+    ['18:00', 0.506, 1188910],  // May 8
+    ['19:00', 0.516, 561104],
+    ['04:00', 0.786, 82234],    // May 9
+    ['05:00', 0.823, 360462],
+    ['06:00', 0.787, 299947],
+    ['07:00', 0.578, 1154600],
+    ['08:00', 0.918, 2069810],
+    ['09:00', 0.976, 1352290],
+    ['10:00', 0.898, 305448],
+    ['11:00', 0.978, 401836],
+    ['12:00', 0.962, 6058760],  // peak vol
+    ['16:00', 0.999, 35456],    // resolution-near
+  ];
+
+  const W = 1000, H_PRICE = 220, H_VOL = 50; // chart split
+  const N = PTS.length;
+  const maxVol = Math.max(...PTS.map((p) => p[2]));
+
+  // Build linePath + areaPath
+  const xs = PTS.map((_, i) => 36 + (i / (N - 1)) * (W - 50));
+  const ys = PTS.map((p) => H_PRICE - p[1] * H_PRICE);
+
+  function buildSmoothPath(xs, ys, close = false) {
+    if (xs.length < 2) return '';
+    let d = `M ${xs[0].toFixed(2)} ${ys[0].toFixed(2)}`;
+    for (let i = 1; i < xs.length; i++) {
+      const x1 = xs[i - 1], y1 = ys[i - 1];
+      const x2 = xs[i],     y2 = ys[i];
+      const cx = (x1 + x2) / 2;
+      d += ` C ${cx.toFixed(2)} ${y1.toFixed(2)} ${cx.toFixed(2)} ${y2.toFixed(2)} ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+    }
+    if (close) {
+      d += ` L ${xs[xs.length - 1].toFixed(2)} ${H_PRICE} L ${xs[0].toFixed(2)} ${H_PRICE} Z`;
+    }
+    return d;
+  }
+  const linePath = buildSmoothPath(xs, ys, false);
+  const areaPath = buildSmoothPath(xs, ys, true);
+  document.getElementById('linePath').setAttribute('d', linePath);
+  document.getElementById('areaPath').setAttribute('d', areaPath);
+
+  // Volume bars
+  const volBars = document.getElementById('volBars');
+  const VOL_TOP = 232, VOL_BOT = 268;
+  PTS.forEach((p, i) => {
+    const x = 36 + (i / (N - 1)) * (W - 50) - 6;
+    const h = (p[2] / maxVol) * (VOL_BOT - VOL_TOP);
+    const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    r.setAttribute('x', x.toFixed(2));
+    r.setAttribute('y', (VOL_BOT - h).toFixed(2));
+    r.setAttribute('width', '12');
+    r.setAttribute('height', h.toFixed(2));
+    r.setAttribute('fill', 'rgba(63,185,80,0.4)');
+    r.setAttribute('rx', '1.5');
+    r.style.opacity = '0';
+    r.style.transition = `opacity 320ms ${600 + i * 80}ms`;
+    volBars.appendChild(r);
+  });
+
+  const areaEl = document.getElementById('areaPath');
+  const lineEl = document.getElementById('linePath');
+  const endDot = document.getElementById('endDot');
+  const priceLive = document.getElementById('priceLive');
+  const wcards = [...document.querySelectorAll('.wcard')];
+  const LOOP_MS = 9000;
+
+  function tickEl(el, target, dur, prefix = '+$') {
+    const t0 = performance.now();
+    function step(now) {
+      const t = Math.min(1, (now - t0) / dur);
+      const eased = 1 - Math.pow(1 - t, 3);
+      el.textContent = prefix + Math.floor(target * eased).toLocaleString();
+      if (t < 1) requestAnimationFrame(step);
+      else el.textContent = prefix + target.toLocaleString();
+    }
+    requestAnimationFrame(step);
+  }
+
+  function reset() {
+    lineEl.style.transition = 'none';
+    lineEl.style.strokeDashoffset = '2400';
+    void lineEl.offsetWidth;
+    lineEl.style.transition = 'stroke-dashoffset 2.4s cubic-bezier(0.18, 1.0, 0.32, 1)';
+    areaEl.style.opacity = '0';
+    endDot.setAttribute('r', '0');
+    endDot.style.opacity = '0';
+    [...volBars.querySelectorAll('rect')].forEach((b) => { b.style.opacity = '0'; });
+    wcards.forEach((c) => {
+      c.classList.remove('in');
+      c.querySelector('[data-c]').textContent = '+$0';
+    });
+  }
+
+  function runLoop() {
+    reset();
+    setTimeout(() => {
+      lineEl.style.strokeDashoffset = '0';
+      areaEl.style.transition = 'opacity 1.4s ease-out';
+      areaEl.style.opacity = '1';
+    }, 250);
+    setTimeout(() => {
+      [...volBars.querySelectorAll('rect')].forEach((b) => { b.style.opacity = '1'; });
+    }, 250);
+    setTimeout(() => {
+      endDot.setAttribute('cx', xs[xs.length - 1].toFixed(2));
+      endDot.setAttribute('cy', ys[ys.length - 1].toFixed(2));
+      endDot.style.transition = 'r 320ms ease-out, opacity 320ms ease-out';
+      endDot.setAttribute('r', '6');
+      endDot.style.opacity = '1';
+    }, 2400);
+
+    wcards.forEach((c, i) => {
+      const target = parseInt(c.dataset.target, 10);
+      setTimeout(() => c.classList.add('in'), 2800 + i * 350);
+      setTimeout(() => tickEl(c.querySelector('[data-c]'), target, 1300), 3000 + i * 350);
+    });
+  }
+
+  runLoop();
+  if (!new URLSearchParams(location.search).has('once')) {
+    setInterval(runLoop, LOOP_MS);
+  }
+})();
+</script>
+</body>
+</html>

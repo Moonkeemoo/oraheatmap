@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>oralab · politics is the sleeper</title>
+<style>
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-300.ttf') format('truetype'); font-weight: 300; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-400.ttf') format('truetype'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-500.ttf') format('truetype'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-600.ttf') format('truetype'); font-weight: 600; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('fonts/SpaceGrotesk-700.ttf') format('truetype'); font-weight: 700; font-display: swap; }
+
+:root {
+  --bg:        #0a0d12;
+  --base:      #0e1218;
+  --line:      #1a2030;
+  --text:      #e6edf3;
+  --text-dim:  #6b7a8f;
+  --text-mid:  #9aa8bd;
+  --win:       #3fb950;
+  --win-deep:  #238636;
+  --win-text:  #dcffe2;
+  --gold:      #f0b429;
+  --loss:      #f85149;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 1080px; height: 1080px;
+  background: var(--bg); color: var(--text);
+  font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px; letter-spacing: 0.01em; overflow: hidden;
+}
+body {
+  background: radial-gradient(ellipse at top, #0d1219 0%, var(--bg) 60%);
+  padding: 56px 64px 50px;
+  display: grid; grid-template-rows: auto auto auto 1fr auto; gap: 32px;
+  position: relative;
+}
+body::before {
+  content: ''; position: absolute; inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 3px);
+  pointer-events: none; z-index: 100; animation: scanline 4s ease-in-out infinite;
+}
+
+header { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 24px; }
+.brand img { height: 38px; width: auto; display: block; }
+.live { display: inline-flex; align-items: center; gap: 9px; color: var(--win); font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase; font-weight: 500; }
+.live .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--win); box-shadow: 0 0 9px rgba(63,185,80,0.7); animation: pulse 1.4s infinite; }
+
+.pill { display: inline-flex; align-items: center; gap: 9px; padding: 7px 16px; border-radius: 999px; border: 1px solid rgba(63,185,80,0.32); background: rgba(63,185,80,0.08); color: var(--win); font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase; font-weight: 600; width: fit-content; }
+.pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--win); box-shadow: 0 0 7px rgba(63,185,80,0.7); }
+
+.hero h1 { font-size: 86px; font-weight: 700; letter-spacing: -0.025em; line-height: 1.0; color: var(--text); }
+.hero h1 .accent { color: var(--win-text); }
+.hero p { margin-top: 18px; color: var(--text-mid); font-size: 19px; font-weight: 400; line-height: 1.45; max-width: 920px; }
+.hero p strong { color: var(--text); font-weight: 600; }
+
+/* === BAR RACE — win rates, 50% threshold dashed === */
+.bars {
+  display: grid;
+  gap: 18px;
+  align-content: center;
+  position: relative;
+}
+.bars::before {
+  /* 50% threshold dashed line */
+  content: '50% · coin flip';
+  position: absolute;
+  top: -22px;
+  left: calc(150px + (100% - 150px - 220px) * 0.5);
+  transform: translateX(-50%);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.bars::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  left: calc(150px + (100% - 150px - 220px) * 0.5);
+  width: 1px;
+  border-left: 1px dashed rgba(255,255,255,0.18);
+  pointer-events: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 130px 1fr 220px;
+  align-items: center;
+  gap: 22px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 280ms, transform 280ms;
+}
+.row.in { opacity: 1; transform: translateY(0); }
+.row .lbl {
+  font-size: 14px; letter-spacing: 0.20em; text-transform: uppercase;
+  color: var(--text-mid); font-weight: 500;
+}
+.row.lead .lbl { color: var(--text); font-weight: 600; }
+.row.cold .lbl { color: rgba(248,81,73,0.8); }
+
+.track {
+  height: 32px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid rgba(255,255,255,0.04);
+}
+.fill {
+  position: absolute; inset: 0 100% 0 0;
+  background: linear-gradient(90deg, rgba(63,185,80,0.4) 0%, rgba(63,185,80,0.7) 100%);
+  border-radius: 4px 0 0 4px;
+  transition: right 1.6s cubic-bezier(0.18, 1.0, 0.32, 1);
+}
+.row.lead .fill {
+  background: linear-gradient(90deg, var(--win-deep) 0%, var(--win) 60%, var(--win-text) 100%);
+  box-shadow: 0 0 24px rgba(63, 185, 80, 0.45);
+}
+.row.cold .fill {
+  background: linear-gradient(90deg, rgba(248,81,73,0.45) 0%, rgba(248,81,73,0.75) 100%);
+}
+
+.row .val {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 24px; font-weight: 600;
+  color: var(--text); letter-spacing: -0.01em;
+}
+.row.lead .val { color: var(--win-text); font-size: 30px; font-weight: 700; }
+.row.cold .val { color: rgba(248,81,73,0.95); }
+
+@keyframes leadPulse {
+  0%   { box-shadow: 0 0 24px rgba(63, 185, 80, 0.45); }
+  40%  { box-shadow: 0 0 60px rgba(63, 185, 80, 0.85); }
+  100% { box-shadow: 0 0 24px rgba(63, 185, 80, 0.45); }
+}
+.row.lead .fill.pulsing { animation: leadPulse 900ms ease-out 2; }
+
+footer {
+  display: grid; grid-template-columns: 1fr auto; align-items: center;
+  border-top: 1px solid var(--line); padding-top: 18px;
+  color: var(--text-dim); font-size: 12px; letter-spacing: 0.22em;
+  text-transform: uppercase; font-weight: 500;
+}
+footer .url { color: var(--win); font-weight: 600; }
+
+@keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } }
+@keyframes scanline { 0%,100% { opacity: 0; } 50% { opacity: 0.04; } }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand"><img src="fonts/logo-full-dark.svg" alt="oralab"></div>
+    <div></div>
+    <div class="live"><span class="dot"></span>Live · 10,426 wallets</div>
+  </header>
+
+  <div class="pill"><span class="dot"></span>Insight #3 · win rate by category</div>
+
+  <div class="hero">
+    <h1>Politics is the<br><span class="accent">sleeper bucket.</span></h1>
+    <p>Resolved-trade win rates across high-volume Polymarket categories, last 7 days. Top whales hit <strong>75.5%</strong> on political bets — highest conviction we've measured anywhere.</p>
+  </div>
+
+  <div class="bars">
+    <div class="row lead" data-target="75.5">
+      <div class="lbl">Politics</div>
+      <div class="track"><div class="fill"></div></div>
+      <div class="val">0%</div>
+    </div>
+    <div class="row" data-target="71.2">
+      <div class="lbl">Climate</div>
+      <div class="track"><div class="fill"></div></div>
+      <div class="val">0%</div>
+    </div>
+    <div class="row" data-target="66.4">
+      <div class="lbl">Culture</div>
+      <div class="track"><div class="fill"></div></div>
+      <div class="val">0%</div>
+    </div>
+    <div class="row" data-target="66.1">
+      <div class="lbl">Sports</div>
+      <div class="track"><div class="fill"></div></div>
+      <div class="val">0%</div>
+    </div>
+    <div class="row cold" data-target="52.3">
+      <div class="lbl">Crypto</div>
+      <div class="track"><div class="fill"></div></div>
+      <div class="val">0%</div>
+    </div>
+  </div>
+
+  <footer>
+    <div>7 days · resolved trades only · 2,595 active whales</div>
+    <div class="url">oralab.xyz</div>
+  </footer>
+
+<script>
+(() => {
+  const rows = [...document.querySelectorAll('.row')];
+  const LEAD_FILL = rows[0].querySelector('.fill');
+
+  const schedule = [
+    { row: 0, fadeAt:  300, animAt:  450, dur: 1700 },  // Politics — lead
+    { row: 1, fadeAt:  900, animAt: 1050, dur: 1400 },
+    { row: 2, fadeAt: 1100, animAt: 1250, dur: 1300 },
+    { row: 3, fadeAt: 1300, animAt: 1450, dur: 1200 },
+    { row: 4, fadeAt: 1500, animAt: 1650, dur: 1100 },  // Crypto — cold
+  ];
+  const PULSE_AT = 2400;
+  const LOOP_MS  = 7800;
+
+  function reset() {
+    rows.forEach((r) => {
+      r.classList.remove('in');
+      r.querySelector('.fill').style.right = '100%';
+      r.querySelector('.val').textContent = '0%';
+    });
+    LEAD_FILL.classList.remove('pulsing');
+  }
+
+  function animateRow(r, dur) {
+    const target = parseFloat(r.dataset.target);
+    const fill = r.querySelector('.fill');
+    const val = r.querySelector('.val');
+    fill.style.right = (100 - target) + '%';
+    const t0 = performance.now();
+    function tick(now) {
+      const t = Math.min(1, (now - t0) / dur);
+      const eased = 1 - Math.pow(1 - t, 3);
+      val.textContent = (target * eased).toFixed(1) + '%';
+      if (t < 1) requestAnimationFrame(tick);
+      else val.textContent = target.toFixed(1) + '%';
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function runLoop() {
+    reset();
+    schedule.forEach((s) => {
+      setTimeout(() => rows[s.row].classList.add('in'), s.fadeAt);
+      setTimeout(() => animateRow(rows[s.row], s.dur), s.animAt);
+    });
+    setTimeout(() => LEAD_FILL.classList.add('pulsing'), PULSE_AT);
+  }
+
+  runLoop();
+  if (!new URLSearchParams(location.search).has('once')) {
+    setInterval(runLoop, LOOP_MS);
+  }
+})();
+</script>
+</body>
+</html>

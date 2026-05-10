@@ -1137,8 +1137,12 @@ export async function queryTopWhalesPerCell(
   drillSubcategory: string | null = null,
 ): Promise<ReadonlyArray<WhaleCellRow>> {
   const cfg = RANGE_CONFIG[range];
+  // 12d/12w skipped entirely — per-cell whale enrichment requires (cond_id ×
+  // whale_addr × hour) granularity which we don't have a CAGG for, and the
+  // raw scan dominates request latency. Same graceful-degradation pattern
+  // as queryTopMarketsPerCell: tooltip falls back to aggregate metrics.
   const heavy = range === "12d" || range === "12w";
-  if (heavy && drillCategory === null) return [];
+  if (heavy) return [];
 
   const bucketInterval = `${cfg.bucketMinutes} minutes`;
   const windowInterval = `${cfg.windowMinutes} minutes`;
